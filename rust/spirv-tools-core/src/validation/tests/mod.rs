@@ -6900,7 +6900,6 @@ fn qcom_cooperative_matrix_conversion_requires_spirv_1_3() {
 fn ray_tracing_extensions_require_spirv_1_4() {
     for ext in &[
         "SPV_KHR_ray_tracing",
-        "SPV_KHR_ray_query",
         "SPV_KHR_ray_tracing_position_fetch",
     ] {
         let text = [
@@ -7715,10 +7714,10 @@ fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_exte
         .expect("FragmentDensityEXT should be accepted for Vulkan targets");
 }
 #[test]
-fn descriptor_indexing_extension_requires_spirv_1_5() {
+fn ray_tracing_extension_requires_spirv_1_4() {
     let text = [
         "OpCapability Shader",
-        "OpExtension \"SPV_EXT_descriptor_indexing\"",
+        "OpExtension \"SPV_KHR_ray_tracing\"",
         "OpMemoryModel Logical GLSL450",
         "%void = OpTypeVoid",
         "%fn = OpTypeFunction %void",
@@ -7730,19 +7729,49 @@ fn descriptor_indexing_extension_requires_spirv_1_5() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("descriptor indexing should require SPIR-V 1.5");
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("ray tracing should require SPIR-V 1.4");
     assert_eq!(
         error,
         ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_EXT_descriptor_indexing"),
-            required_version: SpirvVersion::new(1, 5),
-            target_version: TargetEnv::Vulkan1_0.spirv_version(),
+            extension: ExtensionName::from("SPV_KHR_ray_tracing"),
+            required_version: SpirvVersion::new(1, 4),
+            target_version: TargetEnv::Vulkan1_1.spirv_version(),
         }
     );
     text.as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.5+");
+        .expect("extension should be accepted with SPIR-V 1.4+");
+}
+#[test]
+fn ray_tracing_position_fetch_extension_requires_spirv_1_4() {
+    let text = [
+        "OpCapability Shader",
+        "OpExtension \"SPV_KHR_ray_tracing_position_fetch\"",
+        "OpMemoryModel Logical GLSL450",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("ray tracing position fetch should require SPIR-V 1.4");
+    assert_eq!(
+        error,
+        ValidationError::ExtensionRequiresSpirvVersion {
+            extension: ExtensionName::from("SPV_KHR_ray_tracing_position_fetch"),
+            required_version: SpirvVersion::new(1, 4),
+            target_version: TargetEnv::Vulkan1_1.spirv_version(),
+        }
+    );
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_2)
+        .expect("extension should be accepted with SPIR-V 1.4+");
 }
 #[test]
 fn nv_shader_invocation_reorder_requires_spirv_1_4() {
@@ -7843,7 +7872,7 @@ fn extension_version_clamps_to_env_when_module_is_newer() {
     let mut builder = Builder::new();
     builder.set_version(1, 6);
     builder.capability(rspirv::spirv::Capability::Shader);
-    builder.extension("SPV_EXT_fragment_shader_interlock");
+    builder.extension("SPV_KHR_ray_tracing");
     builder.memory_model(
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::GLSL450,
@@ -7864,74 +7893,14 @@ fn extension_version_clamps_to_env_when_module_is_newer() {
     assert_eq!(
         error,
         ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
+            extension: ExtensionName::from("SPV_KHR_ray_tracing"),
             required_version: SpirvVersion::new(1, 4),
             target_version: TargetEnv::Vulkan1_0.spirv_version(),
         }
     );
 }
 #[test]
-fn fragment_shader_interlock_extension_requires_spirv_1_4() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_EXT_fragment_shader_interlock\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("fragment shader interlock should require SPIR-V 1.4");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_EXT_fragment_shader_interlock"),
-            required_version: SpirvVersion::new(1, 4),
-            target_version: TargetEnv::Vulkan1_0.spirv_version(),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.4+");
-}
-#[test]
-fn fragment_invocation_density_extension_requires_spirv_1_5() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_EXT_fragment_invocation_density\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("fragment invocation density requires SPIR-V 1.5");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_EXT_fragment_invocation_density"),
-            required_version: SpirvVersion::new(1, 5),
-            target_version: TargetEnv::Vulkan1_0.spirv_version(),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.5+");
-}
-#[test]
-fn physical_storage_buffer_extension_requires_spirv_1_4() {
+fn physical_storage_buffer_extension_requires_spirv_1_3() {
     let text = [
         "OpCapability Shader",
         "OpExtension \"SPV_KHR_physical_storage_buffer\"",
@@ -7947,156 +7916,17 @@ fn physical_storage_buffer_extension_requires_spirv_1_4() {
     let error = text
         .as_str()
         .validate(TargetEnv::Vulkan1_0)
-        .expect_err("physical storage buffer requires SPIR-V 1.4");
+        .expect_err("physical storage buffer requires SPIR-V 1.3");
     assert_eq!(
         error,
         ValidationError::ExtensionRequiresSpirvVersion {
             extension: ExtensionName::from("SPV_KHR_physical_storage_buffer"),
-            required_version: SpirvVersion::new(1, 4),
-            target_version: TargetEnv::Vulkan1_0.spirv_version(),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.4+");
-}
-#[test]
-fn storage_buffer_storage_class_extension_requires_spirv_1_3() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Universal1_2)
-        .expect_err("storage buffer storage class requires SPIR-V 1.3");
-    // Either version gating or environment rejection is acceptable as long as the extension is disallowed.
-    match error {
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(
-                extension,
-                ExtensionName::from("SPV_KHR_storage_buffer_storage_class")
-            );
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, SpirvVersion::new(1, 2));
-        }
-        ValidationError::DisallowedExtension { extension, env } => {
-            assert_eq!(
-                extension,
-                ExtensionName::from("SPV_KHR_storage_buffer_storage_class")
-            );
-            assert_eq!(env, TargetEnv::Universal1_2);
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-    text.as_str()
-        .validate(TargetEnv::Universal1_6)
-        .expect("extension should be accepted with SPIR-V 1.3+");
-}
-#[test]
-fn variable_pointers_extension_requires_spirv_1_3() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_variable_pointers\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Universal1_2)
-        .expect_err("variable pointers requires SPIR-V 1.3");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_KHR_variable_pointers"),
-            required_version: SpirvVersion::new(1, 3),
-            target_version: SpirvVersion::new(1, 2),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Universal1_6)
-        .expect("extension should be accepted with SPIR-V 1.3+");
-}
-#[test]
-fn shader_clock_extension_requires_spirv_1_3() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_shader_clock\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("shader clock requires SPIR-V 1.3");
-    match error {
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_shader_clock"));
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.3+");
-}
-#[test]
-fn device_group_extension_requires_spirv_1_3() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_device_group\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("device group requires SPIR-V 1.3");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_KHR_device_group"),
             required_version: SpirvVersion::new(1, 3),
             target_version: TargetEnv::Vulkan1_0.spirv_version(),
         }
     );
     text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
+        .validate(TargetEnv::Vulkan1_1)
         .expect("extension should be accepted with SPIR-V 1.3+");
 }
 #[test]
@@ -16089,43 +15919,6 @@ fn universal_rejects_tile_shading_extension() {
         }
     );
 }
-#[test]
-fn tile_shading_extension_requires_spirv_1_6() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_QCOM_tile_shading\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text.as_str().validate(TargetEnv::Universal1_6).expect_err(
-        "tile shading extension should require SPIR-V 1.6 or be disallowed in Universal",
-    );
-    match error {
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_QCOM_tile_shading"));
-            assert_eq!(required_version, SpirvVersion::new(1, 6));
-            assert_eq!(target_version, TargetEnv::Universal1_6.spirv_version());
-        }
-        ValidationError::DisallowedExtension { extension, env } => {
-            assert_eq!(extension, ExtensionName::from("SPV_QCOM_tile_shading"));
-            assert_eq!(env, TargetEnv::Universal1_6);
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_4)
-        .expect("extension should be accepted with SPIR-V 1.6+");
-}
 fn module_with_extension(extension: &str) -> String {
     module_with_extension_custom(
         extension,
@@ -17299,56 +17092,6 @@ fn conditional_capability_requires_extension() {
     );
 }
 #[test]
-fn capability_requires_min_spirv_version() {
-    let text = [
-        "OpCapability Shader",
-        "OpCapability FragmentShadingRateKHR",
-        "OpExtension \"SPV_KHR_fragment_shading_rate\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("requires SPIR-V 1.5");
-    match error {
-        ValidationError::CapabilityRequiresSpirvVersion {
-            capability,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(
-                capability,
-                rspirv::spirv::Capability::FragmentShadingRateKHR
-            );
-            assert_eq!(required_version, SpirvVersion::new(1, 5));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(
-                extension,
-                ExtensionName::from("SPV_KHR_fragment_shading_rate")
-            );
-            assert_eq!(required_version, SpirvVersion::new(1, 5));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("succeeds on newer SPIR-V");
-}
-#[test]
 fn effective_spirv_version_clamps_to_env() {
     use super::effective_spirv_version;
     assert_eq!(
@@ -17359,53 +17102,6 @@ fn effective_spirv_version_clamps_to_env() {
         effective_spirv_version(TargetEnv::Vulkan1_3, SpirvVersion::new(1, 1)),
         SpirvVersion::new(1, 1)
     );
-}
-#[test]
-fn capability_version_check_respects_module_version() {
-    use rspirv::{binary::Assemble, dr::Builder};
-    let mut builder = Builder::new();
-    builder.set_version(1, 0);
-    builder.capability(rspirv::spirv::Capability::Shader);
-    builder.capability(rspirv::spirv::Capability::DeviceGroup);
-    builder.extension("SPV_KHR_device_group");
-    builder.memory_model(
-        rspirv::spirv::AddressingModel::Logical,
-        rspirv::spirv::MemoryModel::GLSL450,
-    );
-    let void = builder.type_void();
-    let fn_type = builder.type_function(void, std::iter::empty::<u32>());
-    builder
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
-        .unwrap();
-    builder.begin_block(None).unwrap();
-    builder.ret().unwrap();
-    builder.end_function().unwrap();
-    let words = builder.module().assemble();
-    let error = words
-        .as_slice()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("module version 1.0 should reject DeviceGroup (needs 1.3)");
-    match error {
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_device_group"));
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        ValidationError::CapabilityRequiresSpirvVersion {
-            capability,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(capability, rspirv::spirv::Capability::DeviceGroup);
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
 }
 #[test]
 fn capability_version_clamps_to_env_when_module_is_newer() {
@@ -20077,50 +19773,6 @@ fn arm_core_builtins_capability_requires_extension() {
         .expect("extension declared should satisfy CoreBuiltinsARM capability");
 }
 #[test]
-fn device_group_capability_requires_spirv_1_3() {
-    let text = [
-        "OpCapability Shader",
-        "OpCapability DeviceGroup",
-        "OpExtension \"SPV_KHR_device_group\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("DeviceGroup requires SPIR-V 1.3");
-    match error {
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_device_group"));
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        ValidationError::CapabilityRequiresSpirvVersion {
-            capability,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(capability, rspirv::spirv::Capability::DeviceGroup);
-            assert_eq!(required_version, SpirvVersion::new(1, 3));
-            assert_eq!(target_version, TargetEnv::Vulkan1_0.spirv_version());
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("DeviceGroup accepted on SPIR-V 1.3+");
-}
-#[test]
 fn device_group_extension_is_vulkan_only() {
     assert_vulkan_only_extension("SPV_KHR_device_group");
 }
@@ -20587,88 +20239,6 @@ fn operand_requires_extension() {
             required_capability: rspirv::spirv::Capability::VulkanMemoryModel
         }
     );
-}
-#[test]
-fn instruction_requires_spirv_version() {
-    use rspirv::{binary::Assemble, dr::Builder};
-    let mut builder = Builder::new();
-    builder.set_version(1, 3);
-    builder.capability(rspirv::spirv::Capability::Shader);
-    builder.capability(rspirv::spirv::Capability::RayQueryKHR);
-    builder.extension("SPV_KHR_ray_query");
-    builder.memory_model(
-        rspirv::spirv::AddressingModel::Logical,
-        rspirv::spirv::MemoryModel::GLSL450,
-    );
-    builder.type_ray_query_khr();
-    let module = builder.module();
-    let words = module.assemble();
-    let error = words
-        .as_slice()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect_err("Ray query requires SPIR-V 1.4+");
-    match error {
-        ValidationError::InstructionRequiresSpirvVersion {
-            opcode,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(opcode, rspirv::spirv::Op::TypeRayQueryKHR);
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 3));
-        }
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_query"));
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 3));
-        }
-        other => panic!("unexpected error {other:?}"),
-    }
-}
-#[test]
-fn instruction_version_clamps_to_env_when_module_is_newer() {
-    use rspirv::{binary::Assemble, dr::Builder};
-    let mut builder = Builder::new();
-    builder.set_version(1, 6);
-    builder.capability(rspirv::spirv::Capability::Shader);
-    builder.capability(rspirv::spirv::Capability::RayQueryKHR);
-    builder.extension("SPV_KHR_ray_query");
-    builder.memory_model(
-        rspirv::spirv::AddressingModel::Logical,
-        rspirv::spirv::MemoryModel::GLSL450,
-    );
-    builder.type_ray_query_khr();
-    let module = builder.module();
-    let words = module.assemble();
-    let error = words
-        .as_slice()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("Ray query requires SPIR-V 1.4+, env should clamp module version to 1.0");
-    match error {
-        ValidationError::InstructionRequiresSpirvVersion {
-            opcode,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(opcode, rspirv::spirv::Op::TypeRayQueryKHR);
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 0));
-        }
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_query"));
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 0));
-        }
-        other => panic!("unexpected error {other:?}"),
-    }
 }
 #[test]
 fn validate_module_rejects_zero_result_id() {

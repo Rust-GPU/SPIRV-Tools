@@ -232,32 +232,19 @@ pub fn extension_satisfied(
 pub fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option<SpirvVersion> {
     let normalized = extension.as_str().to_ascii_lowercase();
     match normalized.as_str() {
-        "spv_khr_vulkan_memory_model" | "spv_qcom_cooperative_matrix_conversion" => {
-            Some(SpirvVersion::new(1, 3))
-        }
-        "spv_khr_workgroup_memory_explicit_layout" => Some(SpirvVersion::new(1, 4)),
-        "spv_khr_physical_storage_buffer" => Some(SpirvVersion::new(1, 4)),
-        "spv_khr_ray_tracing" | "spv_khr_ray_query" | "spv_khr_ray_tracing_position_fetch" => {
-            Some(SpirvVersion::new(1, 4))
-        }
-        "spv_ext_mesh_shader"
+        "spv_khr_vulkan_memory_model"
+        | "spv_qcom_cooperative_matrix_conversion"
+        | "spv_khr_physical_storage_buffer" => Some(SpirvVersion::new(1, 3)),
+        "spv_khr_workgroup_memory_explicit_layout"
+        | "spv_ext_mesh_shader"
         | "spv_nv_shader_invocation_reorder"
+        | "spv_ext_shader_invocation_reorder"
         | "spv_nv_cluster_acceleration_structure"
         | "spv_nv_linear_swept_spheres"
-        | "spv_ext_shader_invocation_reorder"
         | "spv_qcom_image_processing"
-        | "spv_qcom_image_processing2" => Some(SpirvVersion::new(1, 4)),
-        "spv_qcom_tile_shading" => Some(SpirvVersion::new(1, 6)),
-        "spv_ext_fragment_shader_interlock" => Some(SpirvVersion::new(1, 4)),
-        "spv_khr_fragment_shading_rate" | "spv_ext_fragment_invocation_density" => {
-            Some(SpirvVersion::new(1, 5))
-        }
-        "spv_khr_storage_buffer_storage_class" | "spv_khr_variable_pointers" => {
-            Some(SpirvVersion::new(1, 3))
-        }
-        "spv_khr_shader_clock" | "spv_khr_device_group" => Some(SpirvVersion::new(1, 3)),
-        "spv_khr_maximal_reconvergence" => Some(SpirvVersion::new(1, 6)),
-        "spv_ext_descriptor_indexing" => Some(SpirvVersion::new(1, 5)),
+        | "spv_qcom_image_processing2"
+        | "spv_khr_ray_tracing"
+        | "spv_khr_ray_tracing_position_fetch" => Some(SpirvVersion::new(1, 4)),
         _ => None,
     }
 }
