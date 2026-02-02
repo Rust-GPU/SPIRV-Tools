@@ -1534,6 +1534,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Pass true_roots so that modules without side effects don't have everything removed
     cleanup_module(&mut output, &id_aliases, &true_roots);
 
+    // Step 8: Update the module's ID bound to account for any new IDs allocated
+    // during optimization (synthesized constants, phi nodes, materialized expressions).
+    // rspirv's assemble() uses the header bound as-is, so we must update it here.
+    if let Some(ref mut header) = output.header {
+        if next_id > header.bound {
+            header.bound = next_id;
+        }
+    }
+
     Ok(output)
 }
 
@@ -2255,5 +2264,57 @@ mod tests {
 
         let ret = Instruction::new(Op::Return, None, None, vec![]);
         assert!(!is_optimizable(&ret));
+    }
+
+    #[test]
+    fn optimized_module_id_bound_covers_all_ids() {
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, ExecutionMode, ExecutionModel, FunctionControl,
+            MemoryModel,
+        };
+
+        // Build a module with arithmetic that will be constant-folded,
+        // potentially creating new IDs for synthesized constants.
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(int, vec![]);
+        let func = b
+            .begin_function(int, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        let c4 = b.constant_bit32(int, 4);
+        let c5 = b.constant_bit32(int, 5);
+        let c2 = b.constant_bit32(int, 2);
+        let add = b.i_add(int, None, c4, c5).expect("add");
+        let sub = b.i_sub(int, None, add, c2).expect("sub");
+        b.ret_value(sub).unwrap();
+        b.end_function().unwrap();
+        b.entry_point(ExecutionModel::GLCompute, func, "main", []);
+        b.execution_mode(func, ExecutionMode::LocalSize, [1, 1, 1]);
+
+        let module = b.module();
+        let optimized = optimize_module_direct(&module).expect("optimization should succeed");
+
+        // Verify the header bound covers all IDs in the module
+        let bound = optimized.header.as_ref().expect("header").bound;
+        let max_id = optimized
+            .all_inst_iter()
+            .filter_map(|inst| inst.result_id)
+            .max()
+            .unwrap_or(0);
+        assert!(
+            bound > max_id,
+            "ID bound ({bound}) must be greater than max used ID ({max_id})"
+        );
+
+        // Also verify the assembled output parses without error
+        let words = optimized.assemble();
+        let mut loader = rspirv::dr::Loader::new();
+        rspirv::binary::parse_words(&words, &mut loader)
+            .expect("optimized module should parse successfully");
     }
 }
