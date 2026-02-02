@@ -400,9 +400,7 @@ impl<'a> Parser<'a> {
                         OperandValue::Id(IdRef::new(id, span))
                     }
                 }
-                OperandKind::LiteralInteger => {
-                    OperandValue::Literal(parse_integer(word, span)?)
-                }
+                OperandKind::LiteralInteger => OperandValue::Literal(parse_integer(word, span)?),
                 OperandKind::LiteralContextDependentNumber => {
                     // Context-dependent numbers may be integer or float text
                     // depending on the result type (e.g. OpConstant %float 42.5).

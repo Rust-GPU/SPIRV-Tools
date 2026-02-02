@@ -7736,10 +7736,7 @@ mod tests {
             .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(
-            check.is_ok(),
-            "Load after storing Undef should give Undef"
-        );
+        assert!(check.is_ok(), "Load after storing Undef should give Undef");
     }
 
     // =========================================================================
@@ -7765,7 +7762,10 @@ mod tests {
             .unwrap();
 
         let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-        assert!(check.is_ok(), "Sym should be equivalent to LoopInvariant(Sym)");
+        assert!(
+            check.is_ok(),
+            "Sym should be equivalent to LoopInvariant(Sym)"
+        );
     }
 
     #[test]

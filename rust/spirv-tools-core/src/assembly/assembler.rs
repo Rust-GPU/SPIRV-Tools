@@ -6085,7 +6085,10 @@ OpFunctionEnd"#;
             "%float = OpTypeFloat 32",
             "%c = OpConstant %float 1000000",
         ]);
-        assert_eq!(operand, dr::Operand::LiteralBit32(1_000_000.0_f32.to_bits()));
+        assert_eq!(
+            operand,
+            dr::Operand::LiteralBit32(1_000_000.0_f32.to_bits())
+        );
     }
 
     #[test]
@@ -6325,10 +6328,7 @@ OpFunctionEnd"#;
         let mut all_ids = std::collections::HashSet::new();
         for function in &module.functions {
             let func_id = function.def.as_ref().unwrap().result_id.unwrap();
-            assert!(
-                all_ids.insert(func_id),
-                "Duplicate function ID: {func_id}"
-            );
+            assert!(all_ids.insert(func_id), "Duplicate function ID: {func_id}");
             for param in &function.parameters {
                 let param_id = param.result_id.unwrap();
                 assert!(
@@ -6339,10 +6339,7 @@ OpFunctionEnd"#;
             for block in &function.blocks {
                 if let Some(label) = &block.label {
                     let label_id = label.result_id.unwrap();
-                    assert!(
-                        all_ids.insert(label_id),
-                        "Duplicate label ID: {label_id}"
-                    );
+                    assert!(all_ids.insert(label_id), "Duplicate label ID: {label_id}");
                 }
             }
         }
