@@ -207,8 +207,8 @@ fn conditional_extension_rejected_when_disallowed() {
     let mut func = rspirv::dr::Function::new();
     func.def = Some(Instruction::new(
         Op::Function,
-        Some(3),
         Some(1),
+        Some(3),
         vec![
             rspirv::dr::Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
             rspirv::dr::Operand::IdRef(2),
@@ -15587,9 +15587,9 @@ fn conditional_entry_point_accepts_execution_modes() {
         op(3, 14), // OpMemoryModel Logical GLSL450
         0,
         1,
-        op(6, 6249), // OpConditionalEntryPointINTEL %5 Vertex %7 "main"
+        op(6, 6249), // OpConditionalEntryPointINTEL %5 Fragment %7 "main"
         5,
-        rspirv::spirv::ExecutionModel::Vertex as u32,
+        rspirv::spirv::ExecutionModel::Fragment as u32,
         7,
         0x6e69_616d,
         0,
@@ -29388,4 +29388,1464 @@ fn convert_s_to_f_8bit_input_with_int8_passes() {
     let binary = assemble_text(&text).expect("assemble");
     validate_module(&binary, TargetEnv::Universal1_6)
         .expect("ConvertSToF with 8-bit input with Int8 capability should pass");
+}
+
+// =============================================================================
+// Execution Mode: Fragment-only mode tests (StencilRefReplacingEXT, PostDepthCoverage)
+// =============================================================================
+
+#[test]
+fn stencil_ref_replacing_ext_on_vertex_rejected() {
+    // StencilRefReplacingEXT is Fragment-only; using it on a Vertex entry point should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(10));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::StencilExportEXT)],
+    ));
+    module.extensions.push(Instruction::new(
+        Op::Extension,
+        None,
+        None,
+        vec![Operand::LiteralString(
+            "SPV_EXT_shader_stencil_export".to_string(),
+        )],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Vertex),
+            Operand::IdRef(3),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(3),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::StencilRefReplacingEXT),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(2),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(3),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(4), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel { .. }
+        ),
+        "Expected ExecutionModeRequiresExecutionModel, got: {error:?}"
+    );
+}
+
+#[test]
+fn stencil_ref_replacing_ext_on_fragment_accepted() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(10));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::StencilExportEXT)],
+    ));
+    module.extensions.push(Instruction::new(
+        Op::Extension,
+        None,
+        None,
+        vec![Operand::LiteralString(
+            "SPV_EXT_shader_stencil_export".to_string(),
+        )],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Fragment),
+            Operand::IdRef(3),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(3),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(3),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::StencilRefReplacingEXT),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(2),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(3),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(4), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("StencilRefReplacingEXT on Fragment should be accepted");
+}
+
+#[test]
+fn post_depth_coverage_on_vertex_rejected() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(10));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::SampleMaskPostDepthCoverage)],
+    ));
+    module.extensions.push(Instruction::new(
+        Op::Extension,
+        None,
+        None,
+        vec![Operand::LiteralString(
+            "SPV_KHR_post_depth_coverage".to_string(),
+        )],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Vertex),
+            Operand::IdRef(3),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(3),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::PostDepthCoverage),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(2),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(3),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(4), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel { .. }
+        ),
+        "Expected ExecutionModeRequiresExecutionModel, got: {error:?}"
+    );
+}
+
+// =============================================================================
+// Lifetime Rule tests
+// =============================================================================
+
+#[test]
+fn lifetime_start_valid_function_pointer() {
+    // OpLifetimeStart with a Function storage class pointer and size 0 should pass
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(5),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeInt 32 0
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    // %3 = OpTypePointer Function %2
+    module.types_global_values.push(Instruction::new(
+        Op::TypePointer,
+        Some(3),
+        None,
+        vec![
+            Operand::StorageClass(rspirv::spirv::StorageClass::Function),
+            Operand::IdRef(2),
+        ],
+    ));
+    // %4 = OpTypeFunction %1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(4),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(5),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(4),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    // %7 = OpVariable %3 Function
+    block.instructions.push(Instruction::new(
+        Op::Variable,
+        Some(3),
+        Some(7),
+        vec![Operand::StorageClass(rspirv::spirv::StorageClass::Function)],
+    ));
+    // OpLifetimeStart %7 0
+    block.instructions.push(Instruction::new(
+        Op::LifetimeStart,
+        None,
+        None,
+        vec![Operand::IdRef(7), Operand::LiteralBit32(0)],
+    ));
+    // OpLifetimeStop %7 0
+    block.instructions.push(Instruction::new(
+        Op::LifetimeStop,
+        None,
+        None,
+        vec![Operand::IdRef(7), Operand::LiteralBit32(0)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("Valid OpLifetimeStart/Stop with Function pointer should pass");
+}
+
+#[test]
+fn lifetime_start_non_function_storage_class_rejected() {
+    // OpLifetimeStart with non-Function storage class should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(5),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeInt 32 0
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    // %3 = OpTypePointer CrossWorkgroup %2  (NOT Function)
+    module.types_global_values.push(Instruction::new(
+        Op::TypePointer,
+        Some(3),
+        None,
+        vec![
+            Operand::StorageClass(rspirv::spirv::StorageClass::CrossWorkgroup),
+            Operand::IdRef(2),
+        ],
+    ));
+    // %4 = OpTypeFunction %1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(4),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // %8 = OpVariable %3 CrossWorkgroup (global variable)
+    module.types_global_values.push(Instruction::new(
+        Op::Variable,
+        Some(3),
+        Some(8),
+        vec![Operand::StorageClass(
+            rspirv::spirv::StorageClass::CrossWorkgroup,
+        )],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(5),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(4),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    // OpLifetimeStart %8 0  (using CrossWorkgroup pointer - should fail)
+    block.instructions.push(Instruction::new(
+        Op::LifetimeStart,
+        None,
+        None,
+        vec![Operand::IdRef(8), Operand::LiteralBit32(0)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ValidationError::LifetimePointerNotFunctionStorageClass { .. }
+        ),
+        "Expected LifetimePointerNotFunctionStorageClass, got: {error:?}"
+    );
+}
+
+// =============================================================================
+// Group Operation tests
+// =============================================================================
+
+#[test]
+fn group_any_valid_kernel_module() {
+    // OpGroupAny with bool result and bool predicate should pass
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op, Scope};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Groups)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(7),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    // Types
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeBool, Some(2), None, vec![]));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(3),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // Scope constant: %4 = OpConstant %u32 Workgroup(2)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(4),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(4),
+        Some(5),
+        vec![Operand::LiteralBit32(Scope::Workgroup as u32)],
+    ));
+    // Bool constant for predicate
+    module
+        .types_global_values
+        .push(Instruction::new(Op::ConstantTrue, Some(2), Some(6), vec![]));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(7),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(8), None, vec![]));
+    // %9 = OpGroupAny %bool %scope %predicate
+    block.instructions.push(Instruction::new(
+        Op::GroupAny,
+        Some(2),
+        Some(9),
+        vec![Operand::IdRef(5), Operand::IdRef(6)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Universal1_6).expect("Valid OpGroupAny should pass");
+}
+
+#[test]
+fn group_any_non_bool_result_rejected() {
+    // OpGroupAny with non-bool result should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op, Scope};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Groups)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(8),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeBool, Some(2), None, vec![]));
+    // %3 = OpTypeInt 32 0  (NOT bool - will be used as result type)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(4),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // Scope constant
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(5),
+        vec![Operand::LiteralBit32(Scope::Workgroup as u32)],
+    ));
+    // Bool constant for predicate
+    module
+        .types_global_values
+        .push(Instruction::new(Op::ConstantTrue, Some(2), Some(6), vec![]));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(8),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(4),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(9), None, vec![]));
+    // %10 = OpGroupAny %int %scope %predicate  (int result, should fail)
+    block.instructions.push(Instruction::new(
+        Op::GroupAny,
+        Some(3),
+        Some(10),
+        vec![Operand::IdRef(5), Operand::IdRef(6)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(error, ValidationError::GroupResultMustBeBoolScalar { .. }),
+        "Expected GroupResultMustBeBoolScalar, got: {error:?}"
+    );
+}
+
+#[test]
+fn group_fadd_valid_kernel_module() {
+    // OpGroupFAdd with float result and matching X should pass
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{
+        AddressingModel, Capability, ExecutionModel, GroupOperation, MemoryModel, Op, Scope,
+    };
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Groups)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(8),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %3 = OpTypeInt 32 0
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(4),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // Scope constant
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(5),
+        vec![Operand::LiteralBit32(Scope::Workgroup as u32)],
+    ));
+    // Float constant for X
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(6),
+        vec![Operand::LiteralBit32(0x3f800000)], // 1.0f
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(8),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(4),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(9), None, vec![]));
+    // %10 = OpGroupFAdd %float %scope Reduce %x
+    block.instructions.push(Instruction::new(
+        Op::GroupFAdd,
+        Some(2),
+        Some(10),
+        vec![
+            Operand::IdRef(5),
+            Operand::GroupOperation(GroupOperation::Reduce),
+            Operand::IdRef(6),
+        ],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Universal1_6).expect("Valid OpGroupFAdd should pass");
+}
+
+#[test]
+fn group_fadd_non_float_result_rejected() {
+    // OpGroupFAdd with int result should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{
+        AddressingModel, Capability, ExecutionModel, GroupOperation, MemoryModel, Op, Scope,
+    };
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Kernel)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Addresses)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Groups)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Physical32),
+            Operand::MemoryModel(MemoryModel::OpenCL),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Kernel),
+            Operand::IdRef(8),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %3 = OpTypeInt 32 0 (will be used as WRONG result type)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(4),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // Scope constant
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(5),
+        vec![Operand::LiteralBit32(Scope::Workgroup as u32)],
+    ));
+    // Float constant for X
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(2),
+        Some(6),
+        vec![Operand::LiteralBit32(0x3f800000)],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(8),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(4),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(9), None, vec![]));
+    // %10 = OpGroupFAdd %int %scope Reduce %x  (int result type - should fail)
+    block.instructions.push(Instruction::new(
+        Op::GroupFAdd,
+        Some(3),
+        Some(10),
+        vec![
+            Operand::IdRef(5),
+            Operand::GroupOperation(GroupOperation::Reduce),
+            Operand::IdRef(6),
+        ],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ValidationError::GroupResultMustBeFloatScalarOrVector { .. }
+        ),
+        "Expected GroupResultMustBeFloatScalarOrVector, got: {error:?}"
+    );
+}
+
+// =============================================================================
+// Dot Product tests
+// =============================================================================
+
+#[test]
+fn sdot_valid_with_int_vectors() {
+    // OpSDot with int scalar result and matching int vectors should pass
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProduct)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProductInput4x8Bit)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Int8)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Fragment),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeInt 32 1 (signed)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(1)],
+    ));
+    // %3 = OpTypeInt 8 1 (signed 8-bit)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(8), Operand::LiteralBit32(1)],
+    ));
+    // %4 = OpTypeVector %3 4
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        Some(4),
+        None,
+        vec![Operand::IdRef(3), Operand::LiteralBit32(4)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(5),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    // Constants
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(6),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(7),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(8),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(5),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(11), None, vec![]));
+    // %12 = OpSDot %i32 %vec1 %vec2
+    block.instructions.push(Instruction::new(
+        Op::SDot,
+        Some(2),
+        Some(12),
+        vec![Operand::IdRef(7), Operand::IdRef(8)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    validate_module(&binary, TargetEnv::Universal1_6)
+        .expect("Valid OpSDot with int vectors should pass");
+}
+
+#[test]
+fn sdot_non_int_result_rejected() {
+    // OpSDot with float result type should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProduct)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProductInput4x8Bit)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Int8)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Fragment),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeFloat 32 (WRONG - should be int)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %3 = OpTypeInt 8 1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(8), Operand::LiteralBit32(1)],
+    ));
+    // %4 = OpTypeVector %3 4
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        Some(4),
+        None,
+        vec![Operand::IdRef(3), Operand::LiteralBit32(4)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(5),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(6),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(7),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(8),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(5),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(11), None, vec![]));
+    // %12 = OpSDot %float %vec1 %vec2  (float result - should fail)
+    block.instructions.push(Instruction::new(
+        Op::SDot,
+        Some(2),
+        Some(12),
+        vec![Operand::IdRef(7), Operand::IdRef(8)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(error, ValidationError::DotProductResultNotIntScalar { .. }),
+        "Expected DotProductResultNotIntScalar, got: {error:?}"
+    );
+}
+
+#[test]
+fn udot_signed_result_rejected() {
+    // OpUDot requires unsigned result type
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{AddressingModel, Capability, ExecutionModel, MemoryModel, Op};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProduct)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::DotProductInput4x8Bit)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Int8)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(AddressingModel::Logical),
+            Operand::MemoryModel(MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(ExecutionModel::Fragment),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(1), None, vec![]));
+    // %2 = OpTypeInt 32 1 (SIGNED - OpUDot requires unsigned)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(2),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(1)],
+    ));
+    // %3 = OpTypeInt 8 0 (unsigned 8-bit)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(3),
+        None,
+        vec![Operand::LiteralBit32(8), Operand::LiteralBit32(0)],
+    ));
+    // %4 = OpTypeVector %3 4
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        Some(4),
+        None,
+        vec![Operand::IdRef(3), Operand::LiteralBit32(4)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(5),
+        None,
+        vec![Operand::IdRef(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(6),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(7),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(8),
+        vec![
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+            Operand::IdRef(6),
+        ],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(5),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(11), None, vec![]));
+    // %12 = OpUDot %i32_signed %vec1 %vec2  (signed result - should fail)
+    block.instructions.push(Instruction::new(
+        Op::UDot,
+        Some(2),
+        Some(12),
+        vec![Operand::IdRef(7), Operand::IdRef(8)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ValidationError::DotProductResultNotUnsignedIntScalar { .. }
+        ),
+        "Expected DotProductResultNotUnsignedIntScalar, got: {error:?}"
+    );
 }
