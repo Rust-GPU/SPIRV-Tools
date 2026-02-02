@@ -1371,16 +1371,27 @@ impl<'a> AssemblyTranslator<'a> {
             return;
         };
 
-        let type_id = self.module_builder.resolve_type_id(result_type);
-        match self.builder.function_parameter(type_id) {
-            Ok(parameter_id) => {
-                self.module_builder.bind_result_id(result_id, parameter_id);
-                self.module_builder
-                    .note_numeric_result_type(parameter_id, type_id);
-                self.record_function_param();
-            }
-            Err(error) => self.emit_builder_error(error, opcode_pos),
-        }
+        let Some(selected_function) = self.builder.selected_function() else {
+            self.emit_builder_error(BuildError::DetachedFunctionParameter, opcode_pos);
+            return;
+        };
+
+        // Use bind_typed_result to allocate IDs from the module_builder's counter,
+        // rather than Builder::function_parameter() which uses Builder's separate
+        // next_id counter and can produce duplicate IDs.
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::FunctionParameter,
+            Some(type_id),
+            Some(result_id),
+            vec![],
+        );
+        self.builder.module_mut().functions[selected_function]
+            .parameters
+            .push(inst);
+        self.record_function_param();
     }
 
     fn translate_label(&mut self, instruction: &ParsedInstruction<'a>) {
@@ -6244,5 +6255,96 @@ OpFunctionEnd"#;
             constant.operands.first().unwrap(),
             &dr::Operand::LiteralBit32(42.0_f32.to_bits())
         );
+    }
+
+    #[test]
+    fn function_parameter_gets_unique_id_from_function() {
+        // Regression test: OpFunctionParameter must get a different result ID
+        // than its parent OpFunction. Previously, the assembler used Builder's
+        // internal next_id counter (via function_parameter()) which was
+        // independent of the module_builder's counter, causing collisions.
+        let source = [
+            "%void = OpTypeVoid",
+            "%uint = OpTypeInt 32 0",
+            "%fn_type = OpTypeFunction %void %uint",
+            "OpMemoryModel Logical GLSL450",
+            "%func = OpFunction %void None %fn_type",
+            "%param = OpFunctionParameter %uint",
+            "%entry = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| {
+                parse_instruction(line)
+                    .unwrap_or_else(|err| panic!("failed to parse '{line}': {err:?}"))
+            })
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let function = module.functions.first().expect("function");
+        let func_id = function.def.as_ref().unwrap().result_id.unwrap();
+        let param = function.parameters.first().expect("parameter");
+        let param_id = param.result_id.unwrap();
+        assert_ne!(
+            func_id, param_id,
+            "OpFunction and OpFunctionParameter must have different result IDs, \
+             but both got {func_id}"
+        );
+    }
+
+    #[test]
+    fn multiple_functions_with_parameters_have_unique_ids() {
+        // Ensure that across multiple functions, all result IDs are unique.
+        let source = [
+            "%void = OpTypeVoid",
+            "%uint = OpTypeInt 32 0",
+            "%fn_type = OpTypeFunction %void %uint",
+            "OpMemoryModel Logical GLSL450",
+            "%func1 = OpFunction %void None %fn_type",
+            "%param1 = OpFunctionParameter %uint",
+            "%entry1 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+            "%func2 = OpFunction %void None %fn_type",
+            "%param2 = OpFunctionParameter %uint",
+            "%entry2 = OpLabel",
+            "OpReturn",
+            "OpFunctionEnd",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| {
+                parse_instruction(line)
+                    .unwrap_or_else(|err| panic!("failed to parse '{line}': {err:?}"))
+            })
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let mut all_ids = std::collections::HashSet::new();
+        for function in &module.functions {
+            let func_id = function.def.as_ref().unwrap().result_id.unwrap();
+            assert!(
+                all_ids.insert(func_id),
+                "Duplicate function ID: {func_id}"
+            );
+            for param in &function.parameters {
+                let param_id = param.result_id.unwrap();
+                assert!(
+                    all_ids.insert(param_id),
+                    "Duplicate parameter ID: {param_id}"
+                );
+            }
+            for block in &function.blocks {
+                if let Some(label) = &block.label {
+                    let label_id = label.result_id.unwrap();
+                    assert!(
+                        all_ids.insert(label_id),
+                        "Duplicate label ID: {label_id}"
+                    );
+                }
+            }
+        }
     }
 }
