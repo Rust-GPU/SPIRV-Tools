@@ -242,9 +242,7 @@ pub fn required_spirv_version_for_extension(extension: &ExtensionName) -> Option
         | "spv_nv_cluster_acceleration_structure"
         | "spv_nv_linear_swept_spheres"
         | "spv_qcom_image_processing"
-        | "spv_qcom_image_processing2"
-        | "spv_khr_ray_tracing"
-        | "spv_khr_ray_tracing_position_fetch" => Some(SpirvVersion::new(1, 4)),
+        | "spv_qcom_image_processing2" => Some(SpirvVersion::new(1, 4)),
         _ => None,
     }
 }

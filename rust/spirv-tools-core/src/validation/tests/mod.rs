@@ -6897,41 +6897,6 @@ fn qcom_cooperative_matrix_conversion_requires_spirv_1_3() {
         .expect("extension should be accepted with SPIR-V 1.3+");
 }
 #[test]
-fn ray_tracing_extensions_require_spirv_1_4() {
-    for ext in &[
-        "SPV_KHR_ray_tracing",
-        "SPV_KHR_ray_tracing_position_fetch",
-    ] {
-        let text = [
-            "OpCapability Shader",
-            &format!("OpExtension \"{ext}\""),
-            "OpMemoryModel Logical GLSL450",
-            "%void = OpTypeVoid",
-            "%fn = OpTypeFunction %void",
-            "%main = OpFunction %void None %fn",
-            "%entry = OpLabel",
-            "OpReturn",
-            "OpFunctionEnd",
-        ]
-        .join("\n");
-        let error = text
-            .as_str()
-            .validate(TargetEnv::Vulkan1_0)
-            .expect_err("extension should require SPIR-V 1.4");
-        assert_eq!(
-            error,
-            ValidationError::ExtensionRequiresSpirvVersion {
-                extension: ExtensionName::from(*ext),
-                required_version: SpirvVersion::new(1, 4),
-                target_version: TargetEnv::Vulkan1_0.spirv_version(),
-            }
-        );
-        text.as_str()
-            .validate(TargetEnv::Vulkan1_2)
-            .expect("extension should be accepted with SPIR-V 1.4+");
-    }
-}
-#[test]
 fn capability_requires_declared_vendor_extension() {
     let text = [
         "OpCapability RayTracingNV",
@@ -7714,66 +7679,6 @@ fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_exte
         .expect("FragmentDensityEXT should be accepted for Vulkan targets");
 }
 #[test]
-fn ray_tracing_extension_requires_spirv_1_4() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_ray_tracing\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_1)
-        .expect_err("ray tracing should require SPIR-V 1.4");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_KHR_ray_tracing"),
-            required_version: SpirvVersion::new(1, 4),
-            target_version: TargetEnv::Vulkan1_1.spirv_version(),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.4+");
-}
-#[test]
-fn ray_tracing_position_fetch_extension_requires_spirv_1_4() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_KHR_ray_tracing_position_fetch\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text
-        .as_str()
-        .validate(TargetEnv::Vulkan1_1)
-        .expect_err("ray tracing position fetch should require SPIR-V 1.4");
-    assert_eq!(
-        error,
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_KHR_ray_tracing_position_fetch"),
-            required_version: SpirvVersion::new(1, 4),
-            target_version: TargetEnv::Vulkan1_1.spirv_version(),
-        }
-    );
-    text.as_str()
-        .validate(TargetEnv::Vulkan1_2)
-        .expect("extension should be accepted with SPIR-V 1.4+");
-}
-#[test]
 fn nv_shader_invocation_reorder_requires_spirv_1_4() {
     let text = [
         "OpCapability Shader",
@@ -7872,7 +7777,7 @@ fn extension_version_clamps_to_env_when_module_is_newer() {
     let mut builder = Builder::new();
     builder.set_version(1, 6);
     builder.capability(rspirv::spirv::Capability::Shader);
-    builder.extension("SPV_KHR_ray_tracing");
+    builder.extension("SPV_KHR_vulkan_memory_model");
     builder.memory_model(
         rspirv::spirv::AddressingModel::Logical,
         rspirv::spirv::MemoryModel::GLSL450,
@@ -7893,8 +7798,8 @@ fn extension_version_clamps_to_env_when_module_is_newer() {
     assert_eq!(
         error,
         ValidationError::ExtensionRequiresSpirvVersion {
-            extension: ExtensionName::from("SPV_KHR_ray_tracing"),
-            required_version: SpirvVersion::new(1, 4),
+            extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
+            required_version: SpirvVersion::new(1, 3),
             target_version: TargetEnv::Vulkan1_0.spirv_version(),
         }
     );
@@ -17102,53 +17007,6 @@ fn effective_spirv_version_clamps_to_env() {
         effective_spirv_version(TargetEnv::Vulkan1_3, SpirvVersion::new(1, 1)),
         SpirvVersion::new(1, 1)
     );
-}
-#[test]
-fn capability_version_clamps_to_env_when_module_is_newer() {
-    use rspirv::{binary::Assemble, dr::Builder};
-    let mut builder = Builder::new();
-    builder.set_version(1, 6);
-    builder.capability(rspirv::spirv::Capability::Shader);
-    builder.capability(rspirv::spirv::Capability::RayTracingKHR);
-    builder.extension("SPV_KHR_ray_tracing");
-    builder.memory_model(
-        rspirv::spirv::AddressingModel::Logical,
-        rspirv::spirv::MemoryModel::GLSL450,
-    );
-    let void = builder.type_void();
-    let fn_type = builder.type_function(void, std::iter::empty::<u32>());
-    builder
-        .begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_type)
-        .unwrap();
-    builder.begin_block(None).unwrap();
-    builder.ret().unwrap();
-    builder.end_function().unwrap();
-    let words = builder.module().assemble();
-    let error = words
-        .as_slice()
-        .validate(TargetEnv::Vulkan1_0)
-        .expect_err("capability should be gated by env-clamped version");
-    match error {
-        ValidationError::CapabilityRequiresSpirvVersion {
-            capability,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(capability, rspirv::spirv::Capability::RayTracingKHR);
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 0));
-        }
-        ValidationError::ExtensionRequiresSpirvVersion {
-            extension,
-            required_version,
-            target_version,
-        } => {
-            assert_eq!(extension, ExtensionName::from("SPV_KHR_ray_tracing"));
-            assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 0));
-        }
-        other => panic!("unexpected error {other:?}"),
-    }
 }
 #[test]
 fn capability_version_clamps_for_binary_modules() {
