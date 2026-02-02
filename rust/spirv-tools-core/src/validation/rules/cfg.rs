@@ -21,12 +21,13 @@
 use std::collections::{HashMap, HashSet};
 
 use rspirv::dr::Operand;
-use rspirv::spirv::{ExecutionMode, LoopControl, Op, SelectionControl};
+use rspirv::spirv::{Capability, ExecutionMode, LoopControl, Op, SelectionControl};
 
 use crate::validation::cfg_analysis::{get_block_label, ControlFlowGraph};
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
-use crate::validation::types::{Id, MergeTargetKind};
+use crate::validation::type_ext::TypeInstructionExt;
+use crate::validation::types::{Id, MergeTargetKind, ResultId};
 use crate::validation::ValidationResult;
 use crate::version::SpirvVersion;
 
@@ -1600,6 +1601,80 @@ impl ValidationRule for MaximalReconvergencePredecessorsRule {
     }
 }
 
+// ============================================================================
+// Lifetime Rule
+// ============================================================================
+
+/// Validates OpLifetimeStart and OpLifetimeStop instructions.
+///
+/// Checks:
+/// - Pointer operand type must be OpTypePointer
+/// - Pointer must be in Function storage class
+/// - If size is non-zero, Addresses capability must be declared
+pub struct LifetimeRule;
+
+impl ValidationRule for LifetimeRule {
+    fn name(&self) -> &'static str {
+        "lifetime"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for func in &ctx.module.functions {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::LifetimeStart
+                        && inst.class.opcode != Op::LifetimeStop
+                    {
+                        continue;
+                    }
+
+                    let opcode = inst.class.opcode;
+
+                    // Get the pointer operand (operand 0)
+                    let pointer_id = match inst.operands.first() {
+                        Some(Operand::IdRef(id)) => *id,
+                        _ => continue,
+                    };
+
+                    // Look up the pointer's type instruction
+                    if let Some(type_inst) = ResultId::try_from(pointer_id)
+                        .ok()
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                        .and_then(|def| def.result_type)
+                        .and_then(|tid| ResultId::try_from(tid).ok())
+                        .and_then(|rid| ctx.definitions.get(&rid))
+                    {
+                        if !type_inst.is_pointer_type() {
+                            return Err(
+                                ValidationError::LifetimePointerNotTypePointer { opcode }.into()
+                            );
+                        }
+                        if type_inst.pointer_storage_class()
+                            != Some(rspirv::spirv::StorageClass::Function)
+                        {
+                            return Err(ValidationError::LifetimePointerNotFunctionStorageClass {
+                                opcode,
+                            }
+                            .into());
+                        }
+                    }
+
+                    // Check size (operand 1) - if non-zero, Addresses must be declared
+                    if let Some(Operand::LiteralBit32(size)) = inst.operands.get(1) {
+                        if *size != 0 && !ctx.has_capability(Capability::Addresses) {
+                            return Err(ValidationError::LifetimeNonZeroSizeRequiresAddresses {
+                                opcode,
+                            }
+                            .into());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Static rule instances
 static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
 static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
@@ -1613,6 +1688,7 @@ static SELECTION_CONTROL_RULE: SelectionControlRule = SelectionControlRule;
 static BRANCH_CONDITIONAL_RULE: BranchConditionalRule = BranchConditionalRule;
 static MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE: MaximalReconvergencePredecessorsRule =
     MaximalReconvergencePredecessorsRule;
+static LIFETIME_RULE: LifetimeRule = LifetimeRule;
 
 /// Returns all CFG validation rules.
 pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
@@ -1628,5 +1704,6 @@ pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
         &SELECTION_CONTROL_RULE,
         &BRANCH_CONDITIONAL_RULE,
         &MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE,
+        &LIFETIME_RULE,
     ]
 }

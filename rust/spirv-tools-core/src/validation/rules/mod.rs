@@ -66,6 +66,8 @@
 //! - [`primitives`]: Primitive instruction validation rules
 //! - [`tensor_layout`]: NVIDIA tensor layout/view validation rules
 //! - [`hit_object`]: Hit object validation rules (SPV_NV_shader_execution_reorder)
+//! - [`group`]: Group operation validation rules (OpGroupAny, OpGroupAsyncCopy, etc.)
+//! - [`dot_product`]: Integer dot product validation rules (SPV_KHR_integer_dot_product)
 
 pub mod adjacency;
 pub mod annotation;
@@ -84,6 +86,7 @@ pub mod debug;
 pub mod debug_info;
 pub mod decorations;
 pub mod derivatives;
+pub mod dot_product;
 pub mod entry_points;
 pub mod execution_limitations;
 pub mod execution_modes;
@@ -91,6 +94,7 @@ pub mod ext_inst;
 pub mod extensions;
 pub mod functions;
 pub mod graph;
+pub mod group;
 pub mod hit_object;
 pub mod image;
 pub mod interfaces;

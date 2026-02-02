@@ -152,6 +152,45 @@ impl ValidationRule for ExecutionModesRule {
                                 .into());
                             }
                         }
+                        // Fragment-only execution modes
+                        ExecutionMode::PixelCenterInteger
+                        | ExecutionMode::OriginUpperLeft
+                        | ExecutionMode::OriginLowerLeft
+                        | ExecutionMode::EarlyFragmentTests
+                        | ExecutionMode::DepthReplacing
+                        | ExecutionMode::DepthGreater
+                        | ExecutionMode::DepthLess
+                        | ExecutionMode::DepthUnchanged
+                        | ExecutionMode::StencilRefReplacingEXT
+                        | ExecutionMode::NonCoherentColorAttachmentReadEXT
+                        | ExecutionMode::NonCoherentDepthAttachmentReadEXT
+                        | ExecutionMode::NonCoherentStencilAttachmentReadEXT
+                        | ExecutionMode::PixelInterlockOrderedEXT
+                        | ExecutionMode::PixelInterlockUnorderedEXT
+                        | ExecutionMode::SampleInterlockOrderedEXT
+                        | ExecutionMode::SampleInterlockUnorderedEXT
+                        | ExecutionMode::ShadingRateInterlockOrderedEXT
+                        | ExecutionMode::ShadingRateInterlockUnorderedEXT
+                        | ExecutionMode::PostDepthCoverage
+                        | ExecutionMode::EarlyAndLateFragmentTestsAMD
+                        | ExecutionMode::StencilRefUnchangedFrontAMD
+                        | ExecutionMode::StencilRefGreaterFrontAMD
+                        | ExecutionMode::StencilRefLessFrontAMD
+                        | ExecutionMode::StencilRefUnchangedBackAMD
+                        | ExecutionMode::StencilRefGreaterBackAMD
+                        | ExecutionMode::StencilRefLessBackAMD
+                        | ExecutionMode::RequireFullQuadsKHR => {
+                            let allowed = [ExecutionModel::Fragment];
+                            if !allowed.contains(model) {
+                                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                                    entry_point: function.into_inner(),
+                                    mode: execution_mode,
+                                    execution_model: *model,
+                                    allowed_models: allowed.to_vec(),
+                                }
+                                .into());
+                            }
+                        }
                         _ => {}
                     }
                 }

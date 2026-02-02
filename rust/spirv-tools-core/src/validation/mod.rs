@@ -361,6 +361,11 @@ pub(crate) fn validate_words_internal(
     run_rules(&validation_ctx, &rules::logicals::all_logical_rules())?;
     run_rules(&validation_ctx, &rules::memory::all_memory_rules())?;
     run_rules(&validation_ctx, &rules::types::all_type_rules())?;
+    run_rules(&validation_ctx, &rules::group::all_group_rules())?;
+    run_rules(
+        &validation_ctx,
+        &rules::dot_product::all_dot_product_rules(),
+    )?;
 
     // Box-based rules (return Vec<Box<dyn ValidationRule>>)
     run_boxed_rules(&validation_ctx, &rules::annotation::all_annotation_rules())?;

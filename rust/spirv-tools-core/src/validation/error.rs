@@ -7606,4 +7606,167 @@ pub enum ValidationError {
         /// The reason for incompatibility.
         reason: String,
     },
+
+    // ========== LIFETIME ==========
+    /// OpLifetimeStart/Stop pointer must be OpTypePointer.
+    #[error("{opcode:?} pointer operand type must be OpTypePointer")]
+    LifetimePointerNotTypePointer {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// OpLifetimeStart/Stop pointer must be in Function storage class.
+    #[error("{opcode:?} pointer operand must be in the Function storage class")]
+    LifetimePointerNotFunctionStorageClass {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// OpLifetimeStart/Stop non-zero size requires Addresses capability.
+    #[error("{opcode:?} size is non-zero, but the Addresses capability is not declared")]
+    LifetimeNonZeroSizeRequiresAddresses {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+
+    // ========== GROUP OPERATIONS ==========
+    /// Group operation result must be a boolean scalar type.
+    #[error("{opcode:?}: result must be a boolean scalar type")]
+    GroupResultMustBeBoolScalar {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group operation predicate must be a boolean scalar type.
+    #[error("{opcode:?}: predicate must be a boolean scalar type")]
+    GroupPredicateMustBeBoolScalar {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group broadcast result must be a scalar or vector of integer, float, or boolean.
+    #[error(
+        "{opcode:?}: result must be a scalar or vector of integer, floating-point, or boolean type"
+    )]
+    GroupBroadcastResultInvalidType {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group operation value type must match result type.
+    #[error("{opcode:?}: the type of Value must match the Result type")]
+    GroupValueTypeMismatch {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group float operation result must be float scalar or vector.
+    #[error("{opcode:?}: result must be a scalar or vector of float type")]
+    GroupResultMustBeFloatScalarOrVector {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group float operation X type must match result type.
+    #[error("{opcode:?}: the type of X must match the Result type")]
+    GroupXTypeMismatch {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Group int operation result must be int scalar or vector.
+    #[error("{opcode:?}: result must be a scalar or vector of integer type")]
+    GroupResultMustBeIntScalarOrVector {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// GroupAsyncCopy result type must be OpTypeEvent.
+    #[error("OpGroupAsyncCopy: the result type must be OpTypeEvent")]
+    GroupAsyncCopyResultNotEvent,
+    /// GroupAsyncCopy destination must be a pointer.
+    #[error("OpGroupAsyncCopy: expected Destination to be a pointer")]
+    GroupAsyncCopyDestNotPointer,
+    /// GroupAsyncCopy destination has invalid storage class.
+    #[error("OpGroupAsyncCopy: expected Destination to be a pointer with storage class Workgroup or CrossWorkgroup")]
+    GroupAsyncCopyDestInvalidStorageClass,
+    /// GroupAsyncCopy destination points to invalid type.
+    #[error("OpGroupAsyncCopy: expected Destination to be a pointer to scalar or vector of floating-point type or integer type")]
+    GroupAsyncCopyDestInvalidPointeeType,
+    /// GroupAsyncCopy source and destination types don't match.
+    #[error("OpGroupAsyncCopy: expected Destination and Source to be the same type")]
+    GroupAsyncCopyTypeMismatch,
+    /// GroupAsyncCopy storage class pairing invalid.
+    #[error("OpGroupAsyncCopy: {message}")]
+    GroupAsyncCopyStorageClassMismatch {
+        /// Detailed message.
+        message: String,
+    },
+    /// GroupAsyncCopy NumElements has wrong type.
+    #[error("OpGroupAsyncCopy: NumElements must be a {bit_width}-bit int scalar when Addressing Model is {addressing_model}")]
+    GroupAsyncCopyNumElementsInvalidType {
+        /// Expected bit width.
+        bit_width: u32,
+        /// The addressing model name.
+        addressing_model: String,
+    },
+    /// GroupAsyncCopy Stride has wrong type.
+    #[error("OpGroupAsyncCopy: Stride must be a {bit_width}-bit int scalar when Addressing Model is {addressing_model}")]
+    GroupAsyncCopyStrideInvalidType {
+        /// Expected bit width.
+        bit_width: u32,
+        /// The addressing model name.
+        addressing_model: String,
+    },
+    /// GroupAsyncCopy Event has wrong type.
+    #[error("OpGroupAsyncCopy: expected Event to be type OpTypeEvent")]
+    GroupAsyncCopyEventNotEvent,
+    /// GroupWaitEvents NumEvents has wrong type.
+    #[error("OpGroupWaitEvents: expected Num Events to be a 32-bit int scalar")]
+    GroupWaitEventsNumEventsInvalidType,
+    /// GroupWaitEvents Events List must be pointer.
+    #[error("OpGroupWaitEvents: expected Events List to be a pointer")]
+    GroupWaitEventsEventsListNotPointer,
+    /// GroupWaitEvents Events List must point to OpTypeEvent.
+    #[error("OpGroupWaitEvents: expected Events List to be a pointer to OpTypeEvent")]
+    GroupWaitEventsEventsListNotEventPointer,
+
+    // ========== DOT PRODUCT ==========
+    /// Dot product result must be int scalar type.
+    #[error("{opcode:?}: result must be an int scalar type")]
+    DotProductResultNotIntScalar {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Dot product accumulator type must match result type.
+    #[error("{opcode:?}: result must be the same as the Accumulator type")]
+    DotProductAccumulatorTypeMismatch {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Dot product result must be unsigned int scalar type.
+    #[error("{opcode:?}: result must be an unsigned int scalar type")]
+    DotProductResultNotUnsignedIntScalar {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Dot product vectors must be the same type.
+    #[error("{opcode:?}: 'Vector 1' and 'Vector 2' must be the same type")]
+    DotProductVectorTypeMismatch {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Dot product packed result width too small.
+    #[error("{opcode:?}: result width ({width}) must be greater than or equal to the packed vector width of 8")]
+    DotProductPackedResultWidthTooSmall {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+        /// Actual result width.
+        width: u32,
+    },
+    /// Dot product packed vectors missing PackedVectorFormat.
+    #[error("{opcode:?}: 'Vector 1' and 'Vector 2' are a 32-bit int scalar, but no Packed Vector Format was provided")]
+    DotProductPackedMissingFormat {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Dot product vector operand invalid.
+    #[error("{opcode:?}: {message}")]
+    DotProductVectorInvalid {
+        /// The offending opcode.
+        opcode: rspirv::spirv::Op,
+        /// Detailed error message.
+        message: String,
+    },
 }
