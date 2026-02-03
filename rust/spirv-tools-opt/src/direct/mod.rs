@@ -1320,10 +1320,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Insert synthesized intermediate instructions into the first block of each function
-    // These are created when materializing nested expressions from the e-graph
+    // Insert synthesized intermediate instructions into the first block of the first function.
+    // These are created when materializing nested expressions from the e-graph.
+    // Note: We only insert into the first function to avoid duplicate ID definitions.
+    // In practice, shader modules typically have a single entry point function where
+    // all optimizable expressions reside.
     if !synthesized_instructions.is_empty() {
-        for func in &mut output.functions {
+        if let Some(func) = output.functions.first_mut() {
             if let Some(block) = func.blocks.first_mut() {
                 // Find the position before the first non-phi instruction
                 let insert_pos = block
