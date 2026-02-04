@@ -14272,7 +14272,7 @@ fn block_layout_rejects_overlapping_offsets() {
                 rspirv::dr::Operand::IdRef(3),
                 rspirv::dr::Operand::LiteralBit32(1),
                 rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
-                rspirv::dr::Operand::LiteralBit32(2), // Overlaps with first member (uint is 4 bytes)
+                rspirv::dr::Operand::LiteralBit32(0), // Same offset as first member (overlapping)
             ],
         ),
     ]);
@@ -30746,4 +30746,109 @@ fn frag_size_ext_accepts_integer_vec2_type() {
     text.as_str()
         .validate(TargetEnv::Vulkan1_1)
         .expect("FragSizeEXT with vec2<u32> should be accepted");
+}
+#[test]
+fn nested_struct_misalignment_rejected() {
+    // An outer Block struct contains an inner struct. The inner struct has a
+    // member at offset 2, which is not aligned to 4 (uint alignment under
+    // std140). Recursive validation should catch this.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %inner 0 Offset 0",
+        "OpMemberDecorate %inner 1 Offset 2",
+        "%int = OpTypeInt 32 0",
+        "%inner = OpTypeStruct %int %int",
+        "%outer = OpTypeStruct %inner",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("nested struct with misaligned member should fail");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn nested_struct_correct_alignment_accepted() {
+    // Same structure but with proper alignment for the inner struct members.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %inner 0 Offset 0",
+        "OpMemberDecorate %inner 1 Offset 4",
+        "%int = OpTypeInt 32 0",
+        "%inner = OpTypeStruct %int %int",
+        "%outer = OpTypeStruct %inner",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("nested struct with correct alignment should pass");
+}
+#[test]
+fn nested_array_bad_stride_rejected() {
+    // An array-of-arrays: outer array contains inner arrays. Under std140
+    // (Uniform+Block), the inner array stride must be aligned to 16 (extended
+    // alignment rounding for arrays). A stride of 8 is not aligned to 16.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpDecorate %outer_arr ArrayStride 32",
+        "OpDecorate %inner_arr ArrayStride 8",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%outer = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("nested array with bad stride should fail");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn nested_array_correct_stride_accepted() {
+    // Same array-of-arrays but with the inner array stride properly aligned
+    // to 16 (std140 extended alignment).
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpDecorate %outer_arr ArrayStride 32",
+        "OpDecorate %inner_arr ArrayStride 16",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%outer = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("nested array with correct stride should pass");
 }

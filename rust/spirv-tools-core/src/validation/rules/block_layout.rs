@@ -41,257 +41,29 @@ impl ValidationRule for BlockLayoutRule {
 
         let block_structs = collect_block_structs(ctx.module);
         for (struct_id, block_info) in block_structs {
-            // Only validate block layout for structs used in storage classes that require it.
             if !block_info.requires_block_layout() {
                 continue;
             }
 
             // Std140 extended alignment (16-byte rounding for arrays/structs) only
-            // applies to Uniform + Block decoration. All other combinations
-            // (StorageBuffer + Block, BufferBlock + Uniform, PushConstant + Block, etc.)
-            // use std430 rules which have no such rounding. This matches the C++
-            // SPIRV-Tools behavior in validate_decorations.cpp (blockRules vs bufferRules).
+            // applies to Uniform + Block decoration. All other combinations use
+            // std430 rules. In C++, uniform_buffer_standard_layout makes
+            // blockRules=false. relax_block_layout does NOT disable it.
             let is_uniform_block = block_info.decoration == BlockDecoration::Block
                 && block_info.storage_classes.contains(&StorageClass::Uniform);
-            // In C++, uniform_buffer_standard_layout makes blockRules=false,
-            // disabling extended alignment. relax_block_layout does NOT disable it.
             let extended_alignment =
                 is_uniform_block && !ctx.options.uniform_buffer_standard_layout;
 
-            let Some(struct_inst) = ctx.definitions.get(&struct_id) else {
-                continue;
-            };
-            if struct_inst.class.opcode != Op::TypeStruct {
-                continue;
-            }
-            if struct_inst.operands.is_empty() {
-                continue;
-            }
-            let member_offsets = collect_member_offsets(ctx.module, struct_id);
-            let member_count = struct_inst.operands.len();
-            for (index, operand) in struct_inst.operands.iter().enumerate() {
-                let Some(offset) = member_offsets.get(&MemberIndex(index as u32)) else {
-                    return Err(ValidationError::InvalidBlockLayout {
-                        struct_type: struct_id,
-                        reason: "missing OpMemberDecorate Offset".to_string(),
-                    }
-                    .into());
-                };
-                let rspirv::dr::Operand::IdRef(member_type_id_raw) = operand else {
-                    continue;
-                };
-                let Ok(member_type_id) = TypeId::try_from(*member_type_id_raw) else {
-                    continue;
-                };
-                let Ok(member_result_id) = ResultId::try_from(u32::from(member_type_id)) else {
-                    continue;
-                };
-                let Some(member_inst) = ctx.definitions.get(&member_result_id) else {
-                    continue;
-                };
-                // In C++, scalar_block_layout uses getScalarAlignment, while
-                // everything else (including relaxed layout) uses getBaseAlignment
-                // with standard vector 2N/4N rules. Only scalar layout changes
-                // vector alignment to scalar.
-                let Some(alignment) = type_alignment(
-                    member_type_id,
-                    ctx.definitions,
-                    &mut HashSet::new(),
-                    scalar_layout,
-                    extended_alignment,
-                ) else {
-                    continue;
-                };
-                if member_inst.class.opcode == Op::TypeRuntimeArray {
-                    if index + 1 != member_count {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: "runtime array member must be the final struct member"
-                                .to_string(),
-                        }
-                        .into());
-                    }
-                    if let Some(stride) = array_stride(ctx.module, member_result_id) {
-                        if stride % alignment != 0 {
-                            return Err(ValidationError::InvalidBlockLayout {
-                                struct_type: struct_id,
-                                reason: format!(
-                                    "runtime array stride {stride} is not aligned to {alignment}"
-                                ),
-                            }
-                            .into());
-                        }
-                    }
-                    // Runtime array must be last; remaining checks do not apply.
-                    continue;
-                }
-                if member_inst.class.opcode == Op::TypeArray {
-                    if let Some(stride) = array_stride(ctx.module, member_result_id) {
-                        if stride % alignment != 0 {
-                            return Err(ValidationError::InvalidBlockLayout {
-                                struct_type: struct_id,
-                                reason: format!(
-                                    "array stride {stride} is not aligned to {alignment}"
-                                ),
-                            }
-                            .into());
-                        }
-                        if let Some(rspirv::dr::Operand::IdRef(elem_raw)) =
-                            member_inst.operands.first()
-                        {
-                            if let Ok(elem_type) = TypeId::try_from(*elem_raw) {
-                                if let Some(elem_size) = type_layout_size(
-                                    elem_type,
-                                    ctx.definitions,
-                                    &mut HashSet::new(),
-                                ) {
-                                    if elem_size > stride {
-                                        return Err(ValidationError::InvalidBlockLayout {
-                                            struct_type: struct_id,
-                                            reason: format!(
-                                                "array stride {stride} is smaller than element size {elem_size}"
-                                            ),
-                                        }.into());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if member_inst.class.opcode == Op::TypeMatrix {
-                    let stride =
-                        member_matrix_stride(ctx.module, struct_id, MemberIndex(index as u32))
-                            .ok_or_else(|| -> SpannedValidationError {
-                                ValidationError::InvalidBlockLayout {
-                                    struct_type: struct_id,
-                                    reason: "matrix member is missing MatrixStride".to_string(),
-                                }
-                                .into()
-                            })?;
-                    if stride % alignment != 0 {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: format!("matrix stride {stride} is not aligned to {alignment}"),
-                        }
-                        .into());
-                    }
-                    let (column_type, _) = matrix_info(member_inst);
-                    if let Some(col_ty) = column_type {
-                        if let Some(col_size) =
-                            type_layout_size(col_ty, ctx.definitions, &mut HashSet::new())
-                        {
-                            if col_size > stride {
-                                return Err(ValidationError::InvalidBlockLayout {
-                                    struct_type: struct_id,
-                                    reason: format!(
-                                        "matrix stride {stride} is smaller than column size {col_size}"
-                                    ),
-                                }.into());
-                            }
-                            if relax_block_layout
-                                && !scalar_layout
-                                && member_is_row_major(
-                                    ctx.module,
-                                    struct_id,
-                                    MemberIndex(index as u32),
-                                )
-                                && col_size > 16
-                                && (offset % 16).saturating_add(col_size) > 16
-                            {
-                                return Err(ValidationError::InvalidBlockLayout {
-                                    struct_type: struct_id,
-                                    reason: "row-major matrix straddles 16-byte boundary under relaxed layout".to_string(),
-                                }.into());
-                            }
-                        }
-                    }
-                }
-                let Some(size) =
-                    type_layout_size(member_type_id, ctx.definitions, &mut HashSet::new())
-                else {
-                    continue;
-                };
-                // Offset alignment rules.
-                // In C++, relaxed layout only changes vector offset checks to use
-                // scalar element alignment. All other types (matrices, arrays,
-                // structs, scalars) still use standard alignment for offset checks.
-                if relax_block_layout
-                    && !scalar_layout
-                    && member_inst.class.opcode == Op::TypeVector
-                {
-                    let Some(scalar_align) = vector_scalar_alignment(member_inst, ctx.definitions)
-                    else {
-                        continue;
-                    };
-                    if offset % scalar_align != 0 {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: format!(
-                                "member offset {offset} is not aligned to vector scalar element size {}",
-                                scalar_align
-                            ),
-                        }.into());
-                    }
-                    let Some(vector_size) =
-                        type_layout_size(member_type_id, ctx.definitions, &mut HashSet::new())
-                    else {
-                        continue;
-                    };
-                    // From C++ hasImproperStraddle():
-                    // - size <= 16: straddles if first and last byte are in
-                    //   different 16-byte blocks: (F / 16) != (L / 16)
-                    // - size > 16: straddles if not 16-byte aligned: F % 16 != 0
-                    let straddles = if vector_size <= 16 {
-                        vector_size > 0
-                            && (offset >> 4) != ((offset.saturating_add(vector_size - 1)) >> 4)
-                    } else {
-                        offset % 16 != 0
-                    };
-                    if straddles {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: format!(
-                                "vector at offset {offset} improperly straddles a 16-byte boundary"
-                            ),
-                        }
-                        .into());
-                    }
-                } else if offset % alignment != 0 {
-                    return Err(ValidationError::InvalidBlockLayout {
-                        struct_type: struct_id,
-                        reason: format!(
-                            "member offset {offset} is not aligned to required alignment {alignment}"
-                        ),
-                    }.into());
-                }
-
-                let mut next_valid_offset = offset.saturating_add(size);
-                // From C++ validate_decorations.cpp: non-scalar block layout
-                // rules don't permit anything in the padding of a struct or
-                // array. Round up the next valid offset to the member's
-                // alignment so that the next member cannot overlap padding.
-                if !scalar_layout
-                    && matches!(
-                        member_inst.class.opcode,
-                        Op::TypeArray | Op::TypeStruct
-                    )
-                {
-                    next_valid_offset = round_up(next_valid_offset, alignment);
-                }
-                // Ensure no overlap with the next member offset (if any).
-                if let Some(next) = member_offsets
-                    .get(&MemberIndex((index as u32) + 1))
-                    .copied()
-                {
-                    if next < next_valid_offset {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: "member offsets overlap".to_string(),
-                        }
-                        .into());
-                    }
-                }
-            }
+            check_struct_layout(
+                ctx.module,
+                ctx.definitions,
+                struct_id,
+                0,
+                scalar_layout,
+                extended_alignment,
+                relax_block_layout,
+                0,
+            )?;
         }
 
         Ok(())
@@ -743,6 +515,356 @@ fn member_matrix_stride(module: &Module, struct_id: ResultId, member: MemberInde
         }
     }
     None
+}
+
+// ============================================================================
+// Recursive Struct Layout Checker
+// ============================================================================
+
+/// Validates the layout of a single block struct, recursively checking nested
+/// structs and arrays. This matches the C++ `checkLayout` function in
+/// validate_decorations.cpp.
+fn check_struct_layout(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    struct_id: ResultId,
+    incoming_offset: u32,
+    scalar_layout: bool,
+    extended_alignment: bool,
+    relax_block_layout: bool,
+    depth: u32,
+) -> ValidationResult {
+    // Depth limit to prevent infinite recursion from circular types.
+    if depth > 100 {
+        return Ok(());
+    }
+
+    let Some(struct_inst) = definitions.get(&struct_id) else {
+        return Ok(());
+    };
+    if struct_inst.class.opcode != Op::TypeStruct || struct_inst.operands.is_empty() {
+        return Ok(());
+    }
+
+    let member_offsets_map = collect_member_offsets(module, struct_id);
+
+    // Build member list sorted by absolute offset (matching C++ checkLayout).
+    let mut sorted_members: Vec<(u32, u32)> = Vec::with_capacity(struct_inst.operands.len());
+    for index in 0..struct_inst.operands.len() {
+        let Some(&off) = member_offsets_map.get(&MemberIndex(index as u32)) else {
+            return Err(ValidationError::InvalidBlockLayout {
+                struct_type: struct_id,
+                reason: "missing OpMemberDecorate Offset".to_string(),
+            }
+            .into());
+        };
+        sorted_members.push((index as u32, incoming_offset.saturating_add(off)));
+    }
+    sorted_members.sort_by_key(|&(_, offset)| offset);
+
+    let mut next_valid_offset: u32 = 0;
+
+    for (ordered_idx, &(member_idx, offset)) in sorted_members.iter().enumerate() {
+        let rspirv::dr::Operand::IdRef(member_type_id_raw) =
+            &struct_inst.operands[member_idx as usize]
+        else {
+            continue;
+        };
+        let Ok(member_type_id) = TypeId::try_from(*member_type_id_raw) else {
+            continue;
+        };
+        let Ok(member_result_id) = ResultId::try_from(u32::from(member_type_id)) else {
+            continue;
+        };
+        let Some(member_inst) = definitions.get(&member_result_id) else {
+            continue;
+        };
+
+        let Some(alignment) = type_alignment(
+            member_type_id,
+            definitions,
+            &mut HashSet::new(),
+            scalar_layout,
+            extended_alignment,
+        ) else {
+            continue;
+        };
+
+        // Runtime arrays have unknown size; use 0 (matching C++ getSize).
+        let size = if member_inst.class.opcode == Op::TypeRuntimeArray {
+            0
+        } else {
+            match type_layout_size(member_type_id, definitions, &mut HashSet::new()) {
+                Some(s) => s,
+                None => continue,
+            }
+        };
+
+        // Runtime array must be the last member by offset order (C++ line 573).
+        if member_inst.class.opcode == Op::TypeRuntimeArray
+            && ordered_idx + 1 != sorted_members.len()
+        {
+            return Err(ValidationError::InvalidBlockLayout {
+                struct_type: struct_id,
+                reason: "runtime array member must be the final struct member".to_string(),
+            }
+            .into());
+        }
+
+        // Offset alignment checks.
+        if relax_block_layout && !scalar_layout && member_inst.class.opcode == Op::TypeVector {
+            // Relaxed layout: vector offset aligned to scalar element alignment.
+            let Some(scalar_align) = vector_scalar_alignment(member_inst, definitions) else {
+                continue;
+            };
+            if offset % scalar_align != 0 {
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "member offset {} is not aligned to vector scalar element size {}",
+                        offset, scalar_align
+                    ),
+                }
+                .into());
+            }
+        } else if offset % alignment != 0 {
+            return Err(ValidationError::InvalidBlockLayout {
+                struct_type: struct_id,
+                reason: format!(
+                    "member offset {} is not aligned to required alignment {}",
+                    offset, alignment
+                ),
+            }
+            .into());
+        }
+
+        // Overlap/padding check (C++ line 601).
+        if offset < next_valid_offset {
+            return Err(ValidationError::InvalidBlockLayout {
+                struct_type: struct_id,
+                reason: "member offsets overlap".to_string(),
+            }
+            .into());
+        }
+
+        // Vector straddle check under relaxed, non-scalar layout (C++ line 605).
+        if relax_block_layout && !scalar_layout && member_inst.class.opcode == Op::TypeVector {
+            let straddles = if size <= 16 {
+                size > 0 && (offset >> 4) != ((offset.saturating_add(size - 1)) >> 4)
+            } else {
+                offset % 16 != 0
+            };
+            if straddles {
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "vector at offset {} improperly straddles a 16-byte boundary",
+                        offset
+                    ),
+                }
+                .into());
+            }
+        }
+
+        // Recursive check for nested structs (C++ line 614).
+        if member_inst.class.opcode == Op::TypeStruct {
+            check_struct_layout(
+                module,
+                definitions,
+                member_result_id,
+                offset,
+                scalar_layout,
+                extended_alignment,
+                relax_block_layout,
+                depth + 1,
+            )?;
+        }
+
+        // Matrix stride check (C++ line 622).
+        if member_inst.class.opcode == Op::TypeMatrix {
+            let stride =
+                member_matrix_stride(module, struct_id, MemberIndex(member_idx)).ok_or_else(
+                    || -> SpannedValidationError {
+                        ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: "matrix member is missing MatrixStride".to_string(),
+                        }
+                        .into()
+                    },
+                )?;
+            if stride % alignment != 0 {
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!("matrix stride {} is not aligned to {}", stride, alignment),
+                }
+                .into());
+            }
+            let (column_type, _) = matrix_info(member_inst);
+            if let Some(col_ty) = column_type {
+                if let Some(col_size) =
+                    type_layout_size(col_ty, definitions, &mut HashSet::new())
+                {
+                    if col_size > stride {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!(
+                                "matrix stride {} is smaller than column size {}",
+                                stride, col_size
+                            ),
+                        }
+                        .into());
+                    }
+                    if relax_block_layout
+                        && !scalar_layout
+                        && member_is_row_major(module, struct_id, MemberIndex(member_idx))
+                        && col_size > 16
+                        && (offset % 16).saturating_add(col_size) > 16
+                    {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason:
+                                "row-major matrix straddles 16-byte boundary under relaxed layout"
+                                    .to_string(),
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+
+        // Check arrays and runtime arrays recursively (C++ lines 631-707).
+        let mut array_inst = member_inst;
+        let mut array_result_id = member_result_id;
+        let mut array_alignment = alignment;
+        while array_inst.class.opcode == Op::TypeArray
+            || array_inst.class.opcode == Op::TypeRuntimeArray
+        {
+            let Some(rspirv::dr::Operand::IdRef(elem_raw)) = array_inst.operands.first() else {
+                break;
+            };
+            let Ok(elem_type) = TypeId::try_from(*elem_raw) else {
+                break;
+            };
+            let Ok(elem_result_id) = ResultId::try_from(u32::from(elem_type)) else {
+                break;
+            };
+            let Some(elem_inst) = definitions.get(&elem_result_id) else {
+                break;
+            };
+
+            // Check array stride (C++ lines 638-652).
+            let stride = array_stride(module, array_result_id);
+            if let Some(s) = stride {
+                if s == 0 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "array has stride 0".to_string(),
+                    }
+                    .into());
+                }
+                if s % array_alignment != 0 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: format!(
+                            "array stride {} is not aligned to {}",
+                            s, array_alignment
+                        ),
+                    }
+                    .into());
+                }
+            }
+            let stride_val = stride.unwrap_or(0);
+
+            let num_elements = if array_inst.class.opcode == Op::TypeArray {
+                array_length(array_inst, definitions).unwrap_or(1).max(1)
+            } else {
+                1
+            };
+
+            // If element is struct, recursively validate at each array offset
+            // (C++ lines 666-682). Stop when offsets repeat mod 16.
+            if elem_inst.class.opcode == Op::TypeStruct && stride_val > 0 {
+                let mut seen = [false; 16];
+                for i in 0..num_elements {
+                    let next_offset = offset.saturating_add(i.saturating_mul(stride_val));
+                    let bucket = (next_offset % 16) as usize;
+                    if seen[bucket] {
+                        break;
+                    }
+                    check_struct_layout(
+                        module,
+                        definitions,
+                        elem_result_id,
+                        next_offset,
+                        scalar_layout,
+                        extended_alignment,
+                        relax_block_layout,
+                        depth + 1,
+                    )?;
+                    seen[bucket] = true;
+                }
+            } else if elem_inst.class.opcode == Op::TypeMatrix {
+                // Matrix stride for matrices inside arrays (C++ lines 683-691).
+                if let Some(ms) =
+                    member_matrix_stride(module, struct_id, MemberIndex(member_idx))
+                {
+                    if ms % alignment != 0 {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!(
+                                "matrix stride {} in array is not aligned to {}",
+                                ms, alignment
+                            ),
+                        }
+                        .into());
+                    }
+                }
+            }
+
+            // Check element_size <= stride (C++ lines 700-706).
+            if stride_val > 0 {
+                if let Some(element_size) =
+                    type_layout_size(elem_type, definitions, &mut HashSet::new())
+                {
+                    if element_size > stride_val {
+                        return Err(ValidationError::InvalidBlockLayout {
+                            struct_type: struct_id,
+                            reason: format!(
+                                "array stride {} is smaller than element size {}",
+                                stride_val, element_size
+                            ),
+                        }
+                        .into());
+                    }
+                }
+            }
+
+            // Descend to element type (C++ lines 694-698).
+            array_inst = elem_inst;
+            array_result_id = elem_result_id;
+            array_alignment = type_alignment(
+                elem_type,
+                definitions,
+                &mut HashSet::new(),
+                scalar_layout,
+                extended_alignment,
+            )
+            .unwrap_or(1);
+        }
+
+        // Update next valid offset (C++ lines 708-714).
+        next_valid_offset = offset.saturating_add(size);
+        if !scalar_layout
+            && matches!(
+                member_inst.class.opcode,
+                Op::TypeArray | Op::TypeStruct
+            )
+        {
+            next_valid_offset = round_up(next_valid_offset, alignment);
+        }
+    }
+
+    Ok(())
 }
 
 // ============================================================================
