@@ -1094,7 +1094,24 @@ impl ValidationRule for BuiltinStorageClassDirectionRule {
         }
 
         let module = ctx.module;
-        let entry_models = ctx.entry_models;
+
+        // Build map of variable ID -> set of execution models that use it
+        // by checking entry point interfaces
+        let mut var_to_models: HashMap<u32, HashSet<ExecutionModel>> = HashMap::new();
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+            let Some(rspirv::dr::Operand::ExecutionModel(model)) = ep.operands.first() else {
+                continue;
+            };
+            // Interface variables start at operand index 3 (after ExecutionModel, Function, Name)
+            for op in ep.operands.iter().skip(3) {
+                if let rspirv::dr::Operand::IdRef(var_id) = op {
+                    var_to_models.entry(*var_id).or_default().insert(*model);
+                }
+            }
+        }
 
         // Collect built-in decorations with their storage classes
         for inst in &module.annotations {
@@ -1141,8 +1158,11 @@ impl ValidationRule for BuiltinStorageClassDirectionRule {
                 continue;
             };
 
-            // Validate direction per built-in per execution model
-            for model in entry_models {
+            // Only validate direction against entry points that actually use this variable
+            let Some(models) = var_to_models.get(target) else {
+                continue;
+            };
+            for model in models {
                 if let Some(error) = validate_builtin_direction(builtin, storage_class, *model) {
                     return Err(error.into());
                 }

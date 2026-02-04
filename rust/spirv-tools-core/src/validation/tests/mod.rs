@@ -30413,3 +30413,76 @@ fn instance_id_builtin_accepted_in_vulkan_ray_tracing_shader() {
         .validate(TargetEnv::Vulkan1_2)
         .expect("InstanceId should be accepted in Vulkan ray tracing shader");
 }
+
+#[test]
+fn clip_distance_input_rejected_in_vertex_shader() {
+    // ClipDistance as Input is not allowed in Vertex shaders
+    let text = [
+        "OpCapability Shader",
+        "OpCapability ClipDistance",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %clip",
+        "%void = OpTypeVoid",
+        "%float = OpTypeFloat 32",
+        "%arr = OpTypeArray %float %uint_1",
+        "%uint = OpTypeInt 32 0",
+        "%uint_1 = OpConstant %uint 1",
+        "%ptr_input_arr = OpTypePointer Input %arr",
+        "%clip = OpVariable %ptr_input_arr Input",
+        "OpDecorate %clip BuiltIn ClipDistance",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("ClipDistance Input should be rejected in Vertex shader");
+    assert!(
+        matches!(
+            error,
+            ValidationError::BuiltInWrongStorageClassForExecutionModel { .. }
+        ),
+        "Expected BuiltInWrongStorageClassForExecutionModel, got: {error:?}"
+    );
+}
+
+#[test]
+fn clip_distance_input_accepted_in_fragment_with_separate_vertex_entry() {
+    // ClipDistance as Input is allowed in Fragment shaders, even when
+    // the module also has a Vertex entry point (that doesn't use it)
+    let text = [
+        "OpCapability Shader",
+        "OpCapability ClipDistance",
+        "OpMemoryModel Logical GLSL450",
+        // Vertex entry point does NOT list %clip in its interface
+        "OpEntryPoint Vertex %vmain \"vmain\"",
+        // Fragment entry point DOES list %clip in its interface
+        "OpEntryPoint Fragment %fmain \"fmain\" %clip",
+        "OpExecutionMode %fmain OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%float = OpTypeFloat 32",
+        "%uint = OpTypeInt 32 0",
+        "%uint_1 = OpConstant %uint 1",
+        "%arr = OpTypeArray %float %uint_1",
+        "%ptr_input_arr = OpTypePointer Input %arr",
+        "%clip = OpVariable %ptr_input_arr Input",
+        "OpDecorate %clip BuiltIn ClipDistance",
+        "%fn = OpTypeFunction %void",
+        "%vmain = OpFunction %void None %fn",
+        "%ventry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+        "%fmain = OpFunction %void None %fn",
+        "%fentry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("ClipDistance Input should be accepted in Fragment shader");
+}
