@@ -237,11 +237,22 @@ impl ValidationRule for BlockLayoutRule {
                     else {
                         continue;
                     };
-                    if vector_size > 16 && (offset % 16).saturating_add(vector_size) > 16 {
+                    // From C++ hasImproperStraddle():
+                    // - size <= 16: straddles if first and last byte are in
+                    //   different 16-byte blocks: (F / 16) != (L / 16)
+                    // - size > 16: straddles if not 16-byte aligned: F % 16 != 0
+                    let straddles = if vector_size <= 16 {
+                        vector_size > 0
+                            && (offset >> 4) != ((offset.saturating_add(vector_size - 1)) >> 4)
+                    } else {
+                        offset % 16 != 0
+                    };
+                    if straddles {
                         return Err(ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
-                            reason: "vector member straddles 16-byte boundary under relaxed layout"
-                                .to_string(),
+                            reason: format!(
+                                "vector at offset {offset} improperly straddles a 16-byte boundary"
+                            ),
                         }
                         .into());
                     }

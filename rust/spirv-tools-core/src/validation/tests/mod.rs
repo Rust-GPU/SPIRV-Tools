@@ -14611,6 +14611,65 @@ fn vector_straddle_rejected_under_relax() {
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
 #[test]
+fn small_vector_straddle_rejected_under_relax() {
+    // A vec2<f32> (8 bytes) at offset 12 straddles the 16-byte boundary
+    // (bytes 12-19 span blocks 0 and 1). This must be rejected under relaxed
+    // layout. The C++ hasImproperStraddle checks: (F >> 4) != (L >> 4).
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 4",
+        "OpMemberDecorate %struct 2 Offset 12",
+        "%float = OpTypeFloat 32",
+        "%vec2 = OpTypeVector %float 2",
+        "%struct = OpTypeStruct %float %float %vec2",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let relax = ValidationOptions {
+        relax_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    let err = text
+        .as_str()
+        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .expect_err("vec2 at offset 12 straddles 16-byte boundary");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn small_vector_no_straddle_accepted_under_relax() {
+    // A vec2<f32> (8 bytes) at offset 8 does NOT straddle: bytes 8-15 are
+    // all in the same 16-byte block. This should be accepted.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 4",
+        "OpMemberDecorate %struct 2 Offset 8",
+        "%float = OpTypeFloat 32",
+        "%vec2 = OpTypeVector %float 2",
+        "%struct = OpTypeStruct %float %float %vec2",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let relax = ValidationOptions {
+        relax_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    text.as_str()
+        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .expect("vec2 at offset 8 does not straddle 16-byte boundary");
+}
+#[test]
 fn matrix_stride_alignment_and_size() {
     // Test that matrix stride must be at least as large as the column size
     let text = [
