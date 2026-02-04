@@ -6554,107 +6554,6 @@ fn opencl_rejects_nv_vendor_extension() {
     );
 }
 #[test]
-fn universal_rejects_nv_vendor_extension() {
-    let ext_words = [
-        1599492179, 1834964558, 1600680805, 1684105331, 29285, // "SPV_NV_mesh_shader\0"
-    ];
-    let binary = [
-        0x0723_0203, // magic
-        0x0001_0000, // version
-        0,           // generator
-        2,           // bound
-        0,           // schema
-        0x0006_000a, // OpExtension, word count 6
-        ext_words[0],
-        ext_words[1],
-        ext_words[2],
-        ext_words[3],
-        ext_words[4],
-        0x0003_000e, // OpMemoryModel Logical GLSL450
-        0,
-        1,
-    ];
-    let error = MaybeValidModule::Binary(&binary)
-        .validate(TargetEnv::Universal1_6)
-        .unwrap_err();
-    assert_eq!(
-        error,
-        ValidationError::DisallowedExtension {
-            extension: ExtensionName::from("SPV_NV_mesh_shader"),
-            env: TargetEnv::Universal1_6
-        }
-    );
-}
-#[test]
-fn universal_rejects_nv_shader_invocation_reorder() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_NV_shader_invocation_reorder\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text.as_str().validate(TargetEnv::Universal1_6).unwrap_err();
-    assert_eq!(
-        error,
-        ValidationError::DisallowedExtension {
-            extension: ExtensionName::from("SPV_NV_shader_invocation_reorder"),
-            env: TargetEnv::Universal1_6
-        }
-    );
-}
-#[test]
-fn universal_rejects_nv_cluster_acceleration_structure() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_NV_cluster_acceleration_structure\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text.as_str().validate(TargetEnv::Universal1_6).unwrap_err();
-    assert_eq!(
-        error,
-        ValidationError::DisallowedExtension {
-            extension: ExtensionName::from("SPV_NV_cluster_acceleration_structure"),
-            env: TargetEnv::Universal1_6
-        }
-    );
-}
-#[test]
-fn universal_rejects_qcom_image_processing2() {
-    let text = [
-        "OpCapability Shader",
-        "OpExtension \"SPV_QCOM_image_processing2\"",
-        "OpMemoryModel Logical GLSL450",
-        "%void = OpTypeVoid",
-        "%fn = OpTypeFunction %void",
-        "%main = OpFunction %void None %fn",
-        "%entry = OpLabel",
-        "OpReturn",
-        "OpFunctionEnd",
-    ]
-    .join("\n");
-    let error = text.as_str().validate(TargetEnv::Universal1_6).unwrap_err();
-    assert_eq!(
-        error,
-        ValidationError::DisallowedExtension {
-            extension: ExtensionName::from("SPV_QCOM_image_processing2"),
-            env: TargetEnv::Universal1_6
-        }
-    );
-}
-#[test]
 fn vulkan_accepts_nv_vendor_extension() {
     let ext_words = [
         1599492179, 1834964558, 1600680805, 1684105331, 29285, // "SPV_NV_mesh_shader\0"
@@ -6764,13 +6663,13 @@ fn qcom_extension_requires_vulkan_environment() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("QCOM extension should be disallowed outside Vulkan");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_QCOM_image_processing"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
     let validated = text
@@ -6810,7 +6709,7 @@ fn qcom_image_processing_requires_spirv_1_4() {
         .expect("extension should be accepted with SPIR-V 1.4+");
 }
 #[test]
-fn universal_rejects_vulkan_specific_extension() {
+fn universal_accepts_vulkan_specific_extension() {
     let text = [
         "OpCapability Shader",
         "OpExtension \"SPV_KHR_vulkan_memory_model\"",
@@ -6823,16 +6722,50 @@ fn universal_rejects_vulkan_specific_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("Universal env should accept Vulkan-specific extensions");
+}
+#[test]
+fn universal_accepts_descriptor_indexing_extension() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability RuntimeDescriptorArray",
+        "OpExtension \"SPV_EXT_descriptor_indexing\"",
+        "OpMemoryModel Logical GLSL450",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_3)
+        .expect("Universal env should accept SPV_EXT_descriptor_indexing");
+}
+#[test]
+fn opencl_rejects_descriptor_indexing_extension() {
+    let text = [
+        "OpCapability Shader",
+        "OpExtension \"SPV_EXT_descriptor_indexing\"",
+        "OpMemoryModel Logical GLSL450",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
-        .expect_err("Universal env should reject Vulkan-only extension");
-    assert_eq!(
-        error,
-        ValidationError::DisallowedExtension {
-            extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
-            env: TargetEnv::Universal1_6
-        }
+        .validate(TargetEnv::OpenCl2_2)
+        .expect_err("OpenCL should reject SPV_EXT_descriptor_indexing");
+    assert!(
+        matches!(error, ValidationError::DisallowedExtension { .. }),
+        "Expected DisallowedExtension, got: {error:?}"
     );
 }
 #[test]
@@ -6953,7 +6886,6 @@ fn vendor_capability_requiring_disallowed_extension_reports_env_error() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -6986,7 +6918,6 @@ fn cooperative_matrix_nv_capability_rejected_outside_vulkan() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7022,7 +6953,6 @@ fn tile_shading_capability_rejected_outside_vulkan() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7058,7 +6988,6 @@ fn ray_tracing_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7094,7 +7023,6 @@ fn mesh_shading_nv_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7130,7 +7058,6 @@ fn mesh_shading_ext_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7169,7 +7096,6 @@ fn cooperative_matrix_khr_capability_rejected_outside_vulkan_even_with_extension
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7207,7 +7133,6 @@ fn ray_tracing_motion_blur_capability_rejected_outside_vulkan_even_with_extensio
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7253,7 +7178,6 @@ fn ray_tracing_displacement_micromap_capability_rejected_outside_vulkan_even_wit
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7298,7 +7222,6 @@ fn ray_tracing_linear_swept_spheres_capability_rejected_outside_vulkan_even_with
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7342,7 +7265,6 @@ fn ray_tracing_opacity_micromap_capability_rejected_outside_vulkan_even_with_ext
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7386,7 +7308,6 @@ fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extens
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7430,7 +7351,6 @@ fn cluster_acceleration_capability_rejected_outside_vulkan_even_with_extension()
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7472,7 +7392,6 @@ fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7508,7 +7427,6 @@ fn fragment_shader_interlock_capability_rejected_outside_vulkan_even_with_extens
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7543,7 +7461,6 @@ fn image_footprint_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7579,7 +7496,6 @@ fn shader_atomic_float_add_capability_rejected_outside_vulkan_even_with_extensio
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7615,7 +7531,6 @@ fn fragment_shading_rate_capability_rejected_outside_vulkan_even_with_extension(
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7651,7 +7566,6 @@ fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_exte
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -7850,13 +7764,13 @@ fn maximal_reconvergence_extension_rejected_outside_vulkan() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("maximal reconvergence is Vulkan-only");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_maximal_reconvergence"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -7876,13 +7790,13 @@ fn ray_cull_mask_extension_rejected_outside_vulkan() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("ray cull mask is Vulkan-only");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_ray_cull_mask"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -15734,7 +15648,6 @@ fn shader_clock_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_6,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -15814,13 +15727,13 @@ fn universal_rejects_tile_shading_extension() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("Tile shading extension should be Vulkan-only");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_QCOM_tile_shading"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -15869,13 +15782,13 @@ fn nvx_extensions_are_vulkan_only() {
         .expect("NVX extensions should be accepted for Vulkan targets");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("NVX extensions are Vulkan-only");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_NVX_multiview_per_view_attributes"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -15905,13 +15818,13 @@ fn arm_extensions_are_vulkan_only() {
         .expect("ARM extensions should be accepted for Vulkan targets");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("ARM extensions are Vulkan-only");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_ARM_graph"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -16013,13 +15926,13 @@ fn vulkan_memory_model_extension_is_vulkan_only() {
         .expect("Vulkan memory model should be accepted for Vulkan targets");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("Vulkan memory model should be rejected for non-Vulkan targets");
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -16057,7 +15970,6 @@ fn mesh_shader_extension_is_vulkan_only() {
         .expect("Mesh shader extension should be accepted for Vulkan targets");
     for env in [
         TargetEnv::OpenCl2_2,
-        TargetEnv::Universal1_6,
         TargetEnv::OpenGl4_5,
     ] {
         let error = text
@@ -16078,11 +15990,7 @@ fn assert_vulkan_only_extension(name: &str) {
     text.as_str()
         .validate(TargetEnv::Vulkan1_2)
         .unwrap_or_else(|_| panic!("{name} should be accepted for Vulkan targets"));
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::Universal1_6,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -16260,12 +16168,12 @@ fn conditional_extension_rejected_in_non_vulkan_env() {
         op(1, 253), // OpReturn
         op(1, 56),  // OpFunctionEnd
     ];
-    let error = validate_module(&binary, TargetEnv::Universal1_6).unwrap_err();
+    let error = validate_module(&binary, TargetEnv::OpenCl2_2).unwrap_err();
     assert_eq!(
         error,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_vulkan_memory_model"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -19650,7 +19558,6 @@ fn device_group_capability_rejected_outside_vulkan_even_with_extension() {
     ]
     .join("\n");
     for env in [
-        TargetEnv::Universal1_5,
         TargetEnv::OpenCl2_2,
         TargetEnv::OpenGl4_5,
     ] {
@@ -20003,7 +19910,7 @@ fn physical_storage_buffer_capability_requires_spirv_1_4() {
     .join("\n");
     let error = text
         .as_str()
-        .validate(TargetEnv::Universal1_3)
+        .validate(TargetEnv::OpenCl2_2)
         .expect_err("requires SPIR-V 1.4");
     match error {
         ValidationError::CapabilityRequiresSpirvVersion {
@@ -20016,7 +19923,7 @@ fn physical_storage_buffer_capability_requires_spirv_1_4() {
                 rspirv::spirv::Capability::PhysicalStorageBufferAddresses
             );
             assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 3));
+            assert_eq!(target_version, SpirvVersion::new(1, 2));
         }
         ValidationError::ExtensionRequiresSpirvVersion {
             extension,
@@ -20028,14 +19935,14 @@ fn physical_storage_buffer_capability_requires_spirv_1_4() {
                 ExtensionName::from("SPV_KHR_physical_storage_buffer")
             );
             assert_eq!(required_version, SpirvVersion::new(1, 4));
-            assert_eq!(target_version, SpirvVersion::new(1, 3));
+            assert_eq!(target_version, SpirvVersion::new(1, 2));
         }
         ValidationError::DisallowedExtension { extension, env } => {
             assert_eq!(
                 extension,
                 ExtensionName::from("SPV_KHR_physical_storage_buffer")
             );
-            assert_eq!(env, TargetEnv::Universal1_3);
+            assert_eq!(env, TargetEnv::OpenCl2_2);
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -22710,13 +22617,13 @@ fn shading_rate_builtins_are_vulkan_only() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+    let err = assemble_and_validate_with_env(text, TargetEnv::OpenCl2_2)
         .expect_err("fragment shading rate built-ins are Vulkan-only");
     assert_eq!(
         err,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
-            env: TargetEnv::Universal1_5
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -22741,13 +22648,13 @@ fn primitive_shading_rate_builtin_is_vulkan_only() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_5)
+    let err = assemble_and_validate_with_env(text, TargetEnv::OpenCl2_2)
         .expect_err("primitive shading rate built-ins are Vulkan-only");
     assert_eq!(
         err,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_KHR_fragment_shading_rate"),
-            env: TargetEnv::Universal1_5
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -22774,13 +22681,13 @@ fn mesh_builtins_are_vulkan_only() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+    let err = assemble_and_validate_with_env(text, TargetEnv::OpenCl2_2)
         .expect_err("mesh built-ins are Vulkan-only");
     assert_eq!(
         err,
         ValidationError::DisallowedExtension {
             extension: ExtensionName::from("SPV_EXT_mesh_shader"),
-            env: TargetEnv::Universal1_6
+            env: TargetEnv::OpenCl2_2
         }
     );
 }
@@ -24747,7 +24654,7 @@ fn workgroup_16bit_with_capability_is_allowed() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    assemble_and_validate_with_env(&text, TargetEnv::Universal1_4)
+    assemble_and_validate_with_env(&text, TargetEnv::OpenCl2_2)
         .expect_err("extension gate should reject workgroup layout without allowed env");
 
     assemble_and_validate_with_env(&text, TargetEnv::Vulkan1_1Spirv1_4)

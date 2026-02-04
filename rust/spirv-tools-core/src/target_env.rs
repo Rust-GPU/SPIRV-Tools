@@ -434,13 +434,19 @@ pub fn read_env_from_text(text: &[u8]) -> Option<TargetEnv> {
 impl TargetEnv {
     /// Returns whether an extension is permitted for this target environment.
     ///
-    /// The WebGPU environment forbids all extensions. Other environments consult the
-    /// generated allowlist derived from the extension registry (vendor prefixes and
-    /// known Vulkan-only/OpenCL-only exceptions) to decide whether a declaration is
-    /// legal for the target.
+    /// The WebGPU environment forbids all extensions. Universal environments allow
+    /// all extensions (matching the C++ SPIRV-Tools behavior where Universal targets
+    /// have no extension restrictions). Other environments consult the generated
+    /// allowlist derived from the extension registry.
     pub fn is_extension_allowed(self, extension: &ExtensionName) -> bool {
         if matches!(self, TargetEnv::WebGpu0) {
             return false;
+        }
+        // Universal environments allow all extensions, matching the C++ SPIRV-Tools
+        // behavior where the capability/extension validation pass simply returns
+        // SPV_SUCCESS for Universal targets without checking.
+        if self.is_universal() {
+            return true;
         }
         let name = extension.as_str();
         let normalized = name.to_ascii_lowercase();
@@ -802,12 +808,12 @@ mod tests {
         use super::ExtensionName;
         let nv_ext = ExtensionName::from("SPV_NV_mesh_shader");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&nv_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&nv_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&nv_ext));
         assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&nv_ext));
 
         let nvx_ext = ExtensionName::from("SPV_NVX_multiview_per_view_attributes");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&nvx_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&nvx_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&nvx_ext));
         assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&nvx_ext));
 
         let amd_ext = ExtensionName::from("SPV_AMD_shader_trinary_minmax");
@@ -818,7 +824,7 @@ mod tests {
 
         let amdx_ext = ExtensionName::from("SPV_AMDX_shader_enqueue");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&amdx_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&amdx_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&amdx_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&amdx_ext));
 
         let google_ext = ExtensionName::from("SPV_GOOGLE_decorate_string");
@@ -829,12 +835,12 @@ mod tests {
 
         let qcom_ext = ExtensionName::from("SPV_QCOM_image_processing");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&qcom_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&qcom_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&qcom_ext));
         assert!(!TargetEnv::OpenCl1_2.is_extension_allowed(&qcom_ext));
 
         let arm_ext = ExtensionName::from("SPV_ARM_core_builtins");
         assert!(TargetEnv::Vulkan1_2.is_extension_allowed(&arm_ext));
-        assert!(!TargetEnv::Universal1_6.is_extension_allowed(&arm_ext));
+        assert!(TargetEnv::Universal1_6.is_extension_allowed(&arm_ext));
         assert!(!TargetEnv::OpenCl2_2.is_extension_allowed(&arm_ext));
     }
 
