@@ -179,24 +179,6 @@ impl ValidationRule for BuiltinStorageClassRule {
                 .into());
             }
 
-            // ViewIndex special case
-            if env.is_vulkan()
-                && builtin == BuiltIn::ViewIndex
-                && entry_models.contains(&ExecutionModel::GLCompute)
-            {
-                return Err(ValidationError::BuiltInRequiresExecutionModel {
-                    builtin,
-                    allowed: vec![
-                        ExecutionModel::Vertex,
-                        ExecutionModel::Geometry,
-                        ExecutionModel::TessellationEvaluation,
-                        ExecutionModel::MeshEXT,
-                        ExecutionModel::MeshNV,
-                    ],
-                }
-                .into());
-            }
-
             // Capability requirements
             check_builtin_capability(builtin, capabilities)?;
 
@@ -446,6 +428,14 @@ fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionMode
             ExecutionModel::MeshNV,
             ExecutionModel::MeshEXT,
             ExecutionModel::Fragment,
+        ]),
+        // ViewIndex requires MultiView capability and specific execution models
+        BuiltIn::ViewIndex => Some(&[
+            ExecutionModel::Vertex,
+            ExecutionModel::Geometry,
+            ExecutionModel::TessellationEvaluation,
+            ExecutionModel::MeshNV,
+            ExecutionModel::MeshEXT,
         ]),
         _ => None,
     }
