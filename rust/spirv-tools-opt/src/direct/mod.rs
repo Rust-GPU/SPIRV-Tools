@@ -884,7 +884,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 } else if let Some(inst_id) = inst.result_id {
                                     // Intermediate instructions are NEW - they need to be inserted
                                     collect_ids_from_instruction(&inst, &mut used_ids);
-                                    synthesized_instructions.push(inst.clone());
+                                    // Constants must go to types_global_values, not function body
+                                    if matches!(
+                                        inst.class.opcode,
+                                        Op::Constant | Op::ConstantTrue | Op::ConstantFalse
+                                    ) {
+                                        synthesized_constants.push(inst.clone());
+                                    } else {
+                                        synthesized_instructions.push(inst.clone());
+                                    }
                                     // Track in optimized_instructions if it's a new ID
                                     optimized_instructions.entry(inst_id).or_insert(inst);
                                 }
@@ -2438,5 +2446,104 @@ mod tests {
             has_const_0,
             "constant 0 (used only by OpStore) must survive DCE"
         );
+    }
+
+    #[test]
+    fn no_duplicate_id_definitions_in_optimized_module() {
+        use rspirv::binary::Assemble;
+        use rspirv::dr::Builder;
+        use rspirv::spirv::{
+            AddressingModel, Capability, ExecutionMode, ExecutionModel, FunctionControl,
+            MemoryModel,
+        };
+        use std::collections::HashSet;
+
+        // Build a module with multiple arithmetic operations that may trigger
+        // nested expression materialization. This tests that synthesized constants
+        // go to types_global_values (not function body) and don't cause duplicates.
+        let mut b = Builder::new();
+        b.capability(Capability::Shader);
+        b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+        let int = b.type_int(32, 0);
+        let func_ty = b.type_function(int, vec![]);
+        let func = b
+            .begin_function(int, None, FunctionControl::NONE, func_ty)
+            .unwrap();
+        let _ = b.begin_block(None).unwrap();
+        // Create multiple arithmetic operations that the optimizer might fold
+        let c1 = b.constant_bit32(int, 1);
+        let c2 = b.constant_bit32(int, 2);
+        let c3 = b.constant_bit32(int, 3);
+        let c4 = b.constant_bit32(int, 4);
+        // Nested expressions: ((1 + 2) * (3 + 4))
+        let add1 = b.i_add(int, None, c1, c2).expect("add1");
+        let add2 = b.i_add(int, None, c3, c4).expect("add2");
+        let mul = b.i_mul(int, None, add1, add2).expect("mul");
+        b.ret_value(mul).unwrap();
+        b.end_function().unwrap();
+        b.entry_point(ExecutionModel::GLCompute, func, "main", []);
+        b.execution_mode(func, ExecutionMode::LocalSize, [1, 1, 1]);
+
+        let module = b.module();
+        let optimized = optimize_module_direct(&module).expect("optimization should succeed");
+
+        // Collect all result IDs from the entire module
+        let mut seen_ids: HashSet<u32> = HashSet::new();
+        let mut duplicates: Vec<u32> = Vec::new();
+
+        // Check types_global_values
+        for inst in &optimized.types_global_values {
+            if let Some(id) = inst.result_id {
+                if !seen_ids.insert(id) {
+                    duplicates.push(id);
+                }
+            }
+        }
+
+        // Check function bodies
+        for func in &optimized.functions {
+            if let Some(ref def) = func.def {
+                if let Some(id) = def.result_id {
+                    if !seen_ids.insert(id) {
+                        duplicates.push(id);
+                    }
+                }
+            }
+            for param in &func.parameters {
+                if let Some(id) = param.result_id {
+                    if !seen_ids.insert(id) {
+                        duplicates.push(id);
+                    }
+                }
+            }
+            for block in &func.blocks {
+                if let Some(ref label) = block.label {
+                    if let Some(id) = label.result_id {
+                        if !seen_ids.insert(id) {
+                            duplicates.push(id);
+                        }
+                    }
+                }
+                for inst in &block.instructions {
+                    if let Some(id) = inst.result_id {
+                        if !seen_ids.insert(id) {
+                            duplicates.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            duplicates.is_empty(),
+            "Found duplicate ID definitions: {:?}",
+            duplicates
+        );
+
+        // Verify the module assembles and parses without error
+        let words = optimized.assemble();
+        let mut loader = rspirv::dr::Loader::new();
+        rspirv::binary::parse_words(&words, &mut loader)
+            .expect("optimized module should have no duplicate IDs");
     }
 }
