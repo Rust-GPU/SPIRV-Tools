@@ -539,11 +539,21 @@ fn validate_builtin_type(
         }
 
         // === vec2<f32> builtins ===
-        BuiltIn::PointCoord | BuiltIn::SamplePosition | BuiltIn::FragSizeEXT => {
+        BuiltIn::PointCoord | BuiltIn::SamplePosition => {
             if !is_vec2_f32(pointee, definitions) {
                 return Some(ValidationError::InvalidBuiltInType {
                     builtin,
                     expected: "vec2<f32>",
+                });
+            }
+        }
+
+        // === vec2<i32/u32> builtins ===
+        BuiltIn::FragSizeEXT => {
+            if !is_vec2_i32(pointee, definitions) {
+                return Some(ValidationError::InvalidBuiltInType {
+                    builtin,
+                    expected: "vec2<i32>",
                 });
             }
         }
@@ -841,8 +851,6 @@ fn is_vec4_i32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -
     is_vec_of(ty, definitions, 4, Op::TypeInt, 32)
 }
 
-// Helper functions for mesh shader type validation
-#[allow(dead_code)]
 fn is_vec2_i32(ty: &Instruction, definitions: &HashMap<ResultId, Instruction>) -> bool {
     is_vec_of(ty, definitions, 2, Op::TypeInt, 32)
 }

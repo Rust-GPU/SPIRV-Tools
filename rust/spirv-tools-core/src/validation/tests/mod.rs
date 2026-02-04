@@ -30486,3 +30486,66 @@ fn clip_distance_input_accepted_in_fragment_with_separate_vertex_entry() {
         .validate(TargetEnv::Vulkan1_1)
         .expect("ClipDistance Input should be accepted in Fragment shader");
 }
+
+#[test]
+fn frag_size_ext_rejects_float_type() {
+    // FragSizeEXT must be vec2<i32>, not vec2<f32>
+    let text = [
+        "OpCapability Shader",
+        "OpCapability FragmentDensityEXT",
+        "OpExtension \"SPV_EXT_fragment_invocation_density\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\" %fs",
+        "OpExecutionMode %main OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%float = OpTypeFloat 32",
+        "%v2f = OpTypeVector %float 2",
+        "%ptr_input_v2f = OpTypePointer Input %v2f",
+        "%fs = OpVariable %ptr_input_v2f Input",
+        "OpDecorate %fs BuiltIn FragSizeEXT",
+        "OpDecorate %fs Flat",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("FragSizeEXT with vec2<f32> should be rejected");
+    assert!(
+        matches!(error, ValidationError::InvalidBuiltInType { .. }),
+        "Expected InvalidBuiltInType, got: {error:?}"
+    );
+}
+
+#[test]
+fn frag_size_ext_accepts_integer_vec2_type() {
+    // FragSizeEXT must be vec2<i32/u32>
+    let text = [
+        "OpCapability Shader",
+        "OpCapability FragmentDensityEXT",
+        "OpExtension \"SPV_EXT_fragment_invocation_density\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\" %fs",
+        "OpExecutionMode %main OriginUpperLeft",
+        "%void = OpTypeVoid",
+        "%uint = OpTypeInt 32 0",
+        "%v2u = OpTypeVector %uint 2",
+        "%ptr_input_v2u = OpTypePointer Input %v2u",
+        "%fs = OpVariable %ptr_input_v2u Input",
+        "OpDecorate %fs BuiltIn FragSizeEXT",
+        "OpDecorate %fs Flat",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("FragSizeEXT with vec2<u32> should be accepted");
+}
