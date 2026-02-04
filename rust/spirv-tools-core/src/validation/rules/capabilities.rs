@@ -180,10 +180,10 @@ pub fn validate_capabilities(
                 // Grammar extension lists are alternatives (ANY suffices).
                 // The capability is valid if at least one listed extension is
                 // both allowed in the environment and declared in the module.
-                let any_ext_satisfied = grammar_requirements
-                    .required_extensions
-                    .iter()
-                    .any(|&ext| extension_allowed_in_env(ext, env) && has_extension(extensions, ext));
+                let any_ext_satisfied =
+                    grammar_requirements.required_extensions.iter().any(|&ext| {
+                        extension_allowed_in_env(ext, env) && has_extension(extensions, ext)
+                    });
                 if !any_ext_satisfied {
                     let any_allowed = grammar_requirements
                         .required_extensions

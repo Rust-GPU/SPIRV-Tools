@@ -1578,8 +1578,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             }
         }
         // Remove constants not referenced by any surviving instruction
-        output.types_global_values.retain(|inst| {
-            match inst.class.opcode {
+        output
+            .types_global_values
+            .retain(|inst| match inst.class.opcode {
                 Op::Constant
                 | Op::ConstantTrue
                 | Op::ConstantFalse
@@ -1598,8 +1599,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                 }
                 _ => true,
-            }
-        });
+            });
     }
 
     // Step 8: Update the module's ID bound to account for any new IDs allocated
@@ -2439,8 +2439,7 @@ mod tests {
 
         // Verify c0 (constant 0) is still present in the module
         let has_const_0 = optimized.types_global_values.iter().any(|inst| {
-            inst.class.opcode == rspirv::spirv::Op::Constant
-                && inst.result_id == Some(c0)
+            inst.class.opcode == rspirv::spirv::Op::Constant && inst.result_id == Some(c0)
         });
         assert!(
             has_const_0,
