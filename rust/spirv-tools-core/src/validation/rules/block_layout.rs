@@ -37,9 +37,7 @@ impl ValidationRule for BlockLayoutRule {
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let scalar_layout =
             ctx.options.scalar_block_layout || ctx.options.workgroup_scalar_block_layout;
-        let relax_layout = ctx.options.relax_block_layout
-            || ctx.options.uniform_buffer_standard_layout
-            || scalar_layout;
+        let relax_block_layout = ctx.options.relax_block_layout;
 
         let block_structs = collect_block_structs(ctx.module);
         for (struct_id, block_info) in block_structs {
@@ -55,7 +53,10 @@ impl ValidationRule for BlockLayoutRule {
             // SPIRV-Tools behavior in validate_decorations.cpp (blockRules vs bufferRules).
             let is_uniform_block = block_info.decoration == BlockDecoration::Block
                 && block_info.storage_classes.contains(&StorageClass::Uniform);
-            let extended_alignment = is_uniform_block && !relax_layout;
+            // In C++, uniform_buffer_standard_layout makes blockRules=false,
+            // disabling extended alignment. relax_block_layout does NOT disable it.
+            let extended_alignment =
+                is_uniform_block && !ctx.options.uniform_buffer_standard_layout;
 
             let Some(struct_inst) = ctx.definitions.get(&struct_id) else {
                 continue;
@@ -88,11 +89,15 @@ impl ValidationRule for BlockLayoutRule {
                 let Some(member_inst) = ctx.definitions.get(&member_result_id) else {
                     continue;
                 };
+                // In C++, scalar_block_layout uses getScalarAlignment, while
+                // everything else (including relaxed layout) uses getBaseAlignment
+                // with standard vector 2N/4N rules. Only scalar layout changes
+                // vector alignment to scalar.
                 let Some(alignment) = type_alignment(
                     member_type_id,
                     ctx.definitions,
                     &mut HashSet::new(),
-                    relax_layout,
+                    scalar_layout,
                     extended_alignment,
                 ) else {
                     continue;
@@ -183,7 +188,7 @@ impl ValidationRule for BlockLayoutRule {
                                     ),
                                 }.into());
                             }
-                            if relax_layout
+                            if relax_block_layout
                                 && !scalar_layout
                                 && member_is_row_major(
                                     ctx.module,
@@ -206,8 +211,14 @@ impl ValidationRule for BlockLayoutRule {
                 else {
                     continue;
                 };
-                // Alignment rules
-                if relax_layout && !scalar_layout && member_inst.class.opcode == Op::TypeVector {
+                // Offset alignment rules.
+                // In C++, relaxed layout only changes vector offset checks to use
+                // scalar element alignment. All other types (matrices, arrays,
+                // structs, scalars) still use standard alignment for offset checks.
+                if relax_block_layout
+                    && !scalar_layout
+                    && member_inst.class.opcode == Op::TypeVector
+                {
                     let Some(scalar_align) = vector_scalar_alignment(member_inst, ctx.definitions)
                     else {
                         continue;
@@ -233,35 +244,6 @@ impl ValidationRule for BlockLayoutRule {
                                 .to_string(),
                         }
                         .into());
-                    }
-                } else if member_inst.class.opcode == Op::TypeMatrix {
-                    if let Some(stride) =
-                        member_matrix_stride(ctx.module, struct_id, MemberIndex(index as u32))
-                    {
-                        if stride % alignment != 0 {
-                            return Err(ValidationError::InvalidBlockLayout {
-                                struct_type: struct_id,
-                                reason: format!(
-                                    "matrix stride {stride} is not aligned to {alignment}"
-                                ),
-                            }
-                            .into());
-                        }
-                        let (column_type, _) = matrix_info(member_inst);
-                        if let Some(col_ty) = column_type {
-                            if let Some(col_size) =
-                                type_layout_size(col_ty, ctx.definitions, &mut HashSet::new())
-                            {
-                                if col_size > stride {
-                                    return Err(ValidationError::InvalidBlockLayout {
-                                        struct_type: struct_id,
-                                        reason: format!(
-                                            "matrix stride {stride} is smaller than column size {col_size}"
-                                        ),
-                                    }.into());
-                                }
-                            }
-                        }
                     }
                 } else if offset % alignment != 0 {
                     return Err(ValidationError::InvalidBlockLayout {

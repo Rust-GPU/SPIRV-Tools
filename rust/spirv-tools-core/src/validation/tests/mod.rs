@@ -14352,7 +14352,10 @@ fn relax_block_layout_allows_scalar_vector_alignment() {
         .expect("scalar_block_layout should permit scalar alignment for vectors");
 }
 #[test]
-fn uniform_buffer_standard_layout_allows_scalar_vector_alignment() {
+fn uniform_buffer_standard_layout_does_not_relax_vector_alignment() {
+    // uniform_buffer_standard_layout only changes std140→std430 (no 16-byte
+    // rounding for arrays/structs). It does NOT enable relaxed vector offset
+    // checks. A vec2 at offset 4 (alignment 8) should fail.
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -14368,13 +14371,43 @@ fn uniform_buffer_standard_layout_allows_scalar_vector_alignment() {
         "%var = OpVariable %ptr Uniform",
     ]
     .join("\n");
-    let relax = ValidationOptions {
+    let opts = ValidationOptions {
         uniform_buffer_standard_layout: true,
         ..ValidationOptions::default()
     };
+    let err = text
+        .as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect_err("uniform_buffer_standard_layout does not relax vector alignment");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn uniform_buffer_standard_layout_with_relax_allows_scalar_vector_alignment() {
+    // When BOTH uniform_buffer_standard_layout AND relax_block_layout are
+    // enabled, vectors can use scalar element alignment for offsets.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 4",
+        "%int = OpTypeInt 32 0",
+        "%vec2 = OpTypeVector %int 2",
+        "%struct = OpTypeStruct %int %vec2",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        uniform_buffer_standard_layout: true,
+        relax_block_layout: true,
+        ..ValidationOptions::default()
+    };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
-        .expect("uniform_buffer_standard_layout should permit scalar-aligned vectors");
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect("relax_block_layout should permit scalar-aligned vectors");
 }
 #[test]
 fn workgroup_scalar_block_layout_uses_scalar_alignment() {
@@ -14481,6 +14514,68 @@ fn uniform_block_array_stride_requires_std140_extended_alignment() {
         .validate(TargetEnv::Universal1_6)
         .expect_err("Uniform + Block uses std140 where array stride 8 is not aligned to 16");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn relax_block_layout_preserves_std140_extended_alignment() {
+    // relax_block_layout does NOT disable std140 extended alignment for
+    // Uniform + Block. Only uniform_buffer_standard_layout does that.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpDecorate %inner_arr ArrayStride 4",
+        "OpDecorate %outer_arr ArrayStride 8",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%struct = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        relax_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    let err = text
+        .as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect_err("relax_block_layout does not disable std140 extended alignment");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn uniform_buffer_standard_layout_disables_std140_extended_alignment() {
+    // uniform_buffer_standard_layout makes blockRules=false in C++,
+    // converting std140 to std430 (no 16-byte extended alignment).
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpDecorate %inner_arr ArrayStride 4",
+        "OpDecorate %outer_arr ArrayStride 8",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%struct = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        uniform_buffer_standard_layout: true,
+        ..ValidationOptions::default()
+    };
+    text.as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect("uniform_buffer_standard_layout disables std140 extended alignment");
 }
 #[test]
 fn vector_straddle_rejected_under_relax() {
