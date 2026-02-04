@@ -30358,3 +30358,58 @@ fn capability_with_alternative_extensions_rejects_when_none_declared() {
         "Expected DisallowedCapabilityMissingExtension, got: {error:?}"
     );
 }
+
+#[test]
+fn instance_id_builtin_rejected_in_vulkan_vertex_shader() {
+    // InstanceId is not allowed in Vulkan vertex shaders (use InstanceIndex instead)
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %iid",
+        "%void = OpTypeVoid",
+        "%int = OpTypeInt 32 1",
+        "%ptr_input_int = OpTypePointer Input %int",
+        "%iid = OpVariable %ptr_input_int Input",
+        "OpDecorate %iid BuiltIn InstanceId",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("InstanceId should be rejected in Vulkan vertex shader");
+    assert!(
+        matches!(error, ValidationError::BuiltInDisallowedForEnv { .. }),
+        "Expected BuiltInDisallowedForEnv, got: {error:?}"
+    );
+}
+
+#[test]
+fn instance_id_builtin_accepted_in_vulkan_ray_tracing_shader() {
+    // InstanceId IS allowed in Vulkan ray tracing shaders (ClosestHit, AnyHit, Intersection)
+    let text = [
+        "OpCapability Shader",
+        "OpCapability RayTracingKHR",
+        "OpExtension \"SPV_KHR_ray_tracing\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint ClosestHitKHR %main \"main\" %iid",
+        "%void = OpTypeVoid",
+        "%int = OpTypeInt 32 1",
+        "%ptr_input_int = OpTypePointer Input %int",
+        "%iid = OpVariable %ptr_input_int Input",
+        "OpDecorate %iid BuiltIn InstanceId",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_2)
+        .expect("InstanceId should be accepted in Vulkan ray tracing shader");
+}

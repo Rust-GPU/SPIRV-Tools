@@ -146,7 +146,24 @@ impl ValidationRule for BuiltinStorageClassRule {
             }
 
             // Environment-specific built-in restrictions
-            if env.is_vulkan() && (builtin == BuiltIn::VertexId || builtin == BuiltIn::InstanceId) {
+            // VertexId is not allowed in Vulkan (use VertexIndex instead)
+            if env.is_vulkan() && builtin == BuiltIn::VertexId {
+                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
+            }
+            // InstanceId is not allowed in Vulkan vertex shaders (use InstanceIndex instead),
+            // but IS allowed in ray tracing shaders (Intersection, AnyHit, ClosestHit)
+            if env.is_vulkan()
+                && builtin == BuiltIn::InstanceId
+                && entry_models.contains(&ExecutionModel::Vertex)
+                && !entry_models.iter().any(|m| {
+                    matches!(
+                        m,
+                        ExecutionModel::IntersectionKHR
+                            | ExecutionModel::AnyHitKHR
+                            | ExecutionModel::ClosestHitKHR
+                    )
+                })
+            {
                 return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
             }
             if !env.is_vulkan()
