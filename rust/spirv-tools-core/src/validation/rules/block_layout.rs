@@ -265,13 +265,25 @@ impl ValidationRule for BlockLayoutRule {
                     }.into());
                 }
 
-                let next_offset = offset.saturating_add(size);
+                let mut next_valid_offset = offset.saturating_add(size);
+                // From C++ validate_decorations.cpp: non-scalar block layout
+                // rules don't permit anything in the padding of a struct or
+                // array. Round up the next valid offset to the member's
+                // alignment so that the next member cannot overlap padding.
+                if !scalar_layout
+                    && matches!(
+                        member_inst.class.opcode,
+                        Op::TypeArray | Op::TypeStruct
+                    )
+                {
+                    next_valid_offset = round_up(next_valid_offset, alignment);
+                }
                 // Ensure no overlap with the next member offset (if any).
                 if let Some(next) = member_offsets
                     .get(&MemberIndex((index as u32) + 1))
                     .copied()
                 {
-                    if next < next_offset {
+                    if next < next_valid_offset {
                         return Err(ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
                             reason: "member offsets overlap".to_string(),
@@ -503,33 +515,19 @@ fn round_up(value: u32, align: u32) -> u32 {
     }
 }
 
+/// Calculates type alignment, matching C++ getBaseAlignment().
+///
+/// When `extended_alignment` is true (std140, i.e. Uniform + Block), arrays,
+/// structs, and matrices have their base alignment rounded up to 16 bytes.
+/// When false (std430 or scalar), no rounding is applied.
+///
+/// When `scalar_layout` is true, vectors use scalar element alignment instead
+/// of the standard 2N/4N rules.
 fn type_alignment(
     ty: TypeId,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
-    extended_alignment: bool,
-) -> Option<u32> {
-    type_alignment_extended(ty, definitions, visiting, scalar_layout, false, extended_alignment)
-}
-
-/// Calculates type alignment with optional extended alignment for std140 rules.
-///
-/// In std140 (Uniform + Block):
-/// - Arrays and structs have their base alignment rounded up to 16 bytes
-/// - This is called "extended alignment"
-///
-/// In std430 (StorageBuffer + Block, BufferBlock + Uniform, PushConstant + Block, etc.):
-/// - No 16-byte rounding is applied
-///
-/// The `extended_alignment` parameter controls whether the 16-byte rounding applies.
-/// It should be `true` only for std140 (Uniform + Block) when not using relaxed/scalar layout.
-fn type_alignment_extended(
-    ty: TypeId,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
-    visiting: &mut HashSet<TypeId>,
-    scalar_layout: bool,
-    use_extended: bool,
     extended_alignment: bool,
 ) -> Option<u32> {
     if !visiting.insert(ty) {
@@ -545,7 +543,7 @@ fn type_alignment_extended(
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
             let elem_align =
-                type_alignment_extended(elem, definitions, visiting, scalar_layout, false, extended_alignment)?;
+                type_alignment(elem, definitions, visiting, scalar_layout, extended_alignment)?;
             if scalar_layout {
                 Some(elem_align)
             } else {
@@ -558,7 +556,13 @@ fn type_alignment_extended(
             // Matrix alignment follows its column vector alignment.
             let (column, _) = matrix_info(inst);
             let column = column?;
-            type_alignment_extended(column, definitions, visiting, scalar_layout, use_extended, extended_alignment)
+            let base_align =
+                type_alignment(column, definitions, visiting, scalar_layout, extended_alignment)?;
+            if extended_alignment && !scalar_layout {
+                Some(round_up(base_align, 16))
+            } else {
+                Some(base_align)
+            }
         }
         Op::TypeArray | Op::TypeRuntimeArray => {
             let elem = inst.operands.first().and_then(|op| match op {
@@ -566,8 +570,8 @@ fn type_alignment_extended(
                 _ => None,
             })?;
             let base_align =
-                type_alignment_extended(elem, definitions, visiting, scalar_layout, true, extended_alignment)?;
-            if use_extended && extended_alignment && !scalar_layout {
+                type_alignment(elem, definitions, visiting, scalar_layout, extended_alignment)?;
+            if extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
             } else {
                 Some(base_align)
@@ -581,10 +585,10 @@ fn type_alignment_extended(
                     _ => return None,
                 };
                 let align =
-                    type_alignment_extended(ty, definitions, visiting, scalar_layout, true, extended_alignment)?;
+                    type_alignment(ty, definitions, visiting, scalar_layout, extended_alignment)?;
                 max_align = max_align.max(align);
             }
-            if use_extended && extended_alignment && !scalar_layout {
+            if extended_alignment && !scalar_layout {
                 Some(round_up(max_align, 16))
             } else {
                 Some(max_align)

@@ -14670,6 +14670,87 @@ fn small_vector_no_straddle_accepted_under_relax() {
         .expect("vec2 at offset 8 does not straddle 16-byte boundary");
 }
 #[test]
+fn member_in_array_padding_rejected() {
+    // An array of uint[2] (stride 16 under std140) has 8 bytes of padding.
+    // The next member at offset 8 falls inside the padding, which is not
+    // allowed under non-scalar block layout rules.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 8",
+        "OpDecorate %arr ArrayStride 16",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%arr = OpTypeArray %int %two",
+        "%struct = OpTypeStruct %arr %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("member in array padding should be rejected");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn member_after_array_padding_accepted() {
+    // Same array of uint[2] (stride 16 under std140), but the next member is
+    // at offset 16, after the padding. This should be accepted.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 16",
+        "OpDecorate %arr ArrayStride 16",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%arr = OpTypeArray %int %two",
+        "%struct = OpTypeStruct %arr %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("member at offset 16 is after array padding");
+}
+#[test]
+fn scalar_layout_allows_member_in_array_padding() {
+    // Under scalar block layout, members CAN be placed in padding areas.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 8",
+        "OpDecorate %arr ArrayStride 16",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%arr = OpTypeArray %int %two",
+        "%struct = OpTypeStruct %arr %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        scalar_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    text.as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect("scalar layout allows members in padding");
+}
+#[test]
 fn matrix_stride_alignment_and_size() {
     // Test that matrix stride must be at least as large as the column size
     let text = [
