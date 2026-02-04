@@ -14427,6 +14427,62 @@ fn array_stride_must_align_to_element() {
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
 #[test]
+fn storage_buffer_array_stride_uses_std430_no_extended_alignment() {
+    // StorageBuffer + Block uses std430 rules: arrays do NOT get 16-byte
+    // extended alignment. An array of uint[2] with stride 8 should be valid
+    // because the element alignment is 4, and 8 % 4 == 0.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpDecorate %inner_arr ArrayStride 4",
+        "OpDecorate %outer_arr ArrayStride 8",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%struct = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("StorageBuffer uses std430 rules where array stride 8 is valid");
+}
+#[test]
+fn uniform_block_array_stride_requires_std140_extended_alignment() {
+    // Uniform + Block uses std140 rules: arrays get 16-byte extended alignment.
+    // An array of uint[2] with stride 8 should be rejected because std140
+    // rounds the array alignment up to 16, and 8 % 16 != 0.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpDecorate %inner_arr ArrayStride 4",
+        "OpDecorate %outer_arr ArrayStride 8",
+        "%int = OpTypeInt 32 0",
+        "%two = OpConstant %int 2",
+        "%inner_arr = OpTypeArray %int %two",
+        "%outer_arr = OpTypeArray %inner_arr %two",
+        "%struct = OpTypeStruct %outer_arr",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("Uniform + Block uses std140 where array stride 8 is not aligned to 16");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
 fn vector_straddle_rejected_under_relax() {
     let text = [
         "OpCapability Shader",

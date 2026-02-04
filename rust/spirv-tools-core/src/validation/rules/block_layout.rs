@@ -48,6 +48,15 @@ impl ValidationRule for BlockLayoutRule {
                 continue;
             }
 
+            // Std140 extended alignment (16-byte rounding for arrays/structs) only
+            // applies to Uniform + Block decoration. All other combinations
+            // (StorageBuffer + Block, BufferBlock + Uniform, PushConstant + Block, etc.)
+            // use std430 rules which have no such rounding. This matches the C++
+            // SPIRV-Tools behavior in validate_decorations.cpp (blockRules vs bufferRules).
+            let is_uniform_block = block_info.decoration == BlockDecoration::Block
+                && block_info.storage_classes.contains(&StorageClass::Uniform);
+            let extended_alignment = is_uniform_block && !relax_layout;
+
             let Some(struct_inst) = ctx.definitions.get(&struct_id) else {
                 continue;
             };
@@ -79,13 +88,12 @@ impl ValidationRule for BlockLayoutRule {
                 let Some(member_inst) = ctx.definitions.get(&member_result_id) else {
                     continue;
                 };
-                // Pass relax_layout to skip std140's 16-byte extended alignment rule
-                // With relaxed or scalar layout, arrays/structs align to their natural alignment
                 let Some(alignment) = type_alignment(
                     member_type_id,
                     ctx.definitions,
                     &mut HashSet::new(),
                     relax_layout,
+                    extended_alignment,
                 ) else {
                     continue;
                 };
@@ -507,21 +515,29 @@ fn type_alignment(
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
+    extended_alignment: bool,
 ) -> Option<u32> {
-    type_alignment_extended(ty, definitions, visiting, scalar_layout, false)
+    type_alignment_extended(ty, definitions, visiting, scalar_layout, false, extended_alignment)
 }
 
 /// Calculates type alignment with optional extended alignment for std140 rules.
 ///
-/// In std140:
+/// In std140 (Uniform + Block):
 /// - Arrays and structs have their base alignment rounded up to 16 bytes
 /// - This is called "extended alignment"
+///
+/// In std430 (StorageBuffer + Block, BufferBlock + Uniform, PushConstant + Block, etc.):
+/// - No 16-byte rounding is applied
+///
+/// The `extended_alignment` parameter controls whether the 16-byte rounding applies.
+/// It should be `true` only for std140 (Uniform + Block) when not using relaxed/scalar layout.
 fn type_alignment_extended(
     ty: TypeId,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
     use_extended: bool,
+    extended_alignment: bool,
 ) -> Option<u32> {
     if !visiting.insert(ty) {
         return None;
@@ -536,7 +552,7 @@ fn type_alignment_extended(
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
             let elem_align =
-                type_alignment_extended(elem, definitions, visiting, scalar_layout, false)?;
+                type_alignment_extended(elem, definitions, visiting, scalar_layout, false, extended_alignment)?;
             if scalar_layout {
                 Some(elem_align)
             } else {
@@ -549,17 +565,16 @@ fn type_alignment_extended(
             // Matrix alignment follows its column vector alignment.
             let (column, _) = matrix_info(inst);
             let column = column?;
-            type_alignment_extended(column, definitions, visiting, scalar_layout, use_extended)
+            type_alignment_extended(column, definitions, visiting, scalar_layout, use_extended, extended_alignment)
         }
         Op::TypeArray | Op::TypeRuntimeArray => {
             let elem = inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
                 _ => None,
             })?;
-            // In std140, array element alignment is rounded up to 16 bytes (extended alignment)
             let base_align =
-                type_alignment_extended(elem, definitions, visiting, scalar_layout, true)?;
-            if use_extended && !scalar_layout {
+                type_alignment_extended(elem, definitions, visiting, scalar_layout, true, extended_alignment)?;
+            if use_extended && extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
             } else {
                 Some(base_align)
@@ -573,11 +588,10 @@ fn type_alignment_extended(
                     _ => return None,
                 };
                 let align =
-                    type_alignment_extended(ty, definitions, visiting, scalar_layout, true)?;
+                    type_alignment_extended(ty, definitions, visiting, scalar_layout, true, extended_alignment)?;
                 max_align = max_align.max(align);
             }
-            // In std140, struct alignment is rounded up to 16 bytes (extended alignment)
-            if use_extended && !scalar_layout {
+            if use_extended && extended_alignment && !scalar_layout {
                 Some(round_up(max_align, 16))
             } else {
                 Some(max_align)
@@ -597,7 +611,7 @@ fn vector_scalar_alignment(
         rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
         _ => None,
     })?;
-    type_alignment(elem, definitions, &mut HashSet::new(), true)
+    type_alignment(elem, definitions, &mut HashSet::new(), true, false)
 }
 
 fn vector_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) {
