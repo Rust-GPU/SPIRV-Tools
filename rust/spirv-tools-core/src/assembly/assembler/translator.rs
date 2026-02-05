@@ -103,6 +103,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::TypeMatrix => self.translate_type_matrix(instruction),
             spirv::Op::TypeImage => self.translate_type_image(instruction),
             spirv::Op::TypeSampledImage => self.translate_type_sampled_image(instruction),
+            spirv::Op::TypeSampler => self.translate_type_sampler(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
@@ -155,6 +156,48 @@ impl<'a> AssemblyTranslator<'a> {
             | spirv::Op::UConvert
             | spirv::Op::SConvert
             | spirv::Op::FConvert => self.translate_unary_op(instruction),
+            // Image operations: typed result + 1 IdRef (no image operands)
+            spirv::Op::Image
+            | spirv::Op::ImageQueryFormat
+            | spirv::Op::ImageQueryOrder
+            | spirv::Op::ImageQuerySize
+            | spirv::Op::ImageQueryLevels
+            | spirv::Op::ImageQuerySamples
+            | spirv::Op::ImageSparseTexelsResident => self.translate_image_op(instruction, 1),
+            // Image operations: typed result + 2 IdRef (no image operands)
+            spirv::Op::SampledImage
+            | spirv::Op::ImageQuerySizeLod
+            | spirv::Op::ImageQueryLod => self.translate_image_op(instruction, 2),
+            // Image operations: typed result + 3 IdRef (no image operands)
+            spirv::Op::ImageTexelPointer => self.translate_image_op(instruction, 3),
+            // Image operations: typed result + 2 IdRef + optional/required ImageOperands
+            spirv::Op::ImageSampleImplicitLod
+            | spirv::Op::ImageSampleExplicitLod
+            | spirv::Op::ImageSampleProjImplicitLod
+            | spirv::Op::ImageSampleProjExplicitLod
+            | spirv::Op::ImageFetch
+            | spirv::Op::ImageRead
+            | spirv::Op::ImageSparseSampleImplicitLod
+            | spirv::Op::ImageSparseSampleExplicitLod
+            | spirv::Op::ImageSparseSampleProjImplicitLod
+            | spirv::Op::ImageSparseSampleProjExplicitLod
+            | spirv::Op::ImageSparseFetch
+            | spirv::Op::ImageSparseRead => self.translate_image_op(instruction, 2),
+            // Image operations: typed result + 3 IdRef + optional/required ImageOperands
+            spirv::Op::ImageSampleDrefImplicitLod
+            | spirv::Op::ImageSampleDrefExplicitLod
+            | spirv::Op::ImageSampleProjDrefImplicitLod
+            | spirv::Op::ImageSampleProjDrefExplicitLod
+            | spirv::Op::ImageGather
+            | spirv::Op::ImageDrefGather
+            | spirv::Op::ImageSparseSampleDrefImplicitLod
+            | spirv::Op::ImageSparseSampleDrefExplicitLod
+            | spirv::Op::ImageSparseSampleProjDrefImplicitLod
+            | spirv::Op::ImageSparseSampleProjDrefExplicitLod
+            | spirv::Op::ImageSparseGather
+            | spirv::Op::ImageSparseDrefGather => self.translate_image_op(instruction, 3),
+            // ImageWrite: no result, 3 IdRef + optional ImageOperands
+            spirv::Op::ImageWrite => self.translate_image_write(instruction),
             _ => self
                 .module_builder
                 .emit_error(instruction.opcode_position(), "unsupported opcode"),
@@ -1288,6 +1331,18 @@ impl<'a> AssemblyTranslator<'a> {
             vec![dr::Operand::IdRef(image_type)],
         );
         self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
+    }
+
+    fn translate_type_sampler(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeSampler requires a result id");
+            return;
+        };
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        self.builder.type_sampler_id(Some(result_id));
         self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
@@ -2808,6 +2863,103 @@ impl<'a> AssemblyTranslator<'a> {
                 self.module_builder.resolve_id_ref(scope),
             ));
         }
+    }
+
+    fn take_image_operands(
+        &mut self,
+        operands: &mut std::slice::Iter<'_, ParsedOperand<'a>>,
+        target: &mut Vec<dr::Operand>,
+    ) {
+        if let Some(next) = operands.as_slice().first() {
+            if next.descriptor().kind() == OperandKind::ImageOperands {
+                let operand = operands.next().expect("peeked operand");
+                self.encode_image_operands_operand(operand, target);
+            }
+        }
+    }
+
+    fn encode_image_operands_operand(
+        &mut self,
+        operand: &ParsedOperand<'a>,
+        target: &mut Vec<dr::Operand>,
+    ) {
+        let OperandValue::ImageOperands(img_ops) = operand.value() else {
+            self.module_builder
+                .emit_error(operand.span().start(), "Invalid image operands");
+            return;
+        };
+        target.push(dr::Operand::ImageOperands(img_ops.mask()));
+        for id_ref in img_ops.dependent_ids() {
+            target.push(dr::Operand::IdRef(
+                self.module_builder.resolve_id_ref(*id_ref),
+            ));
+        }
+    }
+
+    /// Translate a typed-result image operation with N IdRef operands followed
+    /// by optional ImageOperands. Covers the majority of image sampling/fetch/
+    /// gather/read/query instructions.
+    fn translate_image_op(&mut self, instruction: &ParsedInstruction<'a>, id_count: usize) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(opcode_pos, "Image operation missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "Image operation missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let mut dr_operands = Vec::new();
+        for i in 0..id_count {
+            let Some(op) = operands.next() else {
+                self.module_builder.emit_error(
+                    opcode_pos,
+                    format!("Image operation missing operand {}", i + 1),
+                );
+                return;
+            };
+            let Some(id) = self.operand_as_id(op, &format!("operand {}", i + 1)) else {
+                return;
+            };
+            dr_operands.push(dr::Operand::IdRef(id));
+        }
+        self.take_image_operands(&mut operands, &mut dr_operands);
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        let inst = dr::Instruction::new(
+            instruction.opcode(),
+            Some(type_id),
+            Some(result_id),
+            dr_operands,
+        );
+        self.push_block_instruction(inst, opcode_pos);
+    }
+
+    /// Translate OpImageWrite which has no result type/id: image, coord, texel + optional ImageOperands.
+    fn translate_image_write(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let mut operands = instruction.operands().iter();
+        let mut dr_operands = Vec::new();
+        for label in ["image", "coordinate", "texel"] {
+            let Some(op) = operands.next() else {
+                self.module_builder.emit_error(
+                    opcode_pos,
+                    format!("OpImageWrite missing {label} operand"),
+                );
+                return;
+            };
+            let Some(id) = self.operand_as_id(op, label) else {
+                return;
+            };
+            dr_operands.push(dr::Operand::IdRef(id));
+        }
+        self.take_image_operands(&mut operands, &mut dr_operands);
+        let inst = dr::Instruction::new(spirv::Op::ImageWrite, None, None, dr_operands);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     fn encode_decoration_operands(

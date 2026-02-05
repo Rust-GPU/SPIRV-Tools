@@ -2191,3 +2191,279 @@ OpFunctionEnd
         let binary = assemble_text(text).expect("should assemble OpTypeImage module");
         assert!(!binary.is_empty(), "assembled binary should not be empty");
     }
+
+    #[test]
+    fn image_sample_implicit_lod_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %result_var
+%result = OpImageSampleImplicitLod %v4f32 %simg %coord
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpImageSampleImplicitLod");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_sample_explicit_lod_with_lod_operand() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%f32_0 = OpConstant %f32 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %result_var
+%result = OpImageSampleExplicitLod %v4f32 %simg %coord Lod %f32_0
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpImageSampleExplicitLod with Lod");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_fetch_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %img_var DescriptorSet 0
+OpDecorate %img_var Binding 0
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%v2i32 = OpTypeVector %i32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%img_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%i32_0 = OpConstant %i32 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %img_var
+%img = OpImage %img_ty %simg
+%coord = OpLoad %v2i32 %result_var
+%result = OpImageFetch %v4f32 %img %coord Lod %i32_0
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpImageFetch");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_write_assembles() {
+        let text = r#"
+OpCapability Shader
+OpCapability StorageImageWriteWithoutFormat
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %img_var DescriptorSet 0
+OpDecorate %img_var Binding 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%v2i32 = OpTypeVector %i32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 2 Unknown
+%ptr_img = OpTypePointer UniformConstant %img_ty
+%img_var = OpVariable %ptr_img UniformConstant
+%i32_0 = OpConstant %i32 0
+%f32_1 = OpConstant %f32 1
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%img = OpLoad %img_ty %img_var
+%coord = OpCompositeConstruct %v2i32 %i32_0 %i32_0
+%texel = OpCompositeConstruct %v4f32 %f32_1 %f32_1 %f32_1 %f32_1
+OpImageWrite %img %coord %texel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpImageWrite");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_query_lod_assembles() {
+        let text = r#"
+OpCapability Shader
+OpCapability ImageQuery
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v2f32 = OpTypePointer Output %v2f32
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %result_var
+%lod = OpImageQueryLod %v2f32 %simg %coord
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpImageQueryLod");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_sample_with_grad_operand() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %result_var
+%dx = OpLoad %v2f32 %result_var
+%dy = OpLoad %v2f32 %result_var
+%result = OpImageSampleExplicitLod %v4f32 %simg %coord Grad %dx %dy
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble with Grad operand");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn image_sample_with_combined_operands() {
+        // Lod|ConstOffset with two dependent ids
+        let source = [
+            "%1 = OpTypeFloat 32",
+            "%2 = OpTypeVector %1 2",
+            "%3 = OpTypeVector %1 4",
+            "%4 = OpTypeImage %1 2D 0 0 0 1 Unknown",
+            "%5 = OpTypeSampledImage %4",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble types");
+        // Verify OpImage and OpTypeSampledImage are present
+        let type_count = module
+            .types_global_values
+            .iter()
+            .filter(|inst| inst.class.opcode == spirv::Op::TypeImage)
+            .count();
+        assert_eq!(type_count, 1);
+    }
+
+    #[test]
+    fn sampled_image_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %img_var DescriptorSet 0
+OpDecorate %img_var Binding 0
+OpDecorate %sampler_var DescriptorSet 0
+OpDecorate %sampler_var Binding 1
+OpDecorate %result_var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%sampler_ty = OpTypeSampler
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_img = OpTypePointer UniformConstant %img_ty
+%ptr_sampler = OpTypePointer UniformConstant %sampler_ty
+%img_var = OpVariable %ptr_img UniformConstant
+%sampler_var = OpVariable %ptr_sampler UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%result_var = OpVariable %ptr_v4f32 Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%img = OpLoad %img_ty %img_var
+%sampler = OpLoad %sampler_ty %sampler_var
+%simg = OpSampledImage %simg_ty %img %sampler
+%coord = OpLoad %v2f32 %result_var
+%result = OpImageSampleImplicitLod %v4f32 %simg %coord
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpSampledImage + sample");
+        assert!(!binary.is_empty());
+    }

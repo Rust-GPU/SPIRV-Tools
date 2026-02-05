@@ -93,6 +93,8 @@ pub enum OperandValue<'a> {
     Word(WordToken<'a>),
     /// Structured memory access operand (mask + auxiliary parameters).
     MemoryAccess(MemoryAccessOperand<'a>),
+    /// Structured image operands (mask + auxiliary parameters).
+    ImageOperands(ImageOperandsOperand<'a>),
 }
 
 /// Memory access operand parsed from the text stream.
@@ -138,6 +140,34 @@ impl<'a> MemoryAccessOperand<'a> {
     /// Returns the optional scope when `MakePointerVisible*` is present.
     pub const fn make_pointer_visible_scope(&self) -> Option<IdRef<'a>> {
         self.make_pointer_visible_scope
+    }
+}
+
+/// Image operands parsed from the text stream.
+///
+/// Captures the mask bits and any dependent operands (IdRef parameters that
+/// follow the mask for flags like Bias, Lod, Grad, etc.).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageOperandsOperand<'a> {
+    mask: spirv::ImageOperands,
+    /// Dependent operands following the mask, in flag-bit order.
+    dependent_ids: Vec<IdRef<'a>>,
+}
+
+impl<'a> ImageOperandsOperand<'a> {
+    pub const fn new(mask: spirv::ImageOperands, dependent_ids: Vec<IdRef<'a>>) -> Self {
+        Self {
+            mask,
+            dependent_ids,
+        }
+    }
+
+    pub const fn mask(&self) -> spirv::ImageOperands {
+        self.mask
+    }
+
+    pub fn dependent_ids(&self) -> &[IdRef<'a>] {
+        &self.dependent_ids
     }
 }
 
@@ -424,6 +454,7 @@ impl<'a> Parser<'a> {
                     OperandValue::IdPair(first, second_id)
                 }
                 OperandKind::MemoryAccess => self.parse_memory_access_operand(word, span)?,
+                OperandKind::ImageOperands => self.parse_image_operands_operand(word, span)?,
                 _ => OperandValue::Word(word),
             },
             TokenKind::StringLiteral(lit) => {
@@ -481,6 +512,59 @@ impl<'a> Parser<'a> {
             alignment,
             make_pointer_available_scope,
             make_pointer_visible_scope,
+        )))
+    }
+
+    fn parse_image_operands_operand(
+        &mut self,
+        word: WordToken<'a>,
+        span: Span,
+    ) -> Result<OperandValue<'a>, ParseError> {
+        let mask = parse_image_operands_mask(word.as_str(), span)?;
+        let mut dependent_ids = Vec::new();
+
+        // Each flag with dependent operands requires reading IdRef(s) in bit order.
+        // Flags with dependent operands (each takes 1 IdRef unless noted):
+        //   Bias(1), Lod(2), Grad(4)→2 IdRefs, ConstOffset(8), Offset(16),
+        //   ConstOffsets(32), Sample(64), MinLod(128),
+        //   MakeTexelAvailable(256)→scope, MakeTexelVisible(512)→scope
+        let flags_with_one_id = [
+            spirv::ImageOperands::BIAS,
+            spirv::ImageOperands::LOD,
+        ];
+        let flags_with_two_ids = [
+            spirv::ImageOperands::GRAD,
+        ];
+        let flags_with_one_id_after_grad = [
+            spirv::ImageOperands::CONST_OFFSET,
+            spirv::ImageOperands::OFFSET,
+            spirv::ImageOperands::CONST_OFFSETS,
+            spirv::ImageOperands::SAMPLE,
+            spirv::ImageOperands::MIN_LOD,
+            spirv::ImageOperands::MAKE_TEXEL_AVAILABLE,
+            spirv::ImageOperands::MAKE_TEXEL_VISIBLE,
+        ];
+
+        for flag in &flags_with_one_id {
+            if mask.contains(*flag) {
+                dependent_ids.push(self.parse_scope_operand("image operand id")?);
+            }
+        }
+        for flag in &flags_with_two_ids {
+            if mask.contains(*flag) {
+                dependent_ids.push(self.parse_scope_operand("grad dx")?);
+                dependent_ids.push(self.parse_scope_operand("grad dy")?);
+            }
+        }
+        for flag in &flags_with_one_id_after_grad {
+            if mask.contains(*flag) {
+                dependent_ids.push(self.parse_scope_operand("image operand id")?);
+            }
+        }
+
+        Ok(OperandValue::ImageOperands(ImageOperandsOperand::new(
+            mask,
+            dependent_ids,
         )))
     }
 
@@ -662,6 +746,61 @@ fn memory_access_flag(name: &str) -> Option<spirv::MemoryAccess> {
     }
 }
 
+fn parse_image_operands_mask(text: &str, span: Span) -> Result<spirv::ImageOperands, ParseError> {
+    if text == "None" {
+        return Ok(spirv::ImageOperands::NONE);
+    }
+    if let Ok(bits) = text.parse::<u32>() {
+        return Ok(spirv::ImageOperands::from_bits_truncate(bits));
+    }
+
+    let mut mask = spirv::ImageOperands::empty();
+    for part in text.split('|').map(str::trim) {
+        if part.is_empty() || part == "None" {
+            continue;
+        }
+        if let Some(flag) = image_operands_flag(part) {
+            mask |= flag;
+        } else if let Ok(bits) = part.parse::<u32>() {
+            mask |= spirv::ImageOperands::from_bits_truncate(bits);
+        } else {
+            return Err(ParseError::new(
+                span.start(),
+                format!("Unknown image operands flag '{part}'"),
+            ));
+        }
+    }
+    Ok(mask)
+}
+
+fn image_operands_flag(name: &str) -> Option<spirv::ImageOperands> {
+    match name {
+        "Bias" => Some(spirv::ImageOperands::BIAS),
+        "Lod" => Some(spirv::ImageOperands::LOD),
+        "Grad" => Some(spirv::ImageOperands::GRAD),
+        "ConstOffset" => Some(spirv::ImageOperands::CONST_OFFSET),
+        "Offset" => Some(spirv::ImageOperands::OFFSET),
+        "ConstOffsets" => Some(spirv::ImageOperands::CONST_OFFSETS),
+        "Sample" => Some(spirv::ImageOperands::SAMPLE),
+        "MinLod" => Some(spirv::ImageOperands::MIN_LOD),
+        "MakeTexelAvailable" | "MakeTexelAvailableKHR" => {
+            Some(spirv::ImageOperands::MAKE_TEXEL_AVAILABLE)
+        }
+        "MakeTexelVisible" | "MakeTexelVisibleKHR" => {
+            Some(spirv::ImageOperands::MAKE_TEXEL_VISIBLE)
+        }
+        "NonPrivateTexel" | "NonPrivateTexelKHR" => {
+            Some(spirv::ImageOperands::NON_PRIVATE_TEXEL)
+        }
+        "VolatileTexel" | "VolatileTexelKHR" => Some(spirv::ImageOperands::VOLATILE_TEXEL),
+        "SignExtend" => Some(spirv::ImageOperands::SIGN_EXTEND),
+        "ZeroExtend" => Some(spirv::ImageOperands::ZERO_EXTEND),
+        "Nontemporal" => Some(spirv::ImageOperands::NONTEMPORAL),
+        "Offsets" => Some(spirv::ImageOperands::OFFSETS),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_instruction, OperandValue};
@@ -717,6 +856,84 @@ mod tests {
                 assert_eq!(scope.name(), "scope");
             }
             other => panic!("Expected memory access operand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_image_operands_lod() {
+        let parsed = parse_instruction(
+            "%result = OpImageSampleExplicitLod %v4float %sampled_image %coord Lod %lod_val",
+        )
+        .expect("parse");
+        assert_eq!(parsed.opcode(), spirv::Op::ImageSampleExplicitLod);
+        let last = parsed.operands().last().expect("image operands");
+        match last.value() {
+            OperandValue::ImageOperands(img_ops) => {
+                assert!(img_ops.mask().contains(spirv::ImageOperands::LOD));
+                assert_eq!(img_ops.dependent_ids().len(), 1);
+                assert_eq!(
+                    img_ops.dependent_ids()[0].as_spirv_id().as_named().unwrap().name(),
+                    "lod_val"
+                );
+            }
+            other => panic!("Expected image operands, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_image_operands_grad_with_two_ids() {
+        let parsed = parse_instruction(
+            "%result = OpImageSampleExplicitLod %v4float %sampled_image %coord Grad %dx %dy",
+        )
+        .expect("parse");
+        let last = parsed.operands().last().expect("image operands");
+        match last.value() {
+            OperandValue::ImageOperands(img_ops) => {
+                assert!(img_ops.mask().contains(spirv::ImageOperands::GRAD));
+                assert_eq!(img_ops.dependent_ids().len(), 2);
+                assert_eq!(
+                    img_ops.dependent_ids()[0].as_spirv_id().as_named().unwrap().name(),
+                    "dx"
+                );
+                assert_eq!(
+                    img_ops.dependent_ids()[1].as_spirv_id().as_named().unwrap().name(),
+                    "dy"
+                );
+            }
+            other => panic!("Expected image operands, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_image_operands_combined_flags() {
+        let parsed = parse_instruction(
+            "%result = OpImageSampleExplicitLod %v4float %img %coord Lod|ConstOffset %lod %offset",
+        )
+        .expect("parse");
+        let last = parsed.operands().last().expect("image operands");
+        match last.value() {
+            OperandValue::ImageOperands(img_ops) => {
+                assert!(img_ops.mask().contains(spirv::ImageOperands::LOD));
+                assert!(img_ops.mask().contains(spirv::ImageOperands::CONST_OFFSET));
+                assert_eq!(img_ops.dependent_ids().len(), 2);
+            }
+            other => panic!("Expected image operands, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_image_operands_none() {
+        let parsed = parse_instruction(
+            "%result = OpImageSampleExplicitLod %v4float %img %coord None",
+        )
+        .expect("parse");
+        let last = parsed.operands().last().expect("image operands");
+        match last.value() {
+            OperandValue::ImageOperands(img_ops) => {
+                assert_eq!(img_ops.mask(), spirv::ImageOperands::NONE);
+                assert!(img_ops.dependent_ids().is_empty());
+            }
+            other => panic!("Expected image operands, got {other:?}"),
         }
     }
 }
