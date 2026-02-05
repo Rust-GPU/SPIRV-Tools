@@ -1984,6 +1984,7 @@ fn mesh_output_primitives_execution_mode_is_accepted() {
         "OpExtension \"SPV_NV_mesh_shader\"",
         "OpMemoryModel Logical GLSL450",
         "OpEntryPoint MeshNV %main \"main\"",
+        "OpExecutionMode %main LocalSize 1 1 1",
         "OpExecutionMode %main OutputTrianglesEXT",
         "OpExecutionMode %main OutputVertices 3",
         "OpExecutionMode %main OutputPrimitivesEXT 2",
@@ -5489,4 +5490,226 @@ fn image_fetch_1d_with_scalar_coord_passes() {
     let binary = build_image_fetch_module(1, rspirv::spirv::Dim::Dim1D, 4, true);
     validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect("Valid OpImageFetch with 1D scalar coordinate should pass");
+}
+
+#[test]
+fn mesh_ext_requires_local_size() {
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main"
+OpExecutionMode %main OutputTrianglesEXT
+OpExecutionMode %main OutputVertices 3
+OpExecutionMode %main OutputPrimitivesEXT 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("MeshEXT without LocalSize should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::MissingLocalSizeForModel {
+                execution_model: rspirv::spirv::ExecutionModel::MeshEXT,
+                ..
+            }
+        ),
+        "expected MissingLocalSizeForModel for MeshEXT, got {err:?}"
+    );
+}
+
+#[test]
+fn task_ext_requires_local_size() {
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint TaskEXT %main "main"
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("TaskEXT without LocalSize should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::MissingLocalSizeForModel {
+                execution_model: rspirv::spirv::ExecutionModel::TaskEXT,
+                ..
+            }
+        ),
+        "expected MissingLocalSizeForModel for TaskEXT, got {err:?}"
+    );
+}
+
+#[test]
+fn mesh_ext_with_local_size_passes() {
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main"
+OpExecutionMode %main OutputTrianglesEXT
+OpExecutionMode %main OutputVertices 3
+OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("MeshEXT with LocalSize should pass");
+}
+
+#[test]
+fn local_size_id_operands_must_be_constants() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build a module with OpExecutionModeId LocalSizeId where one operand
+    // is not a constant (it's a function parameter instead of a constant).
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+
+    // Capabilities
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+
+    // Memory model
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+
+    // Types
+    let void_id = 1u32;
+    let fn_type_id = 2u32;
+    let u32_type_id = 3u32;
+    let main_id = 4u32;
+    let entry_id = 5u32;
+    let const1_id = 6u32;
+    let const2_id = 7u32;
+    // Use OpUndef (not a constant) for the third operand to trigger the error
+    let undef_id = 8u32;
+
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        Some(void_id),
+        None,
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(fn_type_id),
+        None,
+        vec![Operand::IdRef(void_id)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        Some(u32_type_id),
+        None,
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(u32_type_id),
+        Some(const1_id),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(u32_type_id),
+        Some(const2_id),
+        vec![Operand::LiteralBit32(1)],
+    ));
+    // OpUndef of u32 type — valid but not a constant
+    module.types_global_values.push(Instruction::new(
+        Op::Undef,
+        Some(u32_type_id),
+        Some(undef_id),
+        vec![],
+    ));
+
+    // Entry point
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
+            Operand::IdRef(main_id),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+
+    // OpExecutionModeId LocalSizeId with const, const, var_id (non-constant!)
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionModeId,
+        None,
+        None,
+        vec![
+            Operand::IdRef(main_id),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSizeId),
+            Operand::IdRef(const1_id),
+            Operand::IdRef(const2_id),
+            Operand::IdRef(undef_id), // not a constant!
+        ],
+    ));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(void_id),
+        Some(main_id),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(fn_type_id),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(entry_id), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_3)
+        .expect_err("LocalSizeId with non-constant operand should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::LocalSizeIdOperandNotConstant {
+                operand_index: 4,
+            }
+        ),
+        "expected LocalSizeIdOperandNotConstant at index 4, got {err:?}"
+    );
 }

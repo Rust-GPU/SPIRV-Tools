@@ -6351,6 +6351,20 @@ pub enum ValidationError {
         /// The entry point ID.
         entry_point: Id,
     },
+    /// Mesh/Task shader requires LocalSize, LocalSizeId, or WorkgroupSize decoration.
+    #[error("In the Vulkan environment, {execution_model:?} execution model entry point {entry_point:?} requires LocalSize, LocalSizeId execution mode or WorkgroupSize decoration")]
+    MissingLocalSizeForModel {
+        /// The entry point ID.
+        entry_point: Id,
+        /// The execution model.
+        execution_model: rspirv::spirv::ExecutionModel,
+    },
+    /// LocalSizeId operand is not a constant instruction.
+    #[error("OpExecutionModeId LocalSizeId operand at index {operand_index} is not a constant instruction")]
+    LocalSizeIdOperandNotConstant {
+        /// The operand index (2, 3, or 4).
+        operand_index: u32,
+    },
     /// LocalSize product is zero.
     #[error(
         "LocalSize execution mode must not have a product of zero (X = {x}, Y = {y}, Z = {z})"

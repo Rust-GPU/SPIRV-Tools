@@ -2058,6 +2058,7 @@ OpEntryPoint MeshEXT %main "main" %var
 OpExecutionMode %main OutputTrianglesEXT
 OpExecutionMode %main OutputVertices 3
 OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main LocalSize 1 1 1
 OpDecorate %var BuiltIn CullPrimitiveEXT
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
@@ -2081,6 +2082,7 @@ OpEntryPoint MeshEXT %main "main" %var
 OpExecutionMode %main OutputTrianglesEXT
 OpExecutionMode %main OutputVertices 3
 OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main LocalSize 1 1 1
 OpDecorate %var BuiltIn PrimitiveTriangleIndicesEXT
 %void = OpTypeVoid
 %fn = OpTypeFunction %void

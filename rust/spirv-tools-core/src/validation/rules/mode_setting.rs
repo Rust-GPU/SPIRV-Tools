@@ -631,15 +631,27 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
             }
         }
 
-        // Check GLCompute entry points
+        // Check GLCompute and Mesh/Task entry points for LocalSize requirement
         for ep in &module.entry_points {
             if ep.class.opcode != Op::EntryPoint {
                 continue;
             }
-            let Some(Operand::ExecutionModel(ExecutionModel::GLCompute)) = ep.operands.first()
-            else {
+            let Some(Operand::ExecutionModel(model)) = ep.operands.first() else {
                 continue;
             };
+
+            let requires_local_size = matches!(
+                model,
+                ExecutionModel::GLCompute
+                    | ExecutionModel::MeshEXT
+                    | ExecutionModel::MeshNV
+                    | ExecutionModel::TaskEXT
+                    | ExecutionModel::TaskNV
+            );
+            if !requires_local_size {
+                continue;
+            }
+
             let Some(Operand::IdRef(func_id)) = ep.operands.get(1) else {
                 continue;
             };
@@ -654,10 +666,18 @@ impl ValidationRule for VulkanGLComputeLocalSizeRule {
                 && modes.is_some_and(|s| s.contains(&ExecutionMode::TileShadingRateQCOM));
 
             if !has_local_size && !has_workgroup_size && !has_local_size_id && !has_tile_shading {
-                return Err(ValidationError::VulkanGLComputeMissingLocalSize {
-                    entry_point: to_id(*func_id),
+                if *model == ExecutionModel::GLCompute {
+                    return Err(ValidationError::VulkanGLComputeMissingLocalSize {
+                        entry_point: to_id(*func_id),
+                    }
+                    .into());
+                } else {
+                    return Err(ValidationError::MissingLocalSizeForModel {
+                        entry_point: to_id(*func_id),
+                        execution_model: *model,
+                    }
+                    .into());
                 }
-                .into());
             }
         }
 

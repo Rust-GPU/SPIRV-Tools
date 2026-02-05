@@ -105,6 +105,33 @@ impl ValidationRule for ExecutionModesRule {
                 {
                     return Err(ValidationError::LocalSizeIdNotAllowed { env: ctx.env }.into());
                 }
+
+                // Validate LocalSizeId operands are constants
+                if is_id_form && execution_mode == ExecutionMode::LocalSizeId {
+                    for idx in 2..=4 {
+                        if let Some(rspirv::dr::Operand::IdRef(operand_id)) =
+                            mode.operands.get(idx)
+                        {
+                            if let Ok(op_rid) =
+                                crate::validation::types::ResultId::try_from(*operand_id)
+                            {
+                                if let Some(op_inst) = ctx.definitions.get(&op_rid) {
+                                    if !crate::validation::helpers::is_constant_opcode(
+                                        op_inst.class.opcode,
+                                    ) {
+                                        return Err(
+                                            ValidationError::LocalSizeIdOperandNotConstant {
+                                                operand_index: idx as u32,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if let Some(model) = entry_point_models.get(&function) {
                     validate_mode_model(execution_mode, *model, function, ctx, mode)?;
                 }
