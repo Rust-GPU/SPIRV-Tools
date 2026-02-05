@@ -63,6 +63,19 @@ impl ValidationRule for BlockLayoutRule {
             let extended_alignment =
                 is_uniform_block && !ctx.options.uniform_buffer_standard_layout;
 
+            let deco_name = match block_info.decoration {
+                BlockDecoration::Block => "Block",
+                BlockDecoration::BufferBlock => "BufferBlock",
+            };
+
+            check_required_block_decorations(
+                ctx.module,
+                ctx.definitions,
+                struct_id,
+                deco_name,
+                &mut HashSet::new(),
+            )?;
+
             check_struct_layout(
                 ctx.module,
                 ctx.definitions,
@@ -605,6 +618,42 @@ pub fn array_stride(module: &Module, array_type: ResultId) -> Option<u32> {
     None
 }
 
+fn member_has_decoration(
+    module: &Module,
+    struct_id: ResultId,
+    member: MemberIndex,
+    decoration: Decoration,
+) -> bool {
+    for inst in &module.annotations {
+        if inst.class.opcode != Op::MemberDecorate {
+            continue;
+        }
+        let mut ops = inst.operands.iter();
+        let Some(rspirv::dr::Operand::IdRef(target)) = ops.next() else {
+            continue;
+        };
+        let Ok(target_id) = ResultId::try_from(*target) else {
+            continue;
+        };
+        if target_id != struct_id {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::LiteralBit32(member_idx)) = ops.next() else {
+            continue;
+        };
+        if *member_idx != member.0 {
+            continue;
+        }
+        let Some(rspirv::dr::Operand::Decoration(dec)) = ops.next() else {
+            continue;
+        };
+        if *dec == decoration {
+            return true;
+        }
+    }
+    false
+}
+
 fn member_is_row_major(module: &Module, struct_id: ResultId, member: MemberIndex) -> bool {
     for inst in &module.annotations {
         if inst.class.opcode != Op::MemberDecorate {
@@ -668,6 +717,125 @@ fn member_matrix_stride(module: &Module, struct_id: ResultId, member: MemberInde
         }
     }
     None
+}
+
+// ============================================================================
+// Pre-layout Decoration Checks
+// ============================================================================
+
+/// Validates that all required decorations are present on a block struct before
+/// running layout checks. This matches the C++ `checkForRequiredDecoration`
+/// calls in CheckDecorationsOfBuffers (lines 1439-1476):
+/// - All OpTypeArray members must have ArrayStride decorations
+/// - All OpTypeMatrix members (including those inside arrays) must have
+///   MatrixStride decorations
+/// - All OpTypeMatrix members must have RowMajor or ColMajor decorations
+fn check_required_block_decorations(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    struct_id: ResultId,
+    deco_name: &str,
+    visiting: &mut HashSet<ResultId>,
+) -> ValidationResult {
+    if !visiting.insert(struct_id) {
+        return Ok(());
+    }
+    let Some(struct_inst) = definitions.get(&struct_id) else {
+        visiting.remove(&struct_id);
+        return Ok(());
+    };
+    if struct_inst.class.opcode != Op::TypeStruct {
+        visiting.remove(&struct_id);
+        return Ok(());
+    }
+
+    for (member_idx, op) in struct_inst.operands.iter().enumerate() {
+        let rspirv::dr::Operand::IdRef(member_type_raw) = op else {
+            continue;
+        };
+        let Ok(member_type_id) = ResultId::try_from(*member_type_raw) else {
+            continue;
+        };
+        let Some(member_inst) = definitions.get(&member_type_id) else {
+            continue;
+        };
+
+        // ArrayStride: direct array members must have ArrayStride
+        if member_inst.class.opcode == Op::TypeArray {
+            if array_stride(module, member_type_id).is_none() {
+                visiting.remove(&struct_id);
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "Structure decorated as {} must be explicitly laid out with ArrayStride decorations",
+                        deco_name
+                    ),
+                }
+                .into());
+            }
+        }
+
+        // For matrix checks, unwrap arrays to find the underlying type
+        let mut effective_inst = member_inst;
+        while effective_inst.class.opcode == Op::TypeArray
+            || effective_inst.class.opcode == Op::TypeRuntimeArray
+        {
+            let Some(rspirv::dr::Operand::IdRef(e)) = effective_inst.operands.first() else {
+                break;
+            };
+            let Ok(eid) = ResultId::try_from(*e) else {
+                break;
+            };
+            let Some(einst) = definitions.get(&eid) else {
+                break;
+            };
+            effective_inst = einst;
+        }
+
+        if effective_inst.class.opcode == Op::TypeMatrix {
+            let midx = MemberIndex(member_idx as u32);
+            // MatrixStride must be present
+            if member_matrix_stride(module, struct_id, midx).is_none() {
+                visiting.remove(&struct_id);
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "Structure decorated as {} must be explicitly laid out with MatrixStride decorations",
+                        deco_name
+                    ),
+                }
+                .into());
+            }
+            // RowMajor or ColMajor must be present
+            if !member_has_decoration(module, struct_id, midx, Decoration::RowMajor)
+                && !member_has_decoration(module, struct_id, midx, Decoration::ColMajor)
+            {
+                visiting.remove(&struct_id);
+                return Err(ValidationError::InvalidBlockLayout {
+                    struct_type: struct_id,
+                    reason: format!(
+                        "Structure decorated as {} must be explicitly laid out with RowMajor or ColMajor decorations",
+                        deco_name
+                    ),
+                }
+                .into());
+            }
+        }
+
+        // Recurse into nested struct members
+        if member_inst.class.opcode == Op::TypeStruct {
+            check_required_block_decorations(
+                module,
+                definitions,
+                member_type_id,
+                deco_name,
+                visiting,
+            )?;
+        }
+    }
+
+    visiting.remove(&struct_id);
+    Ok(())
 }
 
 // ============================================================================

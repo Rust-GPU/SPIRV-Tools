@@ -14943,6 +14943,367 @@ fn matrix_stride_alignment_and_size() {
     validate_module(&aligned_words, TargetEnv::Universal1_6)
         .expect("aligned matrix stride should pass");
 }
+/// Negative: block struct with an array member missing ArrayStride must be rejected.
+#[test]
+fn block_struct_missing_array_stride_rejected() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%int = OpTypeInt 32 0",
+        "%len = OpConstant %int 2",
+        "%arr = OpTypeArray %int %len",
+        "%struct = OpTypeStruct %arr",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        // No ArrayStride on %arr
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("missing ArrayStride on block struct array should be rejected");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+
+/// Positive: block struct with ArrayStride on array member should pass.
+#[test]
+fn block_struct_with_array_stride_accepted() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%int = OpTypeInt 32 0",
+        "%len = OpConstant %int 2",
+        "%arr = OpTypeArray %int %len",
+        "%struct = OpTypeStruct %arr",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpDecorate %arr ArrayStride 16",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("array with ArrayStride in block struct should pass");
+}
+
+/// Negative: block struct with matrix member missing RowMajor/ColMajor must be rejected.
+#[test]
+fn block_struct_missing_matrix_majorness_rejected() {
+    // Build binary directly since the assembler requires RowMajor/ColMajor
+    // when MatrixStride is present.
+    use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+    fn inst(
+        opcode: rspirv::spirv::Op,
+        result_type: Option<u32>,
+        result_id: Option<u32>,
+        operands: Vec<rspirv::dr::Operand>,
+    ) -> Instruction {
+        Instruction::new(opcode, result_type, result_id, operands)
+    }
+    let mut module = Module::new();
+    module.header = Some(ModuleHeader::new(10));
+    module.capabilities.push(inst(
+        rspirv::spirv::Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(
+            rspirv::spirv::Capability::Shader,
+        )],
+    ));
+    module.memory_model = Some(inst(
+        rspirv::spirv::Op::MemoryModel,
+        None,
+        None,
+        vec![
+            rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.types_global_values.extend([
+        inst(
+            rspirv::spirv::Op::TypeFloat,
+            None,
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(32)],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeVector,
+            None,
+            Some(2),
+            vec![
+                rspirv::dr::Operand::IdRef(1),
+                rspirv::dr::Operand::LiteralBit32(2),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeMatrix,
+            None,
+            Some(3),
+            vec![
+                rspirv::dr::Operand::IdRef(2),
+                rspirv::dr::Operand::LiteralBit32(2),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeStruct,
+            None,
+            Some(4),
+            vec![rspirv::dr::Operand::IdRef(3)],
+        ),
+        inst(
+            rspirv::spirv::Op::TypePointer,
+            None,
+            Some(5),
+            vec![
+                rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Uniform),
+                rspirv::dr::Operand::IdRef(4),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Variable,
+            Some(5),
+            Some(6),
+            vec![rspirv::dr::Operand::StorageClass(
+                rspirv::spirv::StorageClass::Uniform,
+            )],
+        ),
+    ]);
+    module.annotations.extend([
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(6),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(6),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Binding),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::LiteralBit32(0),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        // MatrixStride but NO RowMajor/ColMajor
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::LiteralBit32(0),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::MatrixStride),
+                rspirv::dr::Operand::LiteralBit32(16),
+            ],
+        ),
+    ]);
+    let binary = module.assemble();
+    let err = binary
+        .as_slice()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("missing RowMajor/ColMajor on block struct matrix should be rejected");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+
+/// Negative: block struct with matrix member missing MatrixStride must be rejected.
+#[test]
+fn block_struct_missing_matrix_stride_rejected() {
+    // Build binary directly since the assembler validates ColMajor requires MatrixStride.
+    use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+    fn inst(
+        opcode: rspirv::spirv::Op,
+        result_type: Option<u32>,
+        result_id: Option<u32>,
+        operands: Vec<rspirv::dr::Operand>,
+    ) -> Instruction {
+        Instruction::new(opcode, result_type, result_id, operands)
+    }
+    let mut module = Module::new();
+    module.header = Some(ModuleHeader::new(10));
+    module.capabilities.push(inst(
+        rspirv::spirv::Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(
+            rspirv::spirv::Capability::Shader,
+        )],
+    ));
+    module.memory_model = Some(inst(
+        rspirv::spirv::Op::MemoryModel,
+        None,
+        None,
+        vec![
+            rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.types_global_values.extend([
+        inst(
+            rspirv::spirv::Op::TypeFloat,
+            None,
+            Some(1),
+            vec![rspirv::dr::Operand::LiteralBit32(32)],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeVector,
+            None,
+            Some(2),
+            vec![
+                rspirv::dr::Operand::IdRef(1),
+                rspirv::dr::Operand::LiteralBit32(2),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeMatrix,
+            None,
+            Some(3),
+            vec![
+                rspirv::dr::Operand::IdRef(2),
+                rspirv::dr::Operand::LiteralBit32(2),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeStruct,
+            None,
+            Some(4),
+            vec![rspirv::dr::Operand::IdRef(3)],
+        ),
+        inst(
+            rspirv::spirv::Op::TypePointer,
+            None,
+            Some(5),
+            vec![
+                rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Uniform),
+                rspirv::dr::Operand::IdRef(4),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Variable,
+            Some(5),
+            Some(6),
+            vec![rspirv::dr::Operand::StorageClass(
+                rspirv::spirv::StorageClass::Uniform,
+            )],
+        ),
+    ]);
+    module.annotations.extend([
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(6),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(6),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Binding),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::LiteralBit32(0),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        // ColMajor but NO MatrixStride
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(4),
+                rspirv::dr::Operand::LiteralBit32(0),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::ColMajor),
+            ],
+        ),
+    ]);
+    let binary = module.assemble();
+    let err = binary
+        .as_slice()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("missing MatrixStride on block struct matrix should be rejected");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+
+/// Positive: block struct with proper matrix decorations should pass.
+#[test]
+fn block_struct_with_matrix_decorations_accepted() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%float = OpTypeFloat 32",
+        "%vec4 = OpTypeVector %float 4",
+        "%mat4 = OpTypeMatrix %vec4 4",
+        "%struct = OpTypeStruct %mat4",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 0 ColMajor",
+        "OpMemberDecorate %struct 0 MatrixStride 16",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("block struct with ColMajor + MatrixStride should pass");
+}
+
 #[test]
 fn runtime_array_must_be_last_member() {
     use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
