@@ -99,6 +99,14 @@ pub fn validate_capabilities(
                 });
             }
 
+            // ImageReadWrite requires OpenCL 2.0+ (not just ImageBasic)
+            if env.is_opencl_1_2() && capability == Capability::ImageReadWrite {
+                return Err(ValidationError::DisallowedCapability {
+                    capability,
+                    env,
+                });
+            }
+
             let grammar_version = grammar_requirements.required_version;
             let required_version = merge_versions(
                 grammar_version,
