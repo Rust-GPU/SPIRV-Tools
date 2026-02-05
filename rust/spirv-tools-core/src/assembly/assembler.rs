@@ -741,6 +741,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::TypePointer => self.translate_type_pointer(instruction),
             spirv::Op::TypeVector => self.translate_type_vector(instruction),
             spirv::Op::TypeArray => self.translate_type_array(instruction),
+            spirv::Op::TypeRuntimeArray => self.translate_type_runtime_array(instruction),
             spirv::Op::TypeStruct => self.translate_type_struct(instruction),
             spirv::Op::TypeMatrix => self.translate_type_matrix(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
@@ -1588,6 +1589,40 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.module_mut().types_global_values.push(inst);
         self.module_builder
             .note_array_type(result_id, ArrayTypeInfo::new(element_type, length_id));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
+    }
+
+    fn translate_type_runtime_array(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeRuntimeArray missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(element_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeRuntimeArray missing element type");
+            return;
+        };
+        let Some(element_type) = self.operand_as_id(element_operand, "element type") else {
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeRuntimeArray received unexpected operands",
+            );
+            return;
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::TypeRuntimeArray,
+            None,
+            Some(result_id),
+            vec![dr::Operand::IdRef(element_type)],
+        );
+        self.builder.module_mut().types_global_values.push(inst);
         self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 
@@ -6343,5 +6378,27 @@ OpFunctionEnd"#;
                 }
             }
         }
+    }
+
+    #[test]
+    fn assemble_runtime_array_type() {
+        let text = [
+            "OpCapability Shader",
+            "OpMemoryModel Logical GLSL450",
+            "%uint = OpTypeInt 32 0",
+            "%rarr = OpTypeRuntimeArray %uint",
+        ]
+        .join("\n");
+        let words = assemble_text(&text).expect("OpTypeRuntimeArray should assemble");
+        // Disassemble and check the runtime array instruction is present
+        let module = rspirv::dr::load_words(&words).expect("load");
+        let has_runtime_array = module
+            .types_global_values
+            .iter()
+            .any(|inst| inst.class.opcode == spirv::Op::TypeRuntimeArray);
+        assert!(
+            has_runtime_array,
+            "assembled module should contain OpTypeRuntimeArray"
+        );
     }
 }
