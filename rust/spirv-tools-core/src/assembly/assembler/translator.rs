@@ -101,6 +101,8 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::TypeRuntimeArray => self.translate_type_runtime_array(instruction),
             spirv::Op::TypeStruct => self.translate_type_struct(instruction),
             spirv::Op::TypeMatrix => self.translate_type_matrix(instruction),
+            spirv::Op::TypeImage => self.translate_type_image(instruction),
+            spirv::Op::TypeSampledImage => self.translate_type_sampled_image(instruction),
             spirv::Op::MemoryModel => self.translate_memory_model(instruction),
             spirv::Op::EntryPoint => self.translate_entry_point(instruction),
             spirv::Op::ExecutionMode => self.translate_execution_mode(instruction),
@@ -1075,6 +1077,217 @@ impl<'a> AssemblyTranslator<'a> {
         self.builder.module_mut().types_global_values.push(inst);
         self.module_builder
             .note_matrix_type(result_id, MatrixTypeInfo::new(column_type, column_count));
+        self.record_from_module(|module| module.types_global_values.last().cloned());
+    }
+
+    fn translate_type_image(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+
+        // 1. Sampled Type (IdRef)
+        let Some(sampled_type_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing sampled type");
+            return;
+        };
+        let Some(sampled_type) =
+            self.operand_as_id(sampled_type_operand, "sampled type")
+        else {
+            return;
+        };
+
+        // 2. Dim (Enum) — SPIR-V assembly uses short names (1D, 2D, Cube, etc.)
+        let Some(dim_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing Dim");
+            return;
+        };
+        let dim = match dim_operand.value() {
+            OperandValue::Word(word) => match word.as_str() {
+                "1D" | "Dim1D" => spirv::Dim::Dim1D,
+                "2D" | "Dim2D" => spirv::Dim::Dim2D,
+                "3D" | "Dim3D" => spirv::Dim::Dim3D,
+                "Cube" | "DimCube" => spirv::Dim::DimCube,
+                "Rect" | "DimRect" => spirv::Dim::DimRect,
+                "Buffer" | "DimBuffer" => spirv::Dim::DimBuffer,
+                "SubpassData" | "DimSubpassData" => spirv::Dim::DimSubpassData,
+                "TileImageDataEXT" | "DimTileImageDataEXT" => {
+                    spirv::Dim::DimTileImageDataEXT
+                }
+                _ => {
+                    self.module_builder
+                        .emit_error(dim_operand.span().start(), "Invalid Dim");
+                    return;
+                }
+            },
+            _ => {
+                self.module_builder
+                    .emit_error(dim_operand.span().start(), "Dim must be an enumerant");
+                return;
+            }
+        };
+
+        // 3. Depth (Literal)
+        let Some(depth_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing Depth");
+            return;
+        };
+        let depth = match depth_operand.value() {
+            OperandValue::Literal(lit) => literal_to_u32(lit),
+            _ => {
+                self.module_builder
+                    .emit_error(depth_operand.span().start(), "Depth must be a literal");
+                return;
+            }
+        };
+
+        // 4. Arrayed (Literal)
+        let Some(arrayed_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing Arrayed");
+            return;
+        };
+        let arrayed = match arrayed_operand.value() {
+            OperandValue::Literal(lit) => literal_to_u32(lit),
+            _ => {
+                self.module_builder.emit_error(
+                    arrayed_operand.span().start(),
+                    "Arrayed must be a literal",
+                );
+                return;
+            }
+        };
+
+        // 5. MS (Literal)
+        let Some(ms_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing MS");
+            return;
+        };
+        let ms = match ms_operand.value() {
+            OperandValue::Literal(lit) => literal_to_u32(lit),
+            _ => {
+                self.module_builder
+                    .emit_error(ms_operand.span().start(), "MS must be a literal");
+                return;
+            }
+        };
+
+        // 6. Sampled (Literal)
+        let Some(sampled_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing Sampled");
+            return;
+        };
+        let sampled = match sampled_operand.value() {
+            OperandValue::Literal(lit) => literal_to_u32(lit),
+            _ => {
+                self.module_builder.emit_error(
+                    sampled_operand.span().start(),
+                    "Sampled must be a literal",
+                );
+                return;
+            }
+        };
+
+        // 7. Image Format (Enum)
+        let Some(format_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeImage missing Image Format");
+            return;
+        };
+        let Some(format) = self.parse_enum_operand::<spirv::ImageFormat>(
+            Some(format_operand),
+            "Image Format",
+            opcode_pos,
+        ) else {
+            return;
+        };
+
+        // 8. Optional: Access Qualifier (Enum)
+        let access_qualifier = match operands.next() {
+            Some(operand) => {
+                match self.parse_enum_operand::<spirv::AccessQualifier>(
+                    Some(operand),
+                    "Access Qualifier",
+                    opcode_pos,
+                ) {
+                    Some(aq) => Some(aq),
+                    None => return,
+                }
+            }
+            None => None,
+        };
+
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeImage received unexpected operands",
+            );
+            return;
+        }
+
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let mut inst_operands = vec![
+            dr::Operand::IdRef(sampled_type),
+            dr::Operand::from(dim),
+            dr::Operand::LiteralBit32(depth),
+            dr::Operand::LiteralBit32(arrayed),
+            dr::Operand::LiteralBit32(ms),
+            dr::Operand::LiteralBit32(sampled),
+            dr::Operand::from(format),
+        ];
+        if let Some(aq) = access_qualifier {
+            inst_operands.push(dr::Operand::from(aq));
+        }
+
+        let inst = dr::Instruction::new(
+            spirv::Op::TypeImage,
+            None,
+            Some(result_id),
+            inst_operands,
+        );
+        self.builder.module_mut().types_global_values.push(inst);
+        self.record_from_module(|module| module.types_global_values.last().cloned());
+    }
+
+    fn translate_type_sampled_image(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeSampledImage missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(image_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpTypeSampledImage missing image type");
+            return;
+        };
+        let Some(image_type) = self.operand_as_id(image_operand, "image type") else {
+            return;
+        };
+        if let Some(extra) = operands.next() {
+            self.module_builder.emit_error(
+                extra.span().start(),
+                "OpTypeSampledImage received unexpected operands",
+            );
+            return;
+        }
+        let result_id = self.module_builder.resolve_result_id(result_id);
+        let inst = dr::Instruction::new(
+            spirv::Op::TypeSampledImage,
+            None,
+            Some(result_id),
+            vec![dr::Operand::IdRef(image_type)],
+        );
+        self.builder.module_mut().types_global_values.push(inst);
         self.record_from_module(|module| module.types_global_values.last().cloned());
     }
 

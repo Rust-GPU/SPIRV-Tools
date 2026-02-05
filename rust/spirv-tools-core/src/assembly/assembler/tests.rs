@@ -2076,3 +2076,118 @@ OpFunctionEnd"#;
             "assembled module should contain OpTypeRuntimeArray"
         );
     }
+
+    #[test]
+    fn translator_emits_type_image_instruction() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%img = OpTypeImage %float 2D 0 0 0 1 Unknown",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let img_inst = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::TypeImage)
+            .expect("should have OpTypeImage");
+        assert_eq!(img_inst.result_id, Some(2));
+        assert_eq!(img_inst.operands.len(), 7);
+        // Check Dim operand
+        assert_eq!(
+            img_inst.operands[1],
+            dr::Operand::Dim(spirv::Dim::Dim2D)
+        );
+        // Check Sampled operand
+        assert_eq!(
+            img_inst.operands[5],
+            dr::Operand::LiteralBit32(1)
+        );
+        // Check ImageFormat operand
+        assert_eq!(
+            img_inst.operands[6],
+            dr::Operand::ImageFormat(spirv::ImageFormat::Unknown)
+        );
+    }
+
+    #[test]
+    fn translator_emits_type_image_with_all_dims() {
+        for (dim_str, expected_dim) in [
+            ("1D", spirv::Dim::Dim1D),
+            ("2D", spirv::Dim::Dim2D),
+            ("3D", spirv::Dim::Dim3D),
+            ("Cube", spirv::Dim::DimCube),
+            ("Buffer", spirv::Dim::DimBuffer),
+            ("SubpassData", spirv::Dim::DimSubpassData),
+        ] {
+            let source = format!("%float = OpTypeFloat 32\n%img = OpTypeImage %float {dim_str} 0 0 0 1 Unknown");
+            let parsed: Vec<_> = source
+                .lines()
+                .map(|line| parse_instruction(line).expect("parse"))
+                .collect();
+            let refs: Vec<_> = parsed.iter().collect();
+            let module = assemble_instructions(&refs).expect(&format!("assemble with Dim {dim_str}"));
+            let img_inst = module
+                .types_global_values
+                .iter()
+                .find(|inst| inst.class.opcode == spirv::Op::TypeImage)
+                .expect("should have OpTypeImage");
+            assert_eq!(
+                img_inst.operands[1],
+                dr::Operand::Dim(expected_dim),
+                "Dim mismatch for {dim_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn translator_emits_type_sampled_image_instruction() {
+        let source = [
+            "%float = OpTypeFloat 32",
+            "%img = OpTypeImage %float 2D 0 0 0 1 Unknown",
+            "%simg = OpTypeSampledImage %img",
+        ];
+        let parsed: Vec<_> = source
+            .into_iter()
+            .map(|line| parse_instruction(line).expect("parse"))
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let module = assemble_instructions(&refs).expect("assemble instructions");
+        let simg_inst = module
+            .types_global_values
+            .iter()
+            .find(|inst| inst.class.opcode == spirv::Op::TypeSampledImage)
+            .expect("should have OpTypeSampledImage");
+        assert_eq!(simg_inst.result_id, Some(3));
+        assert_eq!(simg_inst.operands.len(), 1);
+        assert_eq!(simg_inst.operands[0], dr::Operand::IdRef(2)); // references %img
+    }
+
+    #[test]
+    fn type_image_assembles_and_validates() {
+        // Full module with OpTypeImage that assembles and validates successfully
+        let text = r#"
+OpCapability Shader
+OpCapability InputAttachment
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var DescriptorSet 0
+OpDecorate %var Binding 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img = OpTypeImage %f32 SubpassData 0 0 0 2 Unknown
+%ptr = OpTypePointer UniformConstant %img
+%var = OpVariable %ptr UniformConstant
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpTypeImage module");
+        assert!(!binary.is_empty(), "assembled binary should not be empty");
+    }
