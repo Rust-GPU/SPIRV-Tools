@@ -644,15 +644,15 @@ fn compute_workgroup_builtins_require_compute_entry_point() {
     .join("\n");
     let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
         .expect_err("workgroup built-ins require compute entry points");
-    assert_eq!(
-        err,
-        ValidationError::BuiltInRequiresExecutionModel {
-            builtin: rspirv::spirv::BuiltIn::GlobalInvocationId,
-            allowed: vec![
-                rspirv::spirv::ExecutionModel::GLCompute,
-                rspirv::spirv::ExecutionModel::Kernel
-            ]
-        }
+    assert!(
+        matches!(
+            err,
+            ValidationError::BuiltInRequiresExecutionModel {
+                builtin: rspirv::spirv::BuiltIn::GlobalInvocationId,
+                ..
+            }
+        ),
+        "expected BuiltInRequiresExecutionModel for GlobalInvocationId, got {err:?}"
     );
 
     let ok = r#"
@@ -2724,4 +2724,293 @@ fn lifetime_start_valid_function_pointer() {
     let binary = module.assemble();
     validate_module(&binary, TargetEnv::Universal1_6)
         .expect("Valid OpLifetimeStart/Stop with Function pointer should pass");
+}
+
+// ============================================================================
+// Commit 1: Built-in execution model bug fixes
+// ============================================================================
+
+#[test]
+fn subgroup_size_valid_in_fragment() {
+    // SubgroupSize and SubgroupLocalInvocationId are valid in all stages, not just compute
+    let text = r#"
+OpCapability Shader
+OpCapability GroupNonUniform
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn SubgroupSize
+OpDecorate %var Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("SubgroupSize should be valid in Fragment shader");
+}
+
+#[test]
+fn subgroup_local_invocation_id_valid_in_fragment() {
+    let text = r#"
+OpCapability Shader
+OpCapability GroupNonUniform
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn SubgroupLocalInvocationId
+OpDecorate %var Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("SubgroupLocalInvocationId should be valid in Fragment shader");
+}
+
+#[test]
+fn local_invocation_index_valid_in_mesh_ext() {
+    // Compute-like builtins should also be valid in Mesh/Task shaders
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %var
+OpExecutionMode %main LocalSize 1 1 1
+OpExecutionMode %main OutputVertices 1
+OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main OutputTrianglesEXT
+OpDecorate %var BuiltIn LocalInvocationIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("LocalInvocationIndex should be valid in MeshEXT shader");
+}
+
+#[test]
+fn num_subgroups_valid_in_task_ext() {
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpCapability GroupNonUniform
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint TaskEXT %main "main" %var
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %var BuiltIn NumSubgroups
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("NumSubgroups should be valid in TaskEXT shader");
+}
+
+#[test]
+fn compute_only_builtin_invalid_in_vertex() {
+    // Compute-only builtins should still be rejected in Vertex
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %var
+OpDecorate %var BuiltIn LocalInvocationIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("LocalInvocationIndex should not be valid in Vertex shader");
+    assert!(
+        matches!(err, ValidationError::BuiltInRequiresExecutionModel { .. }),
+        "expected BuiltInRequiresExecutionModel, got {err:?}"
+    );
+}
+
+#[test]
+fn patch_vertices_valid_in_tess_evaluation() {
+    // PatchVertices should be valid in both TessControl and TessEvaluation
+    let text = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpMemoryModel Logical GLSL450
+OpEntryPoint TessellationEvaluation %main "main" %var
+OpExecutionMode %main Triangles
+OpDecorate %var BuiltIn PatchVertices
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("PatchVertices should be valid in TessellationEvaluation");
+}
+
+#[test]
+fn patch_vertices_invalid_in_fragment() {
+    let text = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn PatchVertices
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("PatchVertices should not be valid in Fragment shader");
+    assert!(
+        matches!(err, ValidationError::BuiltInRequiresExecutionModel { .. }),
+        "expected BuiltInRequiresExecutionModel, got {err:?}"
+    );
+}
+
+#[test]
+fn tess_level_outer_valid_in_tess_control() {
+    // TessLevelOuter should be valid in both TessControl (output) and TessEvaluation (input)
+    let text = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpMemoryModel Logical GLSL450
+OpEntryPoint TessellationControl %main "main" %var
+OpExecutionMode %main OutputVertices 3
+OpDecorate %var BuiltIn TessLevelOuter
+OpDecorate %var Patch
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%u32 = OpTypeInt 32 0
+%u32_4 = OpConstant %u32 4
+%arr = OpTypeArray %f32 %u32_4
+%ptr = OpTypePointer Output %arr
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("TessLevelOuter should be valid in TessellationControl");
+}
+
+#[test]
+fn tess_level_inner_valid_in_tess_control() {
+    let text = r#"
+OpCapability Shader
+OpCapability Tessellation
+OpMemoryModel Logical GLSL450
+OpEntryPoint TessellationControl %main "main" %var
+OpExecutionMode %main OutputVertices 3
+OpDecorate %var BuiltIn TessLevelInner
+OpDecorate %var Patch
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%u32 = OpTypeInt 32 0
+%u32_2 = OpConstant %u32 2
+%arr = OpTypeArray %f32 %u32_2
+%ptr = OpTypePointer Output %arr
+%var = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("TessLevelInner should be valid in TessellationControl");
+}
+
+#[test]
+fn view_index_valid_in_fragment() {
+    let text = r#"
+OpCapability Shader
+OpCapability MultiView
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn ViewIndex
+OpDecorate %var Flat
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("ViewIndex should be valid in Fragment shader");
+}
+
+#[test]
+fn view_index_invalid_in_compute() {
+    let text = r#"
+OpCapability Shader
+OpCapability MultiView
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %var
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %var BuiltIn ViewIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer Input %u32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("ViewIndex should not be valid in GLCompute shader");
+    assert!(
+        matches!(err, ValidationError::BuiltInRequiresExecutionModel { .. }),
+        "expected BuiltInRequiresExecutionModel, got {err:?}"
+    );
 }

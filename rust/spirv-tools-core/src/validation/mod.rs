@@ -411,6 +411,7 @@ pub(crate) fn validate_words_internal(
         &validation_ctx,
         &rules::tensor_layout::all_tensor_layout_rules(),
     )?;
+    run_rules(&validation_ctx, &rules::ext_inst::all_ext_inst_rules())?;
 
     let friendly_names = options
         .use_friendly_names

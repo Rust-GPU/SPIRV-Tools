@@ -2039,7 +2039,7 @@ fn switch_branch_limit_enforced() {
     test_data
         .options
         .limits
-        .insert(LIMIT_MAX_SWITCH_BRANCHES, 2);
+        .insert(LIMIT_MAX_SWITCH_BRANCHES, 1);
 
     let ctx = test_data.as_context();
     let rule = SwitchBranchLimitRule;
@@ -2050,8 +2050,8 @@ fn switch_branch_limit_enforced() {
         err.error,
         ValidationError::LimitExceeded {
             limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
-            limit: 2,
-            found: 3
+            limit: 1,
+            found: 2
         }
     );
 }

@@ -17,7 +17,7 @@ use rspirv::spirv::Op;
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
-use crate::validation::type_ext::{DefaultTypeResolver, TypeResolver};
+use crate::validation::type_ext::{DefaultTypeResolver, TypeInstructionExt, TypeResolver};
 use crate::validation::types::{Id, ResultId};
 use crate::validation::ValidationResult;
 
@@ -1080,9 +1080,9 @@ impl ValidationRule for GlslGeometryOpsRule {
                             }
                         }
 
-                        // Refract - eta operand must be float scalar
+                        // Refract - eta operand must be float scalar matching
+                        // the component type of the result (when result is a vector)
                         glsl::REFRACT => {
-                            // Third operand (index 4) is eta, must be float scalar
                             if let Some(Operand::IdRef(eta_id)) = inst.operands.get(4) {
                                 if let Ok(eta_result_id) = ResultId::try_from(*eta_id) {
                                     if let Some(eta_inst) = ctx.definitions.get(&eta_result_id) {
@@ -1096,6 +1096,35 @@ impl ValidationRule for GlslGeometryOpsRule {
                                                     }
                                                     .into(),
                                                 );
+                                            }
+                                            // When result is a vector, eta must be the
+                                            // component type of the result vector
+                                            if let Some(result_type_id) = inst.result_type {
+                                                if let Ok(rt_id) =
+                                                    ResultId::try_from(result_type_id)
+                                                {
+                                                    if let Some(rt_inst) =
+                                                        ctx.definitions.get(&rt_id)
+                                                    {
+                                                        let expected_eta_type =
+                                                            if rt_inst.is_vector_type() {
+                                                                rt_inst.vector_component_type_id()
+                                                            } else {
+                                                                Some(result_type_id)
+                                                            };
+                                                        if let Some(expected) = expected_eta_type {
+                                                            if eta_type != expected {
+                                                                return Err(
+                                                                    ValidationError::ExtInstEtaTypeMismatch {
+                                                                        function: function_id,
+                                                                        block: block_id,
+                                                                    }
+                                                                    .into(),
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

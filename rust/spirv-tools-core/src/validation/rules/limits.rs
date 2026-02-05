@@ -332,7 +332,7 @@ impl ValidationRule for SwitchBranchLimitRule {
                             continue;
                         }
                         let pair_count = (operands.len().saturating_sub(2)) / 2;
-                        let branches = 1 + pair_count as u32; // include default target
+                        let branches = pair_count as u32; // case targets only, not default
                         if branches > limit {
                             return Err(ValidationError::LimitExceeded {
                                 limit_kind: LIMIT_MAX_SWITCH_BRANCHES,

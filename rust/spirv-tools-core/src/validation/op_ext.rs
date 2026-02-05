@@ -463,7 +463,6 @@ impl BuiltInExt for BuiltIn {
                 | BuiltIn::WorkgroupId
                 | BuiltIn::NumSubgroups
                 | BuiltIn::SubgroupId
-                | BuiltIn::SubgroupLocalInvocationId
         )
     }
 

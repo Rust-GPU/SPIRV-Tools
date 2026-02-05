@@ -96,6 +96,7 @@ impl ValidationRule for ExecutionModesRule {
                             let allowed = [
                                 ExecutionModel::Geometry,
                                 ExecutionModel::TessellationControl,
+                                ExecutionModel::TessellationEvaluation,
                                 ExecutionModel::MeshEXT,
                                 ExecutionModel::MeshNV,
                             ];

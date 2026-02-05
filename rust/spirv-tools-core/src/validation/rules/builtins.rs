@@ -239,14 +239,25 @@ impl ValidationRule for BuiltinStorageClassRule {
                 .into());
             }
 
-            // Compute-only built-ins
+            // Compute-only built-ins (also valid in Task/Mesh shaders)
             if builtin.is_compute_only()
                 && !entry_models.contains(&ExecutionModel::GLCompute)
                 && !entry_models.contains(&ExecutionModel::Kernel)
+                && !entry_models.contains(&ExecutionModel::TaskEXT)
+                && !entry_models.contains(&ExecutionModel::TaskNV)
+                && !entry_models.contains(&ExecutionModel::MeshEXT)
+                && !entry_models.contains(&ExecutionModel::MeshNV)
             {
                 return Err(ValidationError::BuiltInRequiresExecutionModel {
                     builtin,
-                    allowed: vec![ExecutionModel::GLCompute, ExecutionModel::Kernel],
+                    allowed: vec![
+                        ExecutionModel::GLCompute,
+                        ExecutionModel::Kernel,
+                        ExecutionModel::MeshEXT,
+                        ExecutionModel::MeshNV,
+                        ExecutionModel::TaskEXT,
+                        ExecutionModel::TaskNV,
+                    ],
                 }
                 .into());
             }
@@ -365,10 +376,15 @@ fn check_builtin_capability(
 
 fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionModel]> {
     match builtin {
-        BuiltIn::TessCoord | BuiltIn::TessLevelInner | BuiltIn::TessLevelOuter => {
-            Some(&[ExecutionModel::TessellationEvaluation])
-        }
-        BuiltIn::PatchVertices => Some(&[ExecutionModel::TessellationControl]),
+        BuiltIn::TessCoord => Some(&[ExecutionModel::TessellationEvaluation]),
+        BuiltIn::TessLevelInner | BuiltIn::TessLevelOuter => Some(&[
+            ExecutionModel::TessellationControl,
+            ExecutionModel::TessellationEvaluation,
+        ]),
+        BuiltIn::PatchVertices => Some(&[
+            ExecutionModel::TessellationControl,
+            ExecutionModel::TessellationEvaluation,
+        ]),
         BuiltIn::PrimitiveId => Some(&[
             ExecutionModel::Geometry,
             ExecutionModel::TessellationControl,
@@ -453,6 +469,7 @@ fn required_execution_models(builtin: BuiltIn) -> Option<&'static [ExecutionMode
             ExecutionModel::TessellationEvaluation,
             ExecutionModel::MeshNV,
             ExecutionModel::MeshEXT,
+            ExecutionModel::Fragment,
         ]),
         _ => None,
     }

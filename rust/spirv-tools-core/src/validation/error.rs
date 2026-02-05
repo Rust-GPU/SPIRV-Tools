@@ -3765,6 +3765,31 @@ pub enum ValidationError {
         /// The result type.
         result_type: TypeId,
     },
+    /// OpTranspose dimension mismatch.
+    #[error("OpTranspose in block {block:?} of function {function:?}: result matrix dimensions do not match the transpose of the input matrix")]
+    TransposeDimensionMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// OpCopyLogical types are not logically matching.
+    #[error("OpCopyLogical in block {block:?} of function {function:?}: result type and operand type are not logically matching")]
+    CopyLogicalTypesNotLogicallyMatching {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// OpConstantComposite constituent type mismatch.
+    #[error("OpConstantComposite constituent at index {index} has type that does not match expected member type")]
+    ConstantCompositeConstituentTypeMismatch {
+        /// The index of the mismatched constituent.
+        index: usize,
+    },
+
     /// A literal number has incorrectly encoded upper bits.
     #[error(
         "literal for id {id:?} with type {type_id:?} ({bit_width}-bit {}) has invalid upper bits - must be {}",
@@ -4891,6 +4916,15 @@ pub enum ValidationError {
     /// Extended instruction Refract eta must be float scalar.
     #[error("GLSL.std.450 Refract in block {block:?} of function {function:?} requires eta operand to be float scalar")]
     ExtInstEtaMustBeFloatScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+    },
+
+    /// Extended instruction Refract eta component type must match result component type.
+    #[error("GLSL.std.450 Refract in block {block:?} of function {function:?}: eta float type must match the component type of the result")]
+    ExtInstEtaTypeMismatch {
         /// The function containing the instruction.
         function: Option<Id>,
         /// The block containing the instruction.
