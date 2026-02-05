@@ -15,7 +15,9 @@
 use std::collections::HashMap;
 
 use rspirv::dr::{Instruction, Operand};
-use rspirv::spirv::{Capability, Decoration, Dim, ExecutionModel, ImageFormat, ImageOperands, Op};
+use rspirv::spirv::{
+    Capability, Decoration, Dim, ExecutionMode, ExecutionModel, ImageFormat, ImageOperands, Op,
+};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -122,7 +124,7 @@ impl ImageTypeInfo {
 // ============================================================================
 
 /// Get the number of coordinate components for a single plane.
-#[allow(dead_code)]
+#[allow(dead_code)] // Will be used in Phase 2 (image coordinate validation)
 fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
     match info.dim {
         Dim::Dim1D | Dim::DimBuffer => 1,
@@ -132,7 +134,7 @@ fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
 }
 
 /// Get the minimum coordinate size for an image operation.
-#[allow(dead_code)]
+#[allow(dead_code)] // Will be used in Phase 2 (image coordinate validation)
 fn get_min_coord_size(op: Op, info: &ImageTypeInfo) -> u32 {
     // Read/Write on Cube use UV (2D), not direction vector
     if info.dim == Dim::DimCube && op.is_image_read_write() {
@@ -407,11 +409,21 @@ impl ValidationRule for ImageSampleExecutionModelRule {
             return Ok(());
         }
 
-        // Implicit LOD is only valid in Fragment shader (or with derivative capability)
+        // Implicit LOD is only valid in Fragment shader (or with derivative group execution modes)
         let has_fragment = ctx.entry_models.contains(&ExecutionModel::Fragment);
-        let has_derivative_capability = ctx.has_capability(Capability::DerivativeControl);
+        let has_derivative_group = ctx.module.execution_modes.iter().any(|inst| {
+            inst.operands.iter().any(|op| {
+                matches!(
+                    op,
+                    rspirv::dr::Operand::ExecutionMode(
+                        ExecutionMode::DerivativeGroupQuadsNV
+                            | ExecutionMode::DerivativeGroupLinearNV
+                    )
+                )
+            })
+        });
 
-        if !has_fragment && !has_derivative_capability && !ctx.entry_models.is_empty() {
+        if !has_fragment && !has_derivative_group && !ctx.entry_models.is_empty() {
             // Find the offending instruction for error reporting
             for function in &ctx.module.functions {
                 let function_id = function
