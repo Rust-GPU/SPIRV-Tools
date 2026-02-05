@@ -92,7 +92,9 @@ impl Validator for RustValidator {
         // Build core validation options
         let mut core_opts = CoreOptions::default();
 
-        // Vulkan 1.1+ enables relaxed block layout by default
+        // Vulkan 1.1+ enables relaxed block layout by default (VK_KHR_relaxed_block_layout
+        // is core in Vulkan 1.1). Universal SPIR-V 1.3+ also defaults to relaxed layout
+        // since SPIR-V 1.3 was introduced alongside Vulkan 1.1.
         let default_relax_block_layout = matches!(
             self.target_env,
             TargetEnv::Vulkan_1_1
@@ -100,6 +102,10 @@ impl Validator for RustValidator {
                 | TargetEnv::Vulkan_1_2
                 | TargetEnv::Vulkan_1_3
                 | TargetEnv::Vulkan_1_4
+                | TargetEnv::Universal_1_3
+                | TargetEnv::Universal_1_4
+                | TargetEnv::Universal_1_5
+                | TargetEnv::Universal_1_6
         );
 
         if let Some(opts) = options {
