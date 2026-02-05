@@ -35,8 +35,6 @@ impl ValidationRule for BlockLayoutRule {
     }
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
-        let scalar_layout =
-            ctx.options.scalar_block_layout || ctx.options.workgroup_scalar_block_layout;
         let relax_block_layout = ctx.options.relax_block_layout;
 
         let block_structs = collect_block_structs(ctx.module);
@@ -44,6 +42,17 @@ impl ValidationRule for BlockLayoutRule {
             if !block_info.requires_block_layout() {
                 continue;
             }
+
+            // C++ uses workgroup_scalar_block_layout only for Workgroup storage
+            // class, and scalar_block_layout for all others (lines 1428-1430).
+            let has_workgroup = block_info
+                .storage_classes
+                .contains(&StorageClass::Workgroup);
+            let scalar_layout = if has_workgroup {
+                ctx.options.workgroup_scalar_block_layout
+            } else {
+                ctx.options.scalar_block_layout
+            };
 
             // Std140 extended alignment (16-byte rounding for arrays/structs) only
             // applies to Uniform + Block decoration. All other combinations use

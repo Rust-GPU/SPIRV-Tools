@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet};
 
 use rspirv::dr::Module;
-use rspirv::spirv::{Decoration, Op, StorageClass};
+use rspirv::spirv::{Capability, Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -104,19 +104,25 @@ impl ValidationRule for BlockStorageClassRule {
             }
         }
 
+        let workgroup_blocks_allowed =
+            ctx.has_capability(Capability::WorkgroupMemoryExplicitLayoutKHR);
+
         for (_block_id, (decoration, storage_classes)) in blocks {
             if storage_classes.is_empty() {
                 continue;
             }
             for storage_class in storage_classes {
                 let allowed = match decoration {
-                    Decoration::Block => matches!(
-                        storage_class,
-                        StorageClass::Uniform
-                            | StorageClass::StorageBuffer
-                            | StorageClass::PhysicalStorageBuffer
-                            | StorageClass::PushConstant
-                    ),
+                    Decoration::Block => {
+                        matches!(
+                            storage_class,
+                            StorageClass::Uniform
+                                | StorageClass::StorageBuffer
+                                | StorageClass::PhysicalStorageBuffer
+                                | StorageClass::PushConstant
+                        ) || (storage_class == StorageClass::Workgroup
+                            && workgroup_blocks_allowed)
+                    }
                     Decoration::BufferBlock => matches!(
                         storage_class,
                         StorageClass::Uniform

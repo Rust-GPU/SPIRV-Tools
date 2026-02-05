@@ -14411,6 +14411,143 @@ fn uniform_buffer_standard_layout_with_relax_allows_scalar_vector_alignment() {
 }
 #[test]
 fn workgroup_scalar_block_layout_uses_scalar_alignment() {
+    // workgroup_scalar_block_layout should only apply to Workgroup storage class,
+    // NOT to Uniform or other classes (C++ lines 1428-1430).
+    use rspirv::{binary::Assemble, dr::Instruction, dr::Module, dr::ModuleHeader};
+    fn inst(
+        opcode: rspirv::spirv::Op,
+        result_type: Option<u32>,
+        result_id: Option<u32>,
+        operands: Vec<rspirv::dr::Operand>,
+    ) -> Instruction {
+        Instruction::new(opcode, result_type, result_id, operands)
+    }
+    let mut module = Module::new();
+    module.header = Some(ModuleHeader::new(10));
+    module.capabilities.push(inst(
+        rspirv::spirv::Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(
+            rspirv::spirv::Capability::Shader,
+        )],
+    ));
+    module.capabilities.push(inst(
+        rspirv::spirv::Op::Capability,
+        None,
+        None,
+        vec![rspirv::dr::Operand::Capability(
+            rspirv::spirv::Capability::WorkgroupMemoryExplicitLayoutKHR,
+        )],
+    ));
+    module.extensions.push(inst(
+        rspirv::spirv::Op::Extension,
+        None,
+        None,
+        vec![rspirv::dr::Operand::LiteralString(
+            "SPV_KHR_workgroup_memory_explicit_layout".to_string(),
+        )],
+    ));
+    module.memory_model = Some(inst(
+        rspirv::spirv::Op::MemoryModel,
+        None,
+        None,
+        vec![
+            rspirv::dr::Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            rspirv::dr::Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.types_global_values.extend([
+        inst(
+            rspirv::spirv::Op::TypeInt,
+            None,
+            Some(1),
+            vec![
+                rspirv::dr::Operand::LiteralBit32(32),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeVector,
+            None,
+            Some(2),
+            vec![
+                rspirv::dr::Operand::IdRef(1),
+                rspirv::dr::Operand::LiteralBit32(2),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::TypeStruct,
+            None,
+            Some(3),
+            vec![rspirv::dr::Operand::IdRef(1), rspirv::dr::Operand::IdRef(2)],
+        ),
+        inst(
+            rspirv::spirv::Op::TypePointer,
+            None,
+            Some(4),
+            vec![
+                rspirv::dr::Operand::StorageClass(rspirv::spirv::StorageClass::Workgroup),
+                rspirv::dr::Operand::IdRef(3),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::Variable,
+            Some(4),
+            Some(5),
+            vec![rspirv::dr::Operand::StorageClass(
+                rspirv::spirv::StorageClass::Workgroup,
+            )],
+        ),
+    ]);
+    module.annotations.extend([
+        inst(
+            rspirv::spirv::Op::Decorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(3),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Block),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(3),
+                rspirv::dr::Operand::LiteralBit32(0),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                rspirv::dr::Operand::LiteralBit32(0),
+            ],
+        ),
+        inst(
+            rspirv::spirv::Op::MemberDecorate,
+            None,
+            None,
+            vec![
+                rspirv::dr::Operand::IdRef(3),
+                rspirv::dr::Operand::LiteralBit32(1),
+                rspirv::dr::Operand::Decoration(rspirv::spirv::Decoration::Offset),
+                rspirv::dr::Operand::LiteralBit32(4),
+            ],
+        ),
+    ]);
+    let binary = module.assemble();
+    let opts = ValidationOptions {
+        workgroup_scalar_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    binary
+        .as_slice()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect("workgroup_scalar_block_layout should permit scalar alignment for Workgroup");
+}
+
+/// Negative: workgroup_scalar_block_layout should NOT enable scalar layout for
+/// non-Workgroup storage classes (Uniform, StorageBuffer, etc.).
+#[test]
+fn workgroup_scalar_does_not_affect_uniform() {
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -14426,13 +14563,15 @@ fn workgroup_scalar_block_layout_uses_scalar_alignment() {
         "%var = OpVariable %ptr Uniform",
     ]
     .join("\n");
-    let relax = ValidationOptions {
+    let opts = ValidationOptions {
         workgroup_scalar_block_layout: true,
         ..ValidationOptions::default()
     };
-    text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
-        .expect("workgroup_scalar_block_layout should permit scalar alignment for vectors");
+    let err = text
+        .as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect_err("workgroup_scalar_block_layout should NOT relax Uniform layout");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
 #[test]
 fn array_stride_must_align_to_element() {
