@@ -149,7 +149,13 @@ impl ValidationRule for VectorDynamicRule {
 
                             // Shader capability restricts 8/16-bit types
                             if ctx.has_capability(Capability::Shader)
-                                && contains_limited_type(u32::from(result_type_id), ctx.definitions)
+                                && contains_limited_type(
+                                    u32::from(result_type_id),
+                                    ctx.definitions,
+                                    ctx.has_capability(Capability::Int8),
+                                    ctx.has_capability(Capability::Int16),
+                                    ctx.has_capability(Capability::Float16),
+                                )
                             {
                                 return Err(ValidationError::VectorDynamicLimitedType {
                                     function: func,
@@ -285,7 +291,13 @@ impl ValidationRule for VectorDynamicRule {
 
                             // Shader capability restricts 8/16-bit types
                             if ctx.has_capability(Capability::Shader)
-                                && contains_limited_type(u32::from(result_type_id), ctx.definitions)
+                                && contains_limited_type(
+                                    u32::from(result_type_id),
+                                    ctx.definitions,
+                                    ctx.has_capability(Capability::Int8),
+                                    ctx.has_capability(Capability::Int16),
+                                    ctx.has_capability(Capability::Float16),
+                                )
                             {
                                 return Err(ValidationError::VectorDynamicLimitedType {
                                     function: func,
@@ -1868,11 +1880,18 @@ fn types_logically_match(
     }
 }
 
-/// Check if a type contains 8 or 16-bit int/float types (for limited use type restrictions).
-/// This version takes definitions directly for use in VectorDynamicRule.
+/// Check if a type contains limited-use 8 or 16-bit int/float types.
+///
+/// A type is "limited" only when the enabling capability is not declared:
+/// - 8-bit int without Int8 capability
+/// - 16-bit int without Int16 capability
+/// - 16-bit float without Float16 capability
 fn contains_limited_type(
     type_id: u32,
     definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+    has_int8: bool,
+    has_int16: bool,
+    has_float16: bool,
 ) -> bool {
     let Ok(rid) = ResultId::try_from(type_id) else {
         return false;
@@ -1882,18 +1901,25 @@ fn contains_limited_type(
     };
 
     match type_inst.class.opcode {
-        Op::TypeInt | Op::TypeFloat => {
-            // Check width - 8 or 16-bit types are limited
+        Op::TypeInt => {
             type_inst.operands.first().is_some_and(|op| {
                 if let rspirv::dr::Operand::LiteralBit32(width) = op {
-                    *width == 8 || *width == 16
+                    (*width == 8 && !has_int8) || (*width == 16 && !has_int16)
+                } else {
+                    false
+                }
+            })
+        }
+        Op::TypeFloat => {
+            type_inst.operands.first().is_some_and(|op| {
+                if let rspirv::dr::Operand::LiteralBit32(width) = op {
+                    *width == 16 && !has_float16
                 } else {
                     false
                 }
             })
         }
         Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => {
-            // Check element type
             type_inst
                 .operands
                 .first()
@@ -1904,13 +1930,14 @@ fn contains_limited_type(
                         None
                     }
                 })
-                .is_some_and(|elem_type_id| contains_limited_type(elem_type_id, definitions))
+                .is_some_and(|elem_type_id| {
+                    contains_limited_type(elem_type_id, definitions, has_int8, has_int16, has_float16)
+                })
         }
         Op::TypeStruct => {
-            // Check all member types
             type_inst.operands.iter().any(|op| {
                 if let rspirv::dr::Operand::IdRef(id) = op {
-                    contains_limited_type(*id, definitions)
+                    contains_limited_type(*id, definitions, has_int8, has_int16, has_float16)
                 } else {
                     false
                 }

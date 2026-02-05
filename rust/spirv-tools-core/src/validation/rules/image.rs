@@ -301,7 +301,11 @@ impl ValidationRule for ImageOperandRule {
                     }
 
                     // Validate Bias operand
-                    if mask.contains(ImageOperands::BIAS) && !inst.class.opcode.is_implicit_lod() {
+                    if mask.contains(ImageOperands::BIAS)
+                        && !inst.class.opcode.is_implicit_lod()
+                        && !(inst.class.opcode.is_gather()
+                            && ctx.has_capability(Capability::ImageGatherBiasLodAMD))
+                    {
                         return Err(ValidationError::ImageOperandBiasRequiresImplicitLod {
                             function: function_id,
                             block: block_id,
@@ -315,7 +319,9 @@ impl ValidationRule for ImageOperandRule {
                         let valid_for_lod = inst.class.opcode.is_explicit_lod()
                             || inst.class.opcode.is_fetch()
                             || (inst.class.opcode.is_image_read_write()
-                                && ctx.has_capability(Capability::ImageReadWriteLodAMD));
+                                && ctx.has_capability(Capability::ImageReadWriteLodAMD))
+                            || (inst.class.opcode.is_gather()
+                                && ctx.has_capability(Capability::ImageGatherBiasLodAMD));
 
                         if !valid_for_lod {
                             return Err(
