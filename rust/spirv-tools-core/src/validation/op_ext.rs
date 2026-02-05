@@ -46,6 +46,9 @@ pub trait OpExt {
     /// Returns true if this is a sampling operation (implicit or explicit LOD).
     fn is_sample(&self) -> bool;
 
+    /// Returns true if this is a sparse image operation.
+    fn is_sparse(&self) -> bool;
+
     // --- Other operation categories ---
 
     /// Returns true if this is an atomic operation.
@@ -184,6 +187,25 @@ impl OpExt for Op {
 
     fn is_sample(&self) -> bool {
         self.is_implicit_lod() || self.is_explicit_lod()
+    }
+
+    fn is_sparse(&self) -> bool {
+        matches!(
+            self,
+            Op::ImageSparseSampleImplicitLod
+                | Op::ImageSparseSampleExplicitLod
+                | Op::ImageSparseSampleDrefImplicitLod
+                | Op::ImageSparseSampleDrefExplicitLod
+                | Op::ImageSparseSampleProjImplicitLod
+                | Op::ImageSparseSampleProjExplicitLod
+                | Op::ImageSparseSampleProjDrefImplicitLod
+                | Op::ImageSparseSampleProjDrefExplicitLod
+                | Op::ImageSparseFetch
+                | Op::ImageSparseGather
+                | Op::ImageSparseDrefGather
+                | Op::ImageSparseRead
+                | Op::ImageSparseTexelsResident
+        )
     }
 
     fn is_atomic(&self) -> bool {

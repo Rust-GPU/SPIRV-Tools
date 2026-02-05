@@ -2743,6 +2743,132 @@ impl ValidationRule for ImageFetchRule {
 }
 
 // ============================================================================
+// Image Sample Result Type Rule
+// ============================================================================
+
+/// Validates that image sample operations produce the correct result type.
+///
+/// For non-Dref sampling: result must be a 4-component vector of the sampled type.
+/// For Dref sampling: result must be a scalar of the sampled type.
+/// For gather operations: result must be a 4-component vector of the sampled type.
+pub struct ImageSampleResultTypeRule;
+
+impl ValidationRule for ImageSampleResultTypeRule {
+    fn name(&self) -> &'static str {
+        "image-sample-result-type"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    // Skip opcodes that aren't non-sparse sample/gather ops
+                    // (fetch is handled by ImageFetchRule, sparse by SparseSampleResultTypeRule)
+                    if !opcode.is_sample() && !opcode.is_gather() {
+                        continue;
+                    }
+                    // Skip sparse variants (handled by SparseSampleResultTypeRule)
+                    if opcode.is_sparse() {
+                        continue;
+                    }
+
+                    let Some(result_type_id) = inst.result_type else {
+                        continue;
+                    };
+                    let Ok(rt_id) = ResultId::try_from(result_type_id) else {
+                        continue;
+                    };
+                    let Some(rt_inst) = ctx.definitions.get(&rt_id) else {
+                        continue;
+                    };
+
+                    if opcode.is_dref() && !opcode.is_gather() {
+                        // Dref (non-gather): result must be a scalar of sampled type
+                        if rt_inst.is_vector_type() || rt_inst.is_matrix_type() {
+                            return Err(
+                                ValidationError::ImageDrefSampleResultMustBeScalar {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into(),
+                            );
+                        }
+                    } else {
+                        // Non-Dref sample / gather: result must be vec4
+                        if rt_inst.is_vector_type() {
+                            if rt_inst.vector_component_count() != Some(4) {
+                                return Err(
+                                    ValidationError::ImageSampleResultMustBe4ComponentVector {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                    }
+                                    .into(),
+                                );
+                            }
+                        } else {
+                            return Err(
+                                ValidationError::ImageSampleResultMustBe4ComponentVector {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into(),
+                            );
+                        }
+                    }
+
+                    // Validate component type matches image sampled type
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        if info.sampled_type != 0 {
+                            let actual_component_type = if opcode.is_dref()
+                                && !opcode.is_gather()
+                            {
+                                // Scalar result: the result type ID itself is the component type
+                                Some(result_type_id)
+                            } else {
+                                // Vector result: extract component type from vector
+                                rt_inst.vector_component_type_id()
+                            };
+
+                            if let Some(component_type_id) = actual_component_type {
+                                if component_type_id != info.sampled_type {
+                                    return Err(
+                                        ValidationError::ImageSampleResultTypeMismatch {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All Image Rules
 // ============================================================================
 
@@ -2769,6 +2895,7 @@ pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
         &ImageGatherRule,
         &ImageFetchRule,
         &ImageCoordinateRule,
+        &ImageSampleResultTypeRule,
     ]
 }
 

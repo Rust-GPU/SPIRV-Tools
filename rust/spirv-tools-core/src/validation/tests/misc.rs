@@ -6204,3 +6204,125 @@ fn type_image_subpass_data_format_must_be_unknown() {
         "expected ImageTypeSubpassDataFormatMustBeUnknown, got {err:?}"
     );
 }
+
+#[test]
+fn image_sample_implicit_lod_result_must_be_vec4() {
+    // OpImageSampleImplicitLod with vec4 result should pass
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var %coord_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+OpDecorate %coord_var Location 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%ptr_v2f32 = OpTypePointer Input %v2f32
+%result_var = OpVariable %ptr_v4f32 Output
+%coord_var = OpVariable %ptr_v2f32 Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %coord_var
+%result = OpImageSampleImplicitLod %v4f32 %simg %coord
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+    text.validate(TargetEnv::Vulkan1_0)
+        .expect("vec4 result for OpImageSampleImplicitLod should pass");
+}
+
+#[test]
+fn image_sample_explicit_lod_result_type_mismatch_fails() {
+    // OpImageSampleExplicitLod with wrong component type should fail
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var %coord_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+OpDecorate %coord_var Location 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%v2f32 = OpTypeVector %f32 2
+%v4i32 = OpTypeVector %i32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4i32 = OpTypePointer Output %v4i32
+%ptr_v2f32 = OpTypePointer Input %v2f32
+%result_var = OpVariable %ptr_v4i32 Output
+%coord_var = OpVariable %ptr_v2f32 Input
+%f32_0 = OpConstant %f32 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %coord_var
+%result = OpImageSampleExplicitLod %v4i32 %simg %coord Lod %f32_0
+OpReturn
+OpFunctionEnd
+"#;
+    let err = text
+        .validate(TargetEnv::Vulkan1_0)
+        .expect_err("i32 result for f32 image should fail");
+    assert!(
+        matches!(err, ValidationError::ImageSampleResultTypeMismatch { .. }),
+        "expected ImageSampleResultTypeMismatch, got {err:?}"
+    );
+}
+
+#[test]
+fn image_gather_result_must_be_vec4() {
+    // OpImageGather with vec4 result should pass
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %result_var %coord_var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %simg_var DescriptorSet 0
+OpDecorate %simg_var Binding 0
+OpDecorate %result_var Location 0
+OpDecorate %coord_var Location 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%v2f32 = OpTypeVector %f32 2
+%v4f32 = OpTypeVector %f32 4
+%img_ty = OpTypeImage %f32 2D 0 0 0 1 Unknown
+%simg_ty = OpTypeSampledImage %img_ty
+%ptr_simg = OpTypePointer UniformConstant %simg_ty
+%simg_var = OpVariable %ptr_simg UniformConstant
+%ptr_v4f32 = OpTypePointer Output %v4f32
+%ptr_v2f32 = OpTypePointer Input %v2f32
+%result_var = OpVariable %ptr_v4f32 Output
+%coord_var = OpVariable %ptr_v2f32 Input
+%i32_0 = OpConstant %i32 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%simg = OpLoad %simg_ty %simg_var
+%coord = OpLoad %v2f32 %coord_var
+%result = OpImageGather %v4f32 %simg %coord %i32_0
+OpStore %result_var %result
+OpReturn
+OpFunctionEnd
+"#;
+    text.validate(TargetEnv::Vulkan1_0)
+        .expect("vec4 result for OpImageGather should pass");
+}

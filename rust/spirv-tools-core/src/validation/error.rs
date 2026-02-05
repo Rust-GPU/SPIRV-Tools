@@ -4679,6 +4679,16 @@ pub enum ValidationError {
         /// The opcode of the image operation.
         opcode: rspirv::spirv::Op,
     },
+    /// Image Dref sample result type must be scalar.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?} requires result type to be a scalar of the sampled type")]
+    ImageDrefSampleResultMustBeScalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
     /// Image sampled image operand must be OpTypeSampledImage.
     #[error("instruction {opcode:?} in block {block:?} of function {function:?} requires Sampled Image operand to be of type OpTypeSampledImage")]
     ImageOperandMustBeSampledImageType {
