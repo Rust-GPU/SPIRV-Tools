@@ -277,9 +277,7 @@ impl<'a> AssemblyTranslator<'a> {
             | spirv::Op::ImageSparseDrefGather => self.translate_image_op(instruction, 3),
             // ImageWrite: no result, 3 IdRef + optional ImageOperands
             spirv::Op::ImageWrite => self.translate_image_write(instruction),
-            _ => self
-                .module_builder
-                .emit_error(instruction.opcode_position(), "unsupported opcode"),
+            _ => self.translate_from_grammar(instruction),
         }
     }
 
@@ -3248,13 +3246,13 @@ impl<'a> AssemblyTranslator<'a> {
         use rspirv::grammar::OperandKind::*;
         match kind {
             IdRef => self
-                .operand_as_id(operand, "decoration id")
+                .operand_as_id(operand, "id reference")
                 .map(dr::Operand::IdRef),
             IdScope => self
-                .operand_as_id(operand, "decoration scope id")
+                .operand_as_id(operand, "scope id")
                 .map(dr::Operand::IdScope),
             IdMemorySemantics => self
-                .operand_as_id(operand, "decoration memory semantics id")
+                .operand_as_id(operand, "memory semantics id")
                 .map(dr::Operand::IdMemorySemantics),
             LiteralInteger | LiteralContextDependentNumber => match operand.value() {
                 OperandValue::Literal(literal) => Some(encode_literal_operand(literal)),
@@ -3312,12 +3310,9 @@ impl<'a> AssemblyTranslator<'a> {
                 self.encode_enumerant_operand::<spirv::StoreCacheControl>(operand, "cache control")
             }
             _ => {
-                // Decoration operands should only reference the operand kinds enumerated in the
-                // grammar subset we generated. If we reach here, the grammar introduced a new
-                // operand kind that needs encoding support.
                 self.module_builder.emit_error(
                     operand.span().start(),
-                    format!("Unsupported decoration operand kind: {:?}", kind),
+                    format!("Unsupported operand kind: {:?}", kind),
                 );
                 None
             }
@@ -3927,6 +3922,41 @@ impl<'a> AssemblyTranslator<'a> {
     pub fn finish(self) -> (dr::Module, Vec<DiagnosticMessage<'static>>) {
         let output = self.into_parts();
         (output.module, output.diagnostics)
+    }
+
+    /// Generic grammar-driven translator for instructions whose operands are
+    /// limited to IdRef, IdScope, IdMemorySemantics, and literal integers.
+    /// Falls back to this when no dedicated translator exists for an opcode.
+    fn translate_from_grammar(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let opcode = instruction.opcode();
+
+        // Resolve result type and result id if present.
+        let (result_type_id, result_id) =
+            match (instruction.result_type(), instruction.result_id()) {
+                (Some(rt), Some(ri)) => {
+                    let (type_id, value_id) = self.module_builder.bind_typed_result(rt, ri);
+                    (Some(type_id), Some(value_id))
+                }
+                (None, Some(ri)) => {
+                    let value_id = self.module_builder.resolve_result_id(ri);
+                    (None, Some(value_id))
+                }
+                _ => (None, None),
+            };
+
+        // Encode each operand using its grammar descriptor kind.
+        let mut dr_operands = Vec::new();
+        for operand in instruction.operands() {
+            let kind = operand.descriptor().kind();
+            match self.encode_operand_for_kind(operand, kind) {
+                Some(dr_op) => dr_operands.push(dr_op),
+                None => return,
+            }
+        }
+
+        let inst = dr::Instruction::new(opcode, result_type_id, result_id, dr_operands);
+        self.push_block_instruction(inst, opcode_pos);
     }
 
     /// Finalizes the translation and returns the module, diagnostics, and span map.

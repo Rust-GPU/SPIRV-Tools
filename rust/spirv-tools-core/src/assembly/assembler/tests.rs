@@ -2808,3 +2808,121 @@ OpFunctionEnd
         let binary = assemble_text(text).expect("should assemble hex literals");
         assert!(!binary.is_empty());
     }
+
+    #[test]
+    fn atomic_ops_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%ptr_wg_uint = OpTypePointer Workgroup %uint
+%fn = OpTypeFunction %void
+%scope = OpConstant %uint 2
+%relaxed = OpConstant %uint 0
+%one = OpConstant %uint 1
+%var = OpVariable %ptr_wg_uint Workgroup
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%val = OpAtomicLoad %uint %var %scope %relaxed
+OpAtomicStore %var %scope %relaxed %one
+%xchg = OpAtomicExchange %uint %var %scope %relaxed %one
+%add = OpAtomicIAdd %uint %var %scope %relaxed %one
+%sub = OpAtomicISub %uint %var %scope %relaxed %one
+%smin = OpAtomicSMin %uint %var %scope %relaxed %one
+%umin = OpAtomicUMin %uint %var %scope %relaxed %one
+%smax = OpAtomicSMax %uint %var %scope %relaxed %one
+%umax = OpAtomicUMax %uint %var %scope %relaxed %one
+%and = OpAtomicAnd %uint %var %scope %relaxed %one
+%or = OpAtomicOr %uint %var %scope %relaxed %one
+%xor = OpAtomicXor %uint %var %scope %relaxed %one
+%inc = OpAtomicIIncrement %uint %var %scope %relaxed
+%dec = OpAtomicIDecrement %uint %var %scope %relaxed
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble atomic operations");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn atomic_compare_exchange_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%ptr_wg_uint = OpTypePointer Workgroup %uint
+%fn = OpTypeFunction %void
+%scope = OpConstant %uint 2
+%relaxed = OpConstant %uint 0
+%one = OpConstant %uint 1
+%zero = OpConstant %uint 0
+%var = OpVariable %ptr_wg_uint Workgroup
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%result = OpAtomicCompareExchange %uint %var %scope %relaxed %relaxed %one %zero
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpAtomicCompareExchange");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn barriers_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%workgroup = OpConstant %uint 2
+%acq_rel = OpConstant %uint 8
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpControlBarrier %workgroup %workgroup %acq_rel
+OpMemoryBarrier %workgroup %acq_rel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble barrier operations");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn atomic_ops_roundtrip_through_disassembly() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%ptr_wg_uint = OpTypePointer Workgroup %uint
+%fn = OpTypeFunction %void
+%scope = OpConstant %uint 2
+%relaxed = OpConstant %uint 0
+%one = OpConstant %uint 1
+%var = OpVariable %ptr_wg_uint Workgroup
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%val = OpAtomicLoad %uint %var %scope %relaxed
+OpAtomicStore %var %scope %relaxed %one
+%add = OpAtomicIAdd %uint %var %scope %relaxed %one
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble atomic ops");
+        let disasm =
+            disassemble_binary(&binary, BinaryToTextOptions::default()).expect("should disassemble");
+        assert!(disasm.contains("OpAtomicLoad"), "disassembly should contain OpAtomicLoad");
+        assert!(disasm.contains("OpAtomicStore"), "disassembly should contain OpAtomicStore");
+        assert!(disasm.contains("OpAtomicIAdd"), "disassembly should contain OpAtomicIAdd");
+    }

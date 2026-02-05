@@ -418,7 +418,11 @@ impl<'a> Parser<'a> {
             && descriptor.quantifier() == OperandQuantifier::ZeroOrMore;
         let value = match token.kind() {
             TokenKind::Word(word) => match descriptor.kind() {
-                OperandKind::IdRef | OperandKind::IdResult | OperandKind::IdResultType => {
+                OperandKind::IdRef
+                | OperandKind::IdResult
+                | OperandKind::IdResultType
+                | OperandKind::IdScope
+                | OperandKind::IdMemorySemantics => {
                     if allow_ext_inst_operand {
                         if let Some(named) = word.named_id() {
                             OperandValue::Id(IdRef::new(SpirvId::named(named), span))
