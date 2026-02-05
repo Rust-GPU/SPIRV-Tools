@@ -2467,3 +2467,101 @@ OpFunctionEnd
         let binary = assemble_text(text).expect("should assemble OpSampledImage + sample");
         assert!(!binary.is_empty());
     }
+
+    #[test]
+    fn switch_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%ptr_uint = OpTypePointer Function %uint
+%c0 = OpConstant %uint 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%sel = OpVariable %ptr_uint Function
+%val = OpLoad %uint %sel
+OpSelectionMerge %merge None
+OpSwitch %val %default 1 %case1 2 %case2
+%case1 = OpLabel
+OpBranch %merge
+%case2 = OpLabel
+OpBranch %merge
+%default = OpLabel
+OpBranch %merge
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpSwitch");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn switch_with_no_cases_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%ptr_uint = OpTypePointer Function %uint
+%c0 = OpConstant %uint 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%sel = OpVariable %ptr_uint Function
+%val = OpLoad %uint %sel
+OpSelectionMerge %merge None
+OpSwitch %val %merge
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpSwitch with no cases");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn switch_roundtrips_through_disassembly() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%ptr_uint = OpTypePointer Function %uint
+%c0 = OpConstant %uint 0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%sel = OpVariable %ptr_uint Function
+%val = OpLoad %uint %sel
+OpSelectionMerge %merge None
+OpSwitch %val %default 10 %case_a 20 %case_b
+%case_a = OpLabel
+OpBranch %merge
+%case_b = OpLabel
+OpBranch %merge
+%default = OpLabel
+OpBranch %merge
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble");
+        let disasm = disassemble_binary(
+            &binary,
+            BinaryToTextOptions::default(),
+        )
+        .expect("should disassemble");
+        assert!(disasm.contains("OpSwitch"), "disassembly should contain OpSwitch: {disasm}");
+        // Re-assemble the disassembly to verify round-trip
+        let binary2 = assemble_text(&disasm).expect("should re-assemble");
+        assert_eq!(binary, binary2, "round-trip should produce identical binary");
+    }

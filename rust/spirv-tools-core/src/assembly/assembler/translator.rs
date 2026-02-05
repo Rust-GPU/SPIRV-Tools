@@ -135,6 +135,7 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::Label => self.translate_label(instruction),
             spirv::Op::Branch => self.translate_branch(instruction),
             spirv::Op::BranchConditional => self.translate_branch_conditional(instruction),
+            spirv::Op::Switch => self.translate_switch(instruction),
             spirv::Op::Return => self.translate_return(instruction),
             spirv::Op::ReturnValue => self.translate_return_value(instruction),
             spirv::Op::FunctionEnd => self.translate_function_end(instruction),
@@ -2574,6 +2575,48 @@ impl<'a> AssemblyTranslator<'a> {
             .builder
             .branch_conditional(condition_id, true_label, false_label, branch_weights)
         {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
+        }
+    }
+
+    fn translate_switch(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let mut operands = instruction.operands().iter();
+        let Some(selector_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSwitch missing selector");
+            return;
+        };
+        let Some(selector_id) = self.operand_as_id(selector_operand, "selector") else {
+            return;
+        };
+        let Some(default_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSwitch missing default label");
+            return;
+        };
+        let Some(default_id) = self.operand_as_id(default_operand, "default label") else {
+            return;
+        };
+        let mut targets = Vec::new();
+        for operand in operands {
+            match operand.value() {
+                OperandValue::LiteralIdPair(literal, target) => {
+                    let literal_operand = encode_literal_operand(literal);
+                    let target_id = self.module_builder.resolve_id_ref(*target);
+                    targets.push((literal_operand, target_id));
+                }
+                _ => {
+                    self.module_builder.emit_error(
+                        operand.span().start(),
+                        "OpSwitch case must be a literal-id pair",
+                    );
+                    return;
+                }
+            }
+        }
+        match self.builder.switch(selector_id, default_id, targets) {
             Ok(_) => self.record_from_current_block(),
             Err(error) => self.emit_builder_error(error, opcode_pos),
         }

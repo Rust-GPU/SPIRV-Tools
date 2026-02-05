@@ -95,6 +95,8 @@ pub enum OperandValue<'a> {
     MemoryAccess(MemoryAccessOperand<'a>),
     /// Structured image operands (mask + auxiliary parameters).
     ImageOperands(ImageOperandsOperand<'a>),
+    /// A literal integer + ID reference pair (used for OpSwitch case targets).
+    LiteralIdPair(LiteralNumber, IdRef<'a>),
 }
 
 /// Memory access operand parsed from the text stream.
@@ -452,6 +454,15 @@ impl<'a> Parser<'a> {
                         second.span,
                     );
                     OperandValue::IdPair(first, second_id)
+                }
+                OperandKind::PairLiteralIntegerIdRef => {
+                    let literal = parse_integer(word, span)?;
+                    let target = self.stream.expect_word("target id in pair")?;
+                    let target_id = IdRef::new(
+                        parse_identifier(target.word, target.span, "id")?,
+                        target.span,
+                    );
+                    OperandValue::LiteralIdPair(literal, target_id)
                 }
                 OperandKind::MemoryAccess => self.parse_memory_access_operand(word, span)?,
                 OperandKind::ImageOperands => self.parse_image_operands_operand(word, span)?,
