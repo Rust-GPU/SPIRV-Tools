@@ -2340,6 +2340,129 @@ impl ValidationRule for ImageGatherRule {
 }
 
 // ============================================================================
+// Image Fetch Rule
+// ============================================================================
+
+/// Validates OpImageFetch and OpImageSparseFetch instructions.
+///
+/// Checks:
+/// - Result type is a 4-component int/float vector
+/// - Result component type matches image sampled type
+/// - Image 'Sampled' parameter is 1 (sampling image, not storage)
+/// - Image dimension is not Cube
+pub struct ImageFetchRule;
+
+impl ValidationRule for ImageFetchRule {
+    fn name(&self) -> &'static str {
+        "image-fetch"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    if !opcode.is_fetch() {
+                        continue;
+                    }
+
+                    // Validate result type is a 4-component int/float vector
+                    if let Some(result_type_id) = inst.result_type {
+                        if let Ok(rt_id) = ResultId::try_from(result_type_id) {
+                            if let Some(rt_inst) = ctx.definitions.get(&rt_id) {
+                                if rt_inst.is_vector_type() {
+                                    if rt_inst.vector_component_count() != Some(4) {
+                                        return Err(
+                                            ValidationError::ImageSampleResultMustBe4ComponentVector {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                } else {
+                                    return Err(
+                                        ValidationError::ImageSampleResultMustBe4ComponentVector {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Get image type info and validate
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        // Image dimension cannot be Cube
+                        if info.dim == Dim::DimCube {
+                            return Err(ValidationError::ImageFetchDimCannotBeCube {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }
+                            .into());
+                        }
+
+                        // Image 'Sampled' parameter must be 1
+                        if info.sampled != 0 && info.sampled != 1 {
+                            return Err(ValidationError::ImageFetchRequiresSampledImage {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }
+                            .into());
+                        }
+
+                        // Result component type must match image sampled type
+                        if info.sampled_type != 0 {
+                            if let Some(result_type_id) = inst.result_type {
+                                if let Ok(rt_id) = ResultId::try_from(result_type_id) {
+                                    if let Some(rt_inst) = ctx.definitions.get(&rt_id) {
+                                        if let Some(component_type_id) =
+                                            rt_inst.vector_component_type_id()
+                                        {
+                                            if component_type_id != info.sampled_type {
+                                                return Err(
+                                                    ValidationError::ImageSampleResultTypeMismatch {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                        opcode,
+                                                    }
+                                                    .into(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // All Image Rules
 // ============================================================================
 
@@ -2364,6 +2487,7 @@ pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
         &ImageProjRule,
         &ImageReadVulkan4ComponentRule,
         &ImageGatherRule,
+        &ImageFetchRule,
     ]
 }
 

@@ -4951,3 +4951,301 @@ fn output_points_rejected_with_fragment() {
         "expected ExecutionModeRequiresExecutionModel for OutputPoints, got {error:?}"
     );
 }
+
+// ============================================================================
+// Commit 14: OpImageFetch validation
+// ============================================================================
+
+/// Build a module with OpImageFetch for testing.
+/// `sampled` is the image Sampled parameter (0=runtime, 1=sampling, 2=read/write).
+/// `dim` is the image dimension.
+/// `result_components` is the number of components in the result vector type.
+/// `result_component_type_matches` controls whether the component type matches the image sampled type.
+fn build_image_fetch_module(
+    sampled: u32,
+    dim: rspirv::spirv::Dim,
+    result_components: u32,
+    result_component_type_matches: bool,
+) -> Vec<u32> {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+    use rspirv::spirv::{Dim, ImageFormat};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(0x0001_0500));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    // Add SampledBuffer if using Buffer dim
+    if dim == Dim::DimBuffer {
+        module.capabilities.push(Instruction::new(
+            Op::Capability,
+            None,
+            None,
+            vec![Operand::Capability(
+                rspirv::spirv::Capability::SampledBuffer,
+            )],
+        ));
+    }
+    // Add Sampled1D if using 1D dim
+    if dim == Dim::Dim1D {
+        module.capabilities.push(Instruction::new(
+            Op::Capability,
+            None,
+            None,
+            vec![Operand::Capability(rspirv::spirv::Capability::Sampled1D)],
+        ));
+    }
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+            Operand::IdRef(10), // var
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // Decorations for variable %10
+    module.annotations.push(Instruction::new(
+        Op::Decorate,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+            Operand::LiteralBit32(0),
+        ],
+    ));
+    module.annotations.push(Instruction::new(
+        Op::Decorate,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::Decoration(rspirv::spirv::Decoration::Binding),
+            Operand::LiteralBit32(0),
+        ],
+    ));
+
+    // %2 = OpTypeVoid
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        None,
+        Some(2),
+        vec![],
+    ));
+    // %3 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
+    // %4 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %5 = OpTypeInt 32 1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(5),
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(1)],
+    ));
+
+    // Result component type: float or int depending on whether we want match
+    let result_comp_type = if result_component_type_matches { 4 } else { 5 };
+
+    // %6 = OpTypeVector %result_comp_type <result_components>
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(6),
+        vec![
+            Operand::IdRef(result_comp_type),
+            Operand::LiteralBit32(result_components),
+        ],
+    ));
+    // %7 = OpTypeImage %float <dim> 0 0 0 <sampled> Unknown
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        None,
+        Some(7),
+        vec![
+            Operand::IdRef(4), // sampled type = float
+            Operand::Dim(dim),
+            Operand::LiteralBit32(0),       // depth
+            Operand::LiteralBit32(0),       // arrayed
+            Operand::LiteralBit32(0),       // ms
+            Operand::LiteralBit32(sampled), // sampled
+            Operand::ImageFormat(ImageFormat::Unknown),
+        ],
+    ));
+    // %8 = OpTypePointer UniformConstant %image
+    module.types_global_values.push(Instruction::new(
+        Op::TypePointer,
+        None,
+        Some(8),
+        vec![
+            Operand::StorageClass(rspirv::spirv::StorageClass::UniformConstant),
+            Operand::IdRef(7),
+        ],
+    ));
+    // %9 = OpTypeInt 32 0 (for coordinate)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(9),
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+
+    // %10 = OpVariable %ptr UniformConstant
+    module.types_global_values.push(Instruction::new(
+        Op::Variable,
+        Some(8),
+        Some(10),
+        vec![Operand::StorageClass(
+            rspirv::spirv::StorageClass::UniformConstant,
+        )],
+    ));
+    // %11 = OpConstant %uint 0 (for coordinate)
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(9),
+        Some(11),
+        vec![Operand::LiteralBit32(0)],
+    ));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
+
+    // %20 = OpLoad %image %var
+    block.instructions.push(Instruction::new(
+        Op::Load,
+        Some(7),
+        Some(20),
+        vec![Operand::IdRef(10)],
+    ));
+    // %21 = OpImageFetch %result_vec %image %coord
+    block.instructions.push(Instruction::new(
+        Op::ImageFetch,
+        Some(6),
+        Some(21),
+        vec![Operand::IdRef(20), Operand::IdRef(11)],
+    ));
+
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    module.assemble()
+}
+
+#[test]
+fn image_fetch_valid_2d_sampled_passes() {
+    let binary =
+        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, true);
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("Valid OpImageFetch with 2D sampled image should pass");
+}
+
+#[test]
+fn image_fetch_dim_cube_fails() {
+    let binary =
+        build_image_fetch_module(1, rspirv::spirv::Dim::DimCube, 4, true);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpImageFetch with Cube dimension should fail");
+    assert!(
+        matches!(err, ValidationError::ImageFetchDimCannotBeCube { .. }),
+        "expected ImageFetchDimCannotBeCube, got {err:?}"
+    );
+}
+
+#[test]
+fn image_fetch_sampled_2_fails() {
+    // Sampled=2 means read/write storage image, not valid for fetch
+    let binary =
+        build_image_fetch_module(2, rspirv::spirv::Dim::Dim2D, 4, true);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpImageFetch with Sampled=2 should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageFetchRequiresSampledImage { .. }
+        ),
+        "expected ImageFetchRequiresSampledImage, got {err:?}"
+    );
+}
+
+#[test]
+fn image_fetch_result_type_mismatch_fails() {
+    // Result vector uses int but image sampled type is float
+    let binary =
+        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, false);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpImageFetch with mismatched component type should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageSampleResultTypeMismatch { .. }
+        ),
+        "expected ImageSampleResultTypeMismatch, got {err:?}"
+    );
+}
+
+#[test]
+fn image_fetch_non_4_component_result_fails() {
+    // Result vector has 3 components instead of 4
+    let binary =
+        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 3, true);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpImageFetch with 3-component result should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageSampleResultMustBe4ComponentVector { .. }
+        ),
+        "expected ImageSampleResultMustBe4ComponentVector, got {err:?}"
+    );
+}

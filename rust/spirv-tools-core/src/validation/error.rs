@@ -4639,6 +4639,26 @@ pub enum ValidationError {
         /// The opcode of the image operation.
         opcode: rspirv::spirv::Op,
     },
+    /// OpImageFetch requires Image 'Sampled' parameter to be 1.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: expected Image 'Sampled' parameter to be 1")]
+    ImageFetchRequiresSampledImage {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// OpImageFetch image dimension cannot be Cube.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: image 'Dim' cannot be Cube")]
+    ImageFetchDimCannotBeCube {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
     /// OpSampledImage in SPIR-V 1.6+ cannot use Buffer dimension.
     #[error("OpSampledImage in block {block:?} of function {function:?} cannot use Buffer dimension in SPIR-V 1.6 or later")]
     SampledImageBufferDimInvalid {
