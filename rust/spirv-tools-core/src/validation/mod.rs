@@ -326,6 +326,7 @@ pub(crate) fn validate_words_internal(
         &rules::block_layout::all_block_layout_rules(),
     )?;
     run_rules(&validation_ctx, &rules::vulkan::all_vulkan_rules())?;
+    run_rules(&validation_ctx, &rules::opengl::all_opengl_rules())?;
     run_rules(&validation_ctx, &rules::pointers::all_pointer_rules())?;
     run_rules(&validation_ctx, &rules::decorations::all_decoration_rules())?;
     run_rules(

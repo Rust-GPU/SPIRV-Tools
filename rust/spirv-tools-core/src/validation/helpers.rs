@@ -566,6 +566,18 @@ pub fn is_vulkan_env(env: TargetEnv) -> bool {
     )
 }
 
+/// Returns true if the target environment is an OpenGL environment.
+pub fn is_opengl_env(env: TargetEnv) -> bool {
+    matches!(
+        env,
+        TargetEnv::OpenGl4_0
+            | TargetEnv::OpenGl4_1
+            | TargetEnv::OpenGl4_2
+            | TargetEnv::OpenGl4_3
+            | TargetEnv::OpenGl4_5
+    )
+}
+
 // ============================================================================
 // Constant evaluation helpers
 // ============================================================================

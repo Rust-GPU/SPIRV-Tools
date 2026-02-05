@@ -297,6 +297,14 @@ pub enum ValidationError {
         /// The struct type ID.
         struct_id: u32,
     },
+    /// An OpenGL uniform/storage block variable is missing a Binding decoration (ARB_gl_spirv).
+    #[error("{storage_class:?} id {variable_id} is missing Binding decoration. From ARB_gl_spirv extension: Uniform and shader storage block variables must also be decorated with a Binding.")]
+    OpenGlBufferMissingBindingDecoration {
+        /// The storage class of the variable.
+        storage_class: rspirv::spirv::StorageClass,
+        /// The variable ID.
+        variable_id: u32,
+    },
     /// A Block/BufferBlock struct is missing ArrayStride decoration on an array member.
     #[error("Structure id {struct_id} decorated as {decoration_type} must be explicitly laid out with ArrayStride decorations")]
     BlockMissingArrayStride {

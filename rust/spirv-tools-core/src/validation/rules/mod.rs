@@ -39,6 +39,7 @@
 //! - [`memory`]: Memory model validation rules
 //! - [`pointers`]: Pointer and store validation rules
 //! - [`vulkan`]: Vulkan-specific validation rules
+//! - [`opengl`]: OpenGL-specific validation rules (ARB_gl_spirv)
 //! - [`entry_points`]: Entry point interface validation rules
 //! - [`execution_limitations`]: Execution model limitations validation (callgraph-based)
 //! - [`execution_modes`]: Execution mode validation rules
@@ -110,6 +111,7 @@ pub mod mesh_shading;
 pub mod misc;
 pub mod mode_setting;
 pub mod non_uniform;
+pub mod opengl;
 pub mod pointers;
 pub mod primitives;
 pub mod ray_tracing;

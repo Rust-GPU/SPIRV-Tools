@@ -32142,3 +32142,259 @@ fn universal_env_uses_base_spec_error_for_missing_block() {
         ValidationError::MissingBlockDecoration { .. }
     ));
 }
+
+// ============================================================================
+// #12: OpenGL Binding checks for Uniform/StorageBuffer block variables
+// ============================================================================
+
+/// OpenGL Uniform variable with Block decoration and missing Binding should fail.
+#[test]
+fn opengl_uniform_block_missing_binding_is_rejected() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::OpenGl4_5)
+        .expect_err("OpenGL Uniform Block without Binding should fail");
+    assert!(matches!(
+        err,
+        ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+    ));
+}
+
+/// OpenGL Uniform variable with Block decoration and Binding should pass.
+#[test]
+fn opengl_uniform_block_with_binding_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::OpenGl4_5)
+        .expect("OpenGL Uniform Block with Binding should pass");
+}
+
+/// OpenGL Uniform variable with BufferBlock decoration and missing Binding should fail.
+#[test]
+fn opengl_uniform_buffer_block_missing_binding_is_rejected() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::OpenGl4_5)
+        .expect_err("OpenGL Uniform BufferBlock without Binding should fail");
+    assert!(matches!(
+        err,
+        ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+    ));
+}
+
+/// OpenGL StorageBuffer variable with Block decoration and missing Binding should fail.
+#[test]
+fn opengl_storage_buffer_block_missing_binding_is_rejected() {
+    let text = [
+        "OpCapability Shader",
+        "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::OpenGl4_5)
+        .expect_err("OpenGL StorageBuffer Block without Binding should fail");
+    assert!(matches!(
+        err,
+        ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+    ));
+}
+
+/// OpenGL StorageBuffer variable with Block decoration and Binding should pass.
+#[test]
+fn opengl_storage_buffer_block_with_binding_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpExtension \"SPV_KHR_storage_buffer_storage_class\"",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::OpenGl4_5)
+        .expect("OpenGL StorageBuffer Block with Binding should pass");
+}
+
+/// OpenGL Uniform variable without Block/BufferBlock does not need Binding.
+#[test]
+fn opengl_uniform_without_block_does_not_need_binding() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    // Without Block or BufferBlock, the OpenGL binding check should not trigger.
+    // (Other rules may still catch this, but not the OpenGL binding rule.)
+    let result = text.as_str().validate(TargetEnv::OpenGl4_5);
+    if let Err(ref err) = result {
+        assert!(
+            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            "OpenGL binding check should not trigger without Block/BufferBlock"
+        );
+    }
+}
+
+/// Vulkan env should not trigger the OpenGL binding check.
+#[test]
+fn vulkan_env_does_not_trigger_opengl_binding_check() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    // This should pass Vulkan validation - missing Binding is caught by the
+    // Vulkan descriptor binding rule, not by the OpenGL binding rule.
+    // We just verify the error is NOT the OpenGL-specific one.
+    let result = text.as_str().validate(TargetEnv::Vulkan1_0);
+    if let Err(ref err) = result {
+        assert!(
+            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            "Vulkan env should not trigger OpenGL binding check"
+        );
+    }
+}
+
+/// Variable not referenced by any entry point should not trigger the OpenGL binding check.
+#[test]
+fn opengl_unreferenced_variable_does_not_need_binding() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Vertex %main \"main\"",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%voidfn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "%main = OpFunction %void None %voidfn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    // Variable not in entry point interface - should not trigger OpenGL binding check
+    let result = text.as_str().validate(TargetEnv::OpenGl4_5);
+    if let Err(ref err) = result {
+        assert!(
+            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            "Unreferenced variable should not trigger OpenGL binding check"
+        );
+    }
+}
