@@ -14279,7 +14279,7 @@ fn block_layout_rejects_overlapping_offsets() {
     let binary = module.assemble();
     let err = binary
         .as_slice()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("overlapping member offsets should fail block layout");
     match err {
         ValidationError::InvalidBlockLayout {
@@ -14298,7 +14298,7 @@ fn block_layout_rejects_overlapping_offsets() {
     };
     let err = binary
         .as_slice()
-        .validate_with_options(TargetEnv::Universal1_6, relax_options)
+        .validate_with_options(TargetEnv::Vulkan1_0, relax_options)
         .expect_err("relax_block_layout should still enforce overlap constraints");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     let options = ValidationOptions {
@@ -14307,7 +14307,7 @@ fn block_layout_rejects_overlapping_offsets() {
     };
     binary
         .as_slice()
-        .validate_with_options(TargetEnv::Universal1_6, options)
+        .validate_with_options(TargetEnv::Vulkan1_0, options)
         .expect("skip_block_layout should skip overlap checks");
 }
 #[test]
@@ -14329,7 +14329,7 @@ fn relax_block_layout_allows_scalar_vector_alignment() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("vector offset should require base alignment in strict layout");
     if let ValidationError::InvalidBlockLayout { reason, .. } = err {
         assert!(reason.contains("aligned"), "unexpected reason: {reason:?}");
@@ -14341,14 +14341,14 @@ fn relax_block_layout_allows_scalar_vector_alignment() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .validate_with_options(TargetEnv::Vulkan1_0, relax)
         .expect("relax_block_layout should permit scalar-aligned vectors");
     let scalar = ValidationOptions {
         scalar_block_layout: true,
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, scalar)
+        .validate_with_options(TargetEnv::Vulkan1_0, scalar)
         .expect("scalar_block_layout should permit scalar alignment for vectors");
 }
 #[test]
@@ -14377,7 +14377,7 @@ fn uniform_buffer_standard_layout_does_not_relax_vector_alignment() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect_err("uniform_buffer_standard_layout does not relax vector alignment");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14406,7 +14406,7 @@ fn uniform_buffer_standard_layout_with_relax_allows_scalar_vector_alignment() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect("relax_block_layout should permit scalar-aligned vectors");
 }
 #[test]
@@ -14540,7 +14540,7 @@ fn workgroup_scalar_block_layout_uses_scalar_alignment() {
     };
     binary
         .as_slice()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_2, opts)
         .expect("workgroup_scalar_block_layout should permit scalar alignment for Workgroup");
 }
 
@@ -14569,7 +14569,7 @@ fn workgroup_scalar_does_not_affect_uniform() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect_err("workgroup_scalar_block_layout should NOT relax Uniform layout");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14594,7 +14594,7 @@ fn array_stride_must_align_to_element() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("array stride not aligned to element size should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14622,7 +14622,7 @@ fn storage_buffer_array_stride_uses_std430_no_extended_alignment() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_1)
         .expect("StorageBuffer uses std430 rules where array stride 8 is valid");
 }
 #[test]
@@ -14650,7 +14650,7 @@ fn uniform_block_array_stride_requires_std140_extended_alignment() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("Uniform + Block uses std140 where array stride 8 is not aligned to 16");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14682,7 +14682,7 @@ fn relax_block_layout_preserves_std140_extended_alignment() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect_err("relax_block_layout does not disable std140 extended alignment");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14713,7 +14713,7 @@ fn uniform_buffer_standard_layout_disables_std140_extended_alignment() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect("uniform_buffer_standard_layout disables std140 extended alignment");
 }
 #[test]
@@ -14736,7 +14736,7 @@ fn vector_straddle_rejected_under_relax() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("misaligned vector should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     let relax = ValidationOptions {
@@ -14745,7 +14745,7 @@ fn vector_straddle_rejected_under_relax() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .validate_with_options(TargetEnv::Vulkan1_0, relax)
         .expect_err("relaxed layout still rejects improper vector straddle");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14776,7 +14776,7 @@ fn small_vector_straddle_rejected_under_relax() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .validate_with_options(TargetEnv::Vulkan1_1, relax)
         .expect_err("vec2 at offset 12 straddles 16-byte boundary");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14805,7 +14805,7 @@ fn small_vector_no_straddle_accepted_under_relax() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, relax)
+        .validate_with_options(TargetEnv::Vulkan1_1, relax)
         .expect("vec2 at offset 8 does not straddle 16-byte boundary");
 }
 #[test]
@@ -14832,7 +14832,7 @@ fn member_in_array_padding_rejected() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("member in array padding should be rejected");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -14859,7 +14859,7 @@ fn member_after_array_padding_accepted() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("member at offset 32 is after array's std140-rounded extent");
 }
 #[test]
@@ -14891,7 +14891,7 @@ fn scalar_layout_allows_member_after_array_raw_extent() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_0, opts)
         .expect("scalar layout allows member at offset 20 (after array raw extent)");
 }
 #[test]
@@ -14917,7 +14917,7 @@ fn matrix_stride_alignment_and_size() {
     ]
     .join("\n");
     let words = assemble_text(&text).expect("assemble");
-    let err = validate_module(&words, TargetEnv::Universal1_6)
+    let err = validate_module(&words, TargetEnv::Vulkan1_0)
         .expect_err("matrix stride smaller than column size should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
     let aligned = [
@@ -14940,7 +14940,7 @@ fn matrix_stride_alignment_and_size() {
     ]
     .join("\n");
     let aligned_words = assemble_text(&aligned).expect("assemble");
-    validate_module(&aligned_words, TargetEnv::Universal1_6)
+    validate_module(&aligned_words, TargetEnv::Vulkan1_0)
         .expect("aligned matrix stride should pass");
 }
 /// Negative: block struct with an array member missing ArrayStride must be rejected.
@@ -15458,17 +15458,9 @@ fn runtime_array_must_be_last_member() {
     let binary = module.assemble();
     let err = binary
         .as_slice()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("runtime array must be the final member");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
-    let skip = ValidationOptions {
-        skip_block_layout: true,
-        ..ValidationOptions::default()
-    };
-    binary
-        .as_slice()
-        .validate_with_options(TargetEnv::Universal1_6, skip)
-        .expect("skip_block_layout should bypass runtime array placement rule");
 }
 #[test]
 fn switch_branch_limit_enforced() {
@@ -31275,7 +31267,7 @@ fn nested_struct_misalignment_rejected() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("nested struct with misaligned member should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -31299,7 +31291,7 @@ fn nested_struct_correct_alignment_accepted() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("nested struct with correct alignment should pass");
 }
 #[test]
@@ -31327,7 +31319,7 @@ fn nested_array_bad_stride_rejected() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("nested array with bad stride should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -31354,7 +31346,7 @@ fn nested_array_correct_stride_accepted() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("nested array with correct stride should pass");
 }
 #[test]
@@ -31382,7 +31374,7 @@ fn row_major_matrix_bad_alignment_rejected() {
     ]
     .join("\n");
     let words = assemble_text(&text).expect("assemble");
-    let err = validate_module(&words, TargetEnv::Universal1_3)
+    let err = validate_module(&words, TargetEnv::Vulkan1_0)
         .expect_err("row-major matrix at misaligned offset should fail");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
@@ -31408,7 +31400,7 @@ fn row_major_matrix_correct_alignment_accepted() {
     ]
     .join("\n");
     let words = assemble_text(&text).expect("assemble");
-    validate_module(&words, TargetEnv::Universal1_3)
+    validate_module(&words, TargetEnv::Vulkan1_0)
         .expect("row-major matrix at aligned offset should pass");
 }
 #[test]
@@ -31441,7 +31433,7 @@ fn row_major_matrix_large_column_no_straddle_rejection() {
         relax_block_layout: true,
         ..ValidationOptions::default()
     };
-    validate_module_with_options(&words, TargetEnv::Universal1_3, opts)
+    validate_module_with_options(&words, TargetEnv::Vulkan1_0, opts)
         .expect("row-major matrix should not be rejected for straddle");
 }
 
@@ -31477,7 +31469,7 @@ fn struct_size_accounts_for_offset_gaps() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("struct with gap should pass: inner size is 32, member 1 at offset 32 is valid");
 }
 
@@ -31508,7 +31500,7 @@ fn struct_size_detects_overlap_with_offset_gaps() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("member at offset 20 overlaps inner struct ending at offset 32");
     if let ValidationError::InvalidBlockLayout { reason, .. } = err {
         assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
@@ -31550,7 +31542,7 @@ fn array_size_accounts_for_stride() {
         ..ValidationOptions::default()
     };
     text.as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_1, opts)
         .expect("member at offset 28 is valid: array size is (2-1)*16+12 = 28");
 }
 
@@ -31584,7 +31576,7 @@ fn array_size_detects_overlap_with_stride() {
     };
     let err = text
         .as_str()
-        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .validate_with_options(TargetEnv::Vulkan1_1, opts)
         .expect_err("member at offset 24 overlaps array ending at offset 28");
     if let ValidationError::InvalidBlockLayout { reason, .. } = err {
         assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
@@ -31620,7 +31612,7 @@ fn descriptor_array_struct_is_validated() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("block struct behind descriptor array should be validated and pass");
 }
 
@@ -31647,7 +31639,7 @@ fn descriptor_array_struct_bad_offsets_rejected() {
     .join("\n");
     let err = text
         .as_str()
-        .validate(TargetEnv::Universal1_6)
+        .validate(TargetEnv::Vulkan1_0)
         .expect_err("block struct behind array with overlapping offsets should fail");
     if let ValidationError::InvalidBlockLayout { reason, .. } = err {
         assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
@@ -31676,6 +31668,63 @@ fn descriptor_runtime_array_struct_is_validated() {
     ]
     .join("\n");
     text.as_str()
-        .validate(TargetEnv::Universal1_3)
+        .validate(TargetEnv::Vulkan1_0)
         .expect("block struct behind runtime array should pass");
+}
+
+// ============================================================================
+// Vulkan env gate tests: layout validation is skipped for non-Vulkan envs
+// ============================================================================
+
+/// Non-Vulkan (Universal) environments skip the check_struct_layout pass.
+/// A struct with overlapping offsets that would fail under Vulkan should pass
+/// under Universal because only the pre-checks (Offset/ArrayStride/MatrixStride
+/// presence) run. Matches C++ line 1478 which gates checkLayout on isVulkanEnv.
+#[test]
+fn universal_env_skips_layout_validation() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    // Under Vulkan, overlapping offsets would fail:
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect_err("Vulkan should reject overlapping offsets");
+    // Under Universal, layout checks are skipped so this should pass:
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("Universal env skips layout validation per C++ line 1478");
+}
+
+/// Non-Vulkan env still enforces pre-checks (Offset decoration presence).
+/// A struct missing Offset decorations should fail even under Universal.
+#[test]
+fn universal_env_still_enforces_offset_presence() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("missing Offset should fail even under Universal");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }

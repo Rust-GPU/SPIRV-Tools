@@ -14,6 +14,7 @@ use rspirv::spirv::{Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
+use crate::validation::helpers::is_vulkan_env;
 use crate::validation::span::SpannedValidationError;
 use crate::validation::types::{MemberIndex, ResultId, TypeId};
 use crate::validation::ValidationResult;
@@ -68,6 +69,7 @@ impl ValidationRule for BlockLayoutRule {
                 BlockDecoration::BufferBlock => "BufferBlock",
             };
 
+            // Pre-checks run for ALL environments (C++ lines 1432-1476).
             check_required_block_decorations(
                 ctx.module,
                 ctx.definitions,
@@ -76,16 +78,20 @@ impl ValidationRule for BlockLayoutRule {
                 &mut HashSet::new(),
             )?;
 
-            check_struct_layout(
-                ctx.module,
-                ctx.definitions,
-                struct_id,
-                0,
-                scalar_layout,
-                extended_alignment,
-                relax_block_layout,
-                0,
-            )?;
+            // Actual layout validation (offset alignment, overlap, straddle) only
+            // runs for Vulkan environments (C++ line 1478).
+            if is_vulkan_env(ctx.env) {
+                check_struct_layout(
+                    ctx.module,
+                    ctx.definitions,
+                    struct_id,
+                    0,
+                    scalar_layout,
+                    extended_alignment,
+                    relax_block_layout,
+                    0,
+                )?;
+            }
         }
 
         Ok(())
@@ -747,6 +753,22 @@ fn check_required_block_decorations(
     if struct_inst.class.opcode != Op::TypeStruct {
         visiting.remove(&struct_id);
         return Ok(());
+    }
+
+    // Check that all members have Offset decorations (C++ isMissingOffsetInStruct, line 1432).
+    let offsets = collect_member_offsets(module, struct_id);
+    for idx in 0..struct_inst.operands.len() {
+        if !offsets.contains_key(&MemberIndex(idx as u32)) {
+            visiting.remove(&struct_id);
+            return Err(ValidationError::InvalidBlockLayout {
+                struct_type: struct_id,
+                reason: format!(
+                    "Structure decorated as {} must be explicitly laid out with Offset decorations",
+                    deco_name
+                ),
+            }
+            .into());
+        }
     }
 
     for (member_idx, op) in struct_inst.operands.iter().enumerate() {
