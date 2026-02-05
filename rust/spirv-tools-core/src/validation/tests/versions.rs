@@ -782,11 +782,13 @@ fn image_operands_make_texel_visible_requires_vulkan_memory_model_capability() {
         .unwrap();
     builder.begin_block(None).unwrap();
     let semantics = builder.constant_bit32(int, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+    // MakeTexelVisible is for read operations, not write
     builder
-        .image_write(
+        .image_read(
+            v4float,
+            None,
             img,
             coord,
-            texel,
             Some(
                 rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE
                     | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
@@ -804,8 +806,8 @@ fn image_operands_make_texel_visible_requires_vulkan_memory_model_capability() {
     assert_eq!(
         error,
         ValidationError::MissingOperandCapability {
-            opcode: rspirv::spirv::Op::ImageWrite,
-            operand_index: 3,
+            opcode: rspirv::spirv::Op::ImageRead,
+            operand_index: 2,
             required_capability: rspirv::spirv::Capability::VulkanMemoryModel
         }
     );
@@ -870,11 +872,13 @@ fn image_operands_make_texel_visible_allows_vulkan_memory_model_capability() {
         .unwrap();
     builder.begin_block(None).unwrap();
     let semantics = builder.constant_bit32(int, rspirv::spirv::MemorySemantics::ACQUIRE.bits());
+    // MakeTexelVisible is for read operations, not write
     builder
-        .image_write(
+        .image_read(
+            v4float,
+            None,
             img,
             coord,
-            texel,
             Some(
                 rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE
                     | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,

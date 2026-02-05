@@ -4291,6 +4291,54 @@ pub enum ValidationError {
         /// The opcode of the image operation.
         opcode: rspirv::spirv::Op,
     },
+    /// MakeTexelAvailable can only be used with OpImageWrite.
+    #[error(
+        "Image Operand MakeTexelAvailable can only be used with OpImageWrite: {opcode:?}"
+    )]
+    ImageOperandMakeTexelAvailableRequiresWrite {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeTexelVisible cannot be used with OpImageWrite.
+    #[error(
+        "Image Operand MakeTexelVisible cannot be used with OpImageWrite: {opcode:?}"
+    )]
+    ImageOperandMakeTexelVisibleCannotBeUsedWithWrite {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeTexelAvailable requires NonPrivateTexel to also be specified.
+    #[error(
+        "Image Operand MakeTexelAvailable requires NonPrivateTexel to also be specified: {opcode:?}"
+    )]
+    ImageOperandMakeTexelAvailableRequiresNonPrivate {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// MakeTexelVisible requires NonPrivateTexel to also be specified.
+    #[error(
+        "Image Operand MakeTexelVisible requires NonPrivateTexel to also be specified: {opcode:?}"
+    )]
+    ImageOperandMakeTexelVisibleRequiresNonPrivate {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
     /// Implicit LOD requires Fragment execution model.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} uses implicit LOD which requires Fragment execution model"

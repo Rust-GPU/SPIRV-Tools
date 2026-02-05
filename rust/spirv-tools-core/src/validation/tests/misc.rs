@@ -6326,3 +6326,214 @@ OpFunctionEnd
     text.validate(TargetEnv::Vulkan1_0)
         .expect("vec4 result for OpImageGather should pass");
 }
+
+#[test]
+fn make_texel_available_only_valid_with_image_write() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build an OpImageRead with MakeTexelAvailable — this should fail
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageRead,
+        Some(1),
+        Some(2),
+        vec![
+            Operand::IdRef(3),                // image
+            Operand::IdRef(4),                // coordinate
+            Operand::ImageOperands(
+                rspirv::spirv::ImageOperands::MAKE_TEXEL_AVAILABLE
+                    | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
+            ),
+            Operand::IdRef(5),                // scope
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandRule.validate(&ctx);
+    assert!(result.is_err(), "MakeTexelAvailable should not be valid with OpImageRead");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            err.error,
+            ValidationError::ImageOperandMakeTexelAvailableRequiresWrite { .. }
+        ),
+        "expected MakeTexelAvailableRequiresWrite, got: {:?}",
+        err.error
+    );
+}
+
+#[test]
+fn make_texel_visible_not_valid_with_image_write() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build an OpImageWrite with MakeTexelVisible — this should fail
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageWrite,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),                // image
+            Operand::IdRef(2),                // coordinate
+            Operand::IdRef(3),                // texel
+            Operand::ImageOperands(
+                rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE
+                    | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
+            ),
+            Operand::IdRef(4),                // scope
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandRule.validate(&ctx);
+    assert!(result.is_err(), "MakeTexelVisible should not be valid with OpImageWrite");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            err.error,
+            ValidationError::ImageOperandMakeTexelVisibleCannotBeUsedWithWrite { .. }
+        ),
+        "expected MakeTexelVisibleCannotBeUsedWithWrite, got: {:?}",
+        err.error
+    );
+}
+
+#[test]
+fn make_texel_available_requires_non_private_texel() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // OpImageWrite with MakeTexelAvailable but WITHOUT NonPrivateTexel
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageWrite,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2),
+            Operand::IdRef(3),
+            Operand::ImageOperands(rspirv::spirv::ImageOperands::MAKE_TEXEL_AVAILABLE),
+            Operand::IdRef(4),
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandRule.validate(&ctx);
+    assert!(result.is_err(), "MakeTexelAvailable without NonPrivateTexel should fail");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            err.error,
+            ValidationError::ImageOperandMakeTexelAvailableRequiresNonPrivate { .. }
+        ),
+        "expected MakeTexelAvailableRequiresNonPrivate, got: {:?}",
+        err.error
+    );
+}
+
+#[test]
+fn make_texel_visible_requires_non_private_texel() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // OpImageRead with MakeTexelVisible but WITHOUT NonPrivateTexel
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageRead,
+        Some(1),
+        Some(2),
+        vec![
+            Operand::IdRef(3),
+            Operand::IdRef(4),
+            Operand::ImageOperands(rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE),
+            Operand::IdRef(5),
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandRule.validate(&ctx);
+    assert!(result.is_err(), "MakeTexelVisible without NonPrivateTexel should fail");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(
+            err.error,
+            ValidationError::ImageOperandMakeTexelVisibleRequiresNonPrivate { .. }
+        ),
+        "expected MakeTexelVisibleRequiresNonPrivate, got: {:?}",
+        err.error
+    );
+}
+
+#[test]
+fn make_texel_available_with_non_private_on_write_passes() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // OpImageWrite with MakeTexelAvailable + NonPrivateTexel — valid
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageWrite,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2),
+            Operand::IdRef(3),
+            Operand::ImageOperands(
+                rspirv::spirv::ImageOperands::MAKE_TEXEL_AVAILABLE
+                    | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
+            ),
+            Operand::IdRef(4),
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandRule.validate(&ctx).expect("MakeTexelAvailable + NonPrivateTexel on write should pass");
+}
+
+#[test]
+fn make_texel_visible_with_non_private_on_read_passes() {
+    use crate::validation::rules::image::ImageOperandRule;
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    // OpImageRead with MakeTexelVisible + NonPrivateTexel — valid
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageRead,
+        Some(1),
+        Some(2),
+        vec![
+            Operand::IdRef(3),
+            Operand::IdRef(4),
+            Operand::ImageOperands(
+                rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE
+                    | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
+            ),
+            Operand::IdRef(5),
+        ],
+    );
+    let mut data = TestContextData::default();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandRule.validate(&ctx).expect("MakeTexelVisible + NonPrivateTexel on read should pass");
+}

@@ -464,6 +464,62 @@ impl ValidationRule for ImageOperandRule {
                             .into());
                         }
                     }
+
+                    // MakeTexelAvailable can only be used with OpImageWrite
+                    if mask.contains(ImageOperands::MAKE_TEXEL_AVAILABLE)
+                        && inst.class.opcode != Op::ImageWrite
+                    {
+                        return Err(
+                            ValidationError::ImageOperandMakeTexelAvailableRequiresWrite {
+                                function: function_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            }
+                            .into(),
+                        );
+                    }
+
+                    // MakeTexelVisible cannot be used with OpImageWrite
+                    if mask.contains(ImageOperands::MAKE_TEXEL_VISIBLE)
+                        && inst.class.opcode == Op::ImageWrite
+                    {
+                        return Err(
+                            ValidationError::ImageOperandMakeTexelVisibleCannotBeUsedWithWrite {
+                                function: function_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            }
+                            .into(),
+                        );
+                    }
+
+                    // MakeTexelAvailable requires NonPrivateTexel
+                    if mask.contains(ImageOperands::MAKE_TEXEL_AVAILABLE)
+                        && !mask.contains(ImageOperands::NON_PRIVATE_TEXEL)
+                    {
+                        return Err(
+                            ValidationError::ImageOperandMakeTexelAvailableRequiresNonPrivate {
+                                function: function_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            }
+                            .into(),
+                        );
+                    }
+
+                    // MakeTexelVisible requires NonPrivateTexel
+                    if mask.contains(ImageOperands::MAKE_TEXEL_VISIBLE)
+                        && !mask.contains(ImageOperands::NON_PRIVATE_TEXEL)
+                    {
+                        return Err(
+                            ValidationError::ImageOperandMakeTexelVisibleRequiresNonPrivate {
+                                function: function_id,
+                                block: block_id,
+                                opcode: inst.class.opcode,
+                            }
+                            .into(),
+                        );
+                    }
                 }
             }
         }
