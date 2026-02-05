@@ -186,7 +186,29 @@ fn collect_block_structs(module: &Module) -> HashMap<ResultId, BlockStructInfo> 
         let Some(rspirv::dr::Operand::IdRef(pointee)) = ptr_inst.operands.get(1) else {
             continue;
         };
-        if let Ok(struct_id) = ResultId::try_from(*pointee) {
+        // Jump through one level of array indirection for non-Workgroup
+        // storage classes (C++ CheckDecorationsOfBuffers, lines 1354-1360).
+        // Variables like ptr-to-array-of-BlockStruct are descriptor arrays;
+        // the layout check applies to the struct, not the outer array.
+        let mut target = *pointee;
+        if *sc != StorageClass::Workgroup {
+            if let Ok(tid) = ResultId::try_from(target) {
+                if let Some(inner) = module
+                    .types_global_values
+                    .iter()
+                    .find(|i| i.result_id == Some(u32::from(tid)))
+                {
+                    if inner.class.opcode == Op::TypeArray
+                        || inner.class.opcode == Op::TypeRuntimeArray
+                    {
+                        if let Some(rspirv::dr::Operand::IdRef(elem)) = inner.operands.first() {
+                            target = *elem;
+                        }
+                    }
+                }
+            }
+        }
+        if let Ok(struct_id) = ResultId::try_from(target) {
             if let Some(info) = structs.get_mut(&struct_id) {
                 info.storage_classes.insert(*sc);
             }

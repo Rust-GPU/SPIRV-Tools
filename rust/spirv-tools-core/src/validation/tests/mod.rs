@@ -31092,3 +31092,90 @@ fn array_size_detects_overlap_with_stride() {
         panic!("unexpected error: {err:?}");
     }
 }
+
+// ============================================================================
+// Descriptor array unwrapping tests
+// ============================================================================
+
+/// Positive: Block-decorated struct behind an array (descriptor array pattern)
+/// should be validated. ptr → array<struct> is common in Vulkan.
+#[test]
+fn descriptor_array_struct_is_validated() {
+    // Block struct with correct offsets behind an array should pass.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpDecorate %arr ArrayStride 16",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 4",
+        "%uint = OpTypeInt 32 0",
+        "%c4 = OpConstant %uint 4",
+        "%struct = OpTypeStruct %uint %uint",
+        "%arr = OpTypeArray %struct %c4",
+        "%ptr = OpTypePointer Uniform %arr",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("block struct behind descriptor array should be validated and pass");
+}
+
+/// Negative: Block-decorated struct behind an array with bad offsets should fail.
+#[test]
+fn descriptor_array_struct_bad_offsets_rejected() {
+    // Block struct with overlapping offsets behind an array should fail.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpDecorate %arr ArrayStride 16",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 0",
+        "%uint = OpTypeInt 32 0",
+        "%c4 = OpConstant %uint 4",
+        "%struct = OpTypeStruct %uint %uint",
+        "%arr = OpTypeArray %struct %c4",
+        "%ptr = OpTypePointer Uniform %arr",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("block struct behind array with overlapping offsets should fail");
+    if let ValidationError::InvalidBlockLayout { reason, .. } = err {
+        assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
+    } else {
+        panic!("unexpected error: {err:?}");
+    }
+}
+
+/// Positive: runtime-array descriptor pattern (ptr → RuntimeArray<struct>) should work.
+#[test]
+fn descriptor_runtime_array_struct_is_validated() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpDecorate %rarr ArrayStride 16",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 4",
+        "%uint = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %uint %uint",
+        "%rarr = OpTypeRuntimeArray %struct",
+        "%ptr = OpTypePointer Uniform %rarr",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_3)
+        .expect("block struct behind runtime array should pass");
+}
