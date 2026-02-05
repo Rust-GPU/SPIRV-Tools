@@ -707,9 +707,13 @@ fn get_pointer_storage_class(
 
 /// Returns true if the instruction is a variable pointer.
 /// Variable pointers are pointers that can have multiple possible values at runtime.
+///
+/// For `OpFunctionParameter`, call-site analysis is used: a parameter is a variable
+/// pointer only if at least one call site passes a variable pointer at that position.
 fn is_variable_pointer(
     inst_id: ResultId,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    param_var_ptr: &HashSet<ResultId>,
     cache: &mut HashMap<ResultId, bool>,
 ) -> bool {
     if let Some(&cached) = cache.get(&inst_id) {
@@ -736,8 +740,8 @@ fn is_variable_pointer(
         | Op::FunctionCall
         | Op::ConstantNull => true,
 
-        // Function parameters may be variable pointers depending on call sites
-        Op::FunctionParameter => true,
+        // Function parameters: check call-site analysis result
+        Op::FunctionParameter => param_var_ptr.contains(&inst_id),
 
         // For other instructions, check if any operand is a variable pointer
         _ => {
@@ -747,7 +751,12 @@ fn is_variable_pointer(
                     if let Ok(op_result_id) = ResultId::try_from(*op_id) {
                         if let Some(op_inst) = definitions.get(&op_result_id) {
                             if is_logical_pointer(op_inst, definitions)
-                                && is_variable_pointer(op_result_id, definitions, cache)
+                                && is_variable_pointer(
+                                    op_result_id,
+                                    definitions,
+                                    param_var_ptr,
+                                    cache,
+                                )
                             {
                                 result = true;
                                 break;
@@ -762,6 +771,99 @@ fn is_variable_pointer(
 
     cache.insert(inst_id, is_var_ptr);
     is_var_ptr
+}
+
+/// Build a set of FunctionParameter IDs that receive variable pointers at call sites.
+///
+/// This does an iterative fixpoint computation:
+/// 1. Start with no parameters as variable pointers
+/// 2. Compute variable pointers for all instructions
+/// 3. Check call sites - if any call passes a variable pointer at a parameter position,
+///    mark that parameter
+/// 4. If any new parameters were marked, re-compute (since those parameters might
+///    propagate to other call sites)
+fn compute_param_variable_pointers(
+    module: &Module,
+    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+) -> HashSet<ResultId> {
+    // Build function -> ordered parameter IDs map
+    let mut func_params: HashMap<u32, Vec<ResultId>> = HashMap::new();
+    for function in &module.functions {
+        if let Some(func_id) = function.def.as_ref().and_then(|d| d.result_id) {
+            let params: Vec<ResultId> = function
+                .parameters
+                .iter()
+                .filter_map(|p| p.result_id)
+                .filter_map(|id| ResultId::try_from(id).ok())
+                .collect();
+            func_params.insert(func_id, params);
+        }
+    }
+
+    // Collect all FunctionCall instructions
+    let mut call_sites: Vec<(u32, Vec<u32>)> = Vec::new(); // (callee_func_id, [arg_ids])
+    for inst in module.all_inst_iter() {
+        if inst.class.opcode == Op::FunctionCall {
+            if let Some(Operand::IdRef(callee_id)) = inst.operands.first() {
+                let args: Vec<u32> = inst
+                    .operands
+                    .iter()
+                    .skip(1)
+                    .filter_map(|op| {
+                        if let Operand::IdRef(id) = op {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                call_sites.push((*callee_id, args));
+            }
+        }
+    }
+
+    let mut param_var_ptr: HashSet<ResultId> = HashSet::new();
+
+    // Iterative fixpoint
+    loop {
+        let mut cache: HashMap<ResultId, bool> = HashMap::new();
+
+        // Compute variable pointers for all instructions
+        for inst in module.all_inst_iter() {
+            if let Some(result_id) = inst.result_id {
+                if let Ok(id) = ResultId::try_from(result_id) {
+                    if is_logical_pointer(inst, definitions) {
+                        is_variable_pointer(id, definitions, &param_var_ptr, &mut cache);
+                    }
+                }
+            }
+        }
+
+        // Check call sites for new variable pointer parameters
+        let mut changed = false;
+        for (callee_id, args) in &call_sites {
+            if let Some(params) = func_params.get(callee_id) {
+                for (i, arg_id) in args.iter().enumerate() {
+                    if let Some(param_id) = params.get(i) {
+                        if !param_var_ptr.contains(param_id) {
+                            if let Ok(arg_result_id) = ResultId::try_from(*arg_id) {
+                                if cache.get(&arg_result_id).copied().unwrap_or(false) {
+                                    param_var_ptr.insert(*param_id);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    param_var_ptr
 }
 
 /// Check if a type contains a matrix type.
@@ -1082,15 +1184,16 @@ impl ValidationRule for VariablePointerRule {
             .declared_capabilities
             .contains(&Capability::VariablePointersStorageBuffer);
 
-        // Build variable pointer cache
+        // Build variable pointer cache with call-site analysis
+        let param_var_ptr = compute_param_variable_pointers(ctx.module, ctx.definitions);
         let mut var_ptr_cache: HashMap<ResultId, bool> = HashMap::new();
 
-        // First pass: identify all variable pointers
+        // Identify all variable pointers
         for inst in ctx.module.all_inst_iter() {
             if let Some(result_id) = inst.result_id {
                 if let Ok(id) = ResultId::try_from(result_id) {
                     if is_logical_pointer(inst, ctx.definitions) {
-                        is_variable_pointer(id, ctx.definitions, &mut var_ptr_cache);
+                        is_variable_pointer(id, ctx.definitions, &param_var_ptr, &mut var_ptr_cache);
                     }
                 }
             }
