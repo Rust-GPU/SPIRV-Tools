@@ -5758,3 +5758,449 @@ OpFunctionEnd
     assemble_and_validate_with_env(text_mesh, TargetEnv::Vulkan1_2)
         .expect("OutputPoints with MeshEXT and MeshShadingEXT capability should pass");
 }
+
+#[test]
+fn type_image_invalid_depth_value() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    // Types
+    let void_id = 2u32;
+    let fn_type_id = 3u32;
+    let f32_id = 4u32;
+    let img_id = 5u32;
+
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        Some(void_id),
+        None,
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(fn_type_id),
+        None,
+        vec![Operand::IdRef(void_id)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(f32_id),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // OpTypeImage with Depth=5 (invalid)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        Some(img_id),
+        None,
+        vec![
+            Operand::IdRef(f32_id),
+            Operand::Dim(rspirv::spirv::Dim::Dim2D),
+            Operand::LiteralBit32(5), // Depth: invalid
+            Operand::LiteralBit32(0), // Arrayed
+            Operand::LiteralBit32(0), // MS
+            Operand::LiteralBit32(1), // Sampled
+            Operand::ImageFormat(rspirv::spirv::ImageFormat::Unknown),
+        ],
+    ));
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(void_id),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(fn_type_id),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpTypeImage with Depth=5 should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageTypeInvalidDepthValue { value: 5, .. }
+        ),
+        "expected ImageTypeInvalidDepthValue, got {err:?}"
+    );
+}
+
+#[test]
+fn type_image_vulkan_sampled_zero_rejected() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build a module with OpTypeImage Sampled=0 (invalid in Vulkan)
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    let void_id = 2u32;
+    let fn_type_id = 3u32;
+    let f32_id = 4u32;
+    let img_id = 5u32;
+
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        Some(void_id),
+        None,
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(fn_type_id),
+        None,
+        vec![Operand::IdRef(void_id)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(f32_id),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // OpTypeImage with Sampled=0 (invalid in Vulkan)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        Some(img_id),
+        None,
+        vec![
+            Operand::IdRef(f32_id),
+            Operand::Dim(rspirv::spirv::Dim::Dim2D),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0), // Sampled=0: invalid in Vulkan
+            Operand::ImageFormat(rspirv::spirv::ImageFormat::Unknown),
+        ],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(void_id),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(fn_type_id),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("Sampled=0 should be rejected in Vulkan");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageTypeSampledMustBeOneOrTwoInVulkan { .. }
+        ),
+        "expected ImageTypeSampledMustBeOneOrTwoInVulkan, got {err:?}"
+    );
+}
+
+#[test]
+fn type_image_sampled_type_must_be_numeric() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    let void_id = 2u32;
+    let fn_type_id = 3u32;
+    let bool_id = 4u32;
+    let img_id = 5u32;
+
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        Some(void_id),
+        None,
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(fn_type_id),
+        None,
+        vec![Operand::IdRef(void_id)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeBool,
+        Some(bool_id),
+        None,
+        vec![],
+    ));
+    // OpTypeImage with Sampled Type = bool (invalid)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        Some(img_id),
+        None,
+        vec![
+            Operand::IdRef(bool_id), // bool is not a numeric scalar
+            Operand::Dim(rspirv::spirv::Dim::Dim2D),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(1),
+            Operand::ImageFormat(rspirv::spirv::ImageFormat::Unknown),
+        ],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(void_id),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(fn_type_id),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpTypeImage with bool Sampled Type should fail");
+    assert!(
+        matches!(err, ValidationError::ImageTypeInvalidSampledType { .. }),
+        "expected ImageTypeInvalidSampledType, got {err:?}"
+    );
+}
+
+#[test]
+fn type_image_subpass_data_format_must_be_unknown() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(20));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::InputAttachment)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    let void_id = 2u32;
+    let fn_type_id = 3u32;
+    let f32_id = 4u32;
+    let img_id = 5u32;
+
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        Some(void_id),
+        None,
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        Some(fn_type_id),
+        None,
+        vec![Operand::IdRef(void_id)],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        Some(f32_id),
+        None,
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // OpTypeImage SubpassData with Format=Rgba32f (invalid, must be Unknown)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        Some(img_id),
+        None,
+        vec![
+            Operand::IdRef(f32_id),
+            Operand::Dim(rspirv::spirv::Dim::DimSubpassData),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0), // Arrayed=0
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(2), // Sampled=2
+            Operand::ImageFormat(rspirv::spirv::ImageFormat::Rgba32f),
+        ],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(void_id),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(fn_type_id),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, Some(6), None, vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("SubpassData with non-Unknown format should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageTypeSubpassDataFormatMustBeUnknown { .. }
+        ),
+        "expected ImageTypeSubpassDataFormatMustBeUnknown, got {err:?}"
+    );
+}

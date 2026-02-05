@@ -4135,6 +4135,56 @@ pub enum ValidationError {
         /// The image type ID.
         type_id: Option<TypeId>,
     },
+    /// OpTypeImage invalid Depth parameter value.
+    #[error("OpTypeImage {type_id:?} has invalid Depth value {value} (must be 0, 1, or 2)")]
+    ImageTypeInvalidDepthValue {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// The invalid value.
+        value: u32,
+    },
+    /// OpTypeImage invalid Arrayed parameter value.
+    #[error("OpTypeImage {type_id:?} has invalid Arrayed value {value} (must be 0 or 1)")]
+    ImageTypeInvalidArrayedValue {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// The invalid value.
+        value: u32,
+    },
+    /// OpTypeImage invalid MS parameter value.
+    #[error("OpTypeImage {type_id:?} has invalid MS value {value} (must be 0 or 1)")]
+    ImageTypeInvalidMsValue {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// The invalid value.
+        value: u32,
+    },
+    /// OpTypeImage invalid Sampled parameter value.
+    #[error("OpTypeImage {type_id:?} has invalid Sampled value {value} (must be 0, 1, or 2)")]
+    ImageTypeInvalidSampledValue {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// The invalid value.
+        value: u32,
+    },
+    /// OpTypeImage Sampled must be 1 or 2 in Vulkan.
+    #[error("OpTypeImage {type_id:?} Sampled must be 1 or 2 in the Vulkan environment")]
+    ImageTypeSampledMustBeOneOrTwoInVulkan {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
+    /// OpTypeImage invalid Sampled Type (must be numeric scalar or void).
+    #[error("OpTypeImage {type_id:?} Sampled Type must be a numeric scalar type or OpTypeVoid")]
+    ImageTypeInvalidSampledType {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
+    /// OpTypeImage with SubpassData dimension must have Format = Unknown.
+    #[error("OpTypeImage {type_id:?} with SubpassData dimension must have Format = Unknown")]
+    ImageTypeSubpassDataFormatMustBeUnknown {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+    },
     /// Multisampled image requires Sample operand.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} operates on multisampled image but missing Sample operand"

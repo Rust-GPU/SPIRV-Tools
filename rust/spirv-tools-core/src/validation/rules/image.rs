@@ -159,14 +159,38 @@ impl ValidationRule for ImageTypeRule {
                 continue;
             }
 
+            let type_id = inst.result_id.and_then(|id| TypeId::try_from(id).ok());
+
             // Validate operand count
             if inst.operands.len() < 7 {
                 return Err(ValidationError::ImageTypeInvalidOperandCount {
-                    type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
+                    type_id,
                     expected: 7,
                     actual: inst.operands.len(),
                 }
                 .into());
+            }
+
+            // Extract Sampled Type (operand 0)
+            let sampled_type_id = match &inst.operands.get(0) {
+                Some(Operand::IdRef(id)) => Some(*id),
+                _ => None,
+            };
+
+            // Validate Sampled Type is numeric scalar or void
+            if let Some(st_id) = sampled_type_id {
+                if let Ok(rid) = crate::validation::types::ResultId::try_from(st_id) {
+                    if let Some(st_inst) = ctx.definitions.get(&rid) {
+                        let valid = matches!(
+                            st_inst.class.opcode,
+                            Op::TypeVoid | Op::TypeInt | Op::TypeFloat
+                        );
+                        if !valid {
+                            return Err(ValidationError::ImageTypeInvalidSampledType { type_id }
+                                .into());
+                        }
+                    }
+                }
             }
 
             // Extract Dim
@@ -175,35 +199,96 @@ impl ValidationRule for ImageTypeRule {
                 _ => continue,
             };
 
-            // Extract sampled flag
+            // Extract Depth (operand 2)
+            let depth = match &inst.operands.get(2) {
+                Some(Operand::LiteralBit32(v)) => *v,
+                _ => continue,
+            };
+
+            // Extract Arrayed (operand 3)
+            let arrayed = match &inst.operands.get(3) {
+                Some(Operand::LiteralBit32(v)) => *v,
+                _ => continue,
+            };
+
+            // Extract MS (operand 4)
+            let ms = match &inst.operands.get(4) {
+                Some(Operand::LiteralBit32(v)) => *v,
+                _ => continue,
+            };
+
+            // Extract Sampled (operand 5)
             let sampled = match &inst.operands.get(5) {
                 Some(Operand::LiteralBit32(v)) => *v,
                 _ => continue,
             };
 
-            // Extract format
-            let _format = match &inst.operands.get(6) {
+            // Extract Format (operand 6)
+            let format = match &inst.operands.get(6) {
                 Some(Operand::ImageFormat(f)) => *f,
                 _ => continue,
             };
 
-            // Validate: SubpassData must have Dim = 2D, MS = 0 or 1, Sampled = 2, Arrayed = 0
-            if dim == Dim::DimSubpassData {
-                let arrayed = match &inst.operands.get(3) {
-                    Some(Operand::LiteralBit32(v)) => *v,
-                    _ => continue,
-                };
-                if arrayed != 0 {
-                    return Err(ValidationError::ImageTypeSubpassDataMustNotBeArrayed {
-                        type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
+            // Validate Depth must be 0, 1, or 2
+            if depth > 2 {
+                return Err(
+                    ValidationError::ImageTypeInvalidDepthValue { type_id, value: depth }.into(),
+                );
+            }
+
+            // Validate Arrayed must be 0 or 1
+            if arrayed > 1 {
+                return Err(
+                    ValidationError::ImageTypeInvalidArrayedValue {
+                        type_id,
+                        value: arrayed,
                     }
-                    .into());
+                    .into(),
+                );
+            }
+
+            // Validate MS must be 0 or 1
+            if ms > 1 {
+                return Err(
+                    ValidationError::ImageTypeInvalidMsValue { type_id, value: ms }.into(),
+                );
+            }
+
+            // Validate Sampled must be 0, 1, or 2
+            if sampled > 2 {
+                return Err(
+                    ValidationError::ImageTypeInvalidSampledValue {
+                        type_id,
+                        value: sampled,
+                    }
+                    .into(),
+                );
+            }
+
+            // Vulkan: Sampled must be 1 or 2 (cannot be 0)
+            if ctx.env.is_vulkan() && sampled == 0 {
+                return Err(
+                    ValidationError::ImageTypeSampledMustBeOneOrTwoInVulkan { type_id }.into(),
+                );
+            }
+
+            // SubpassData constraints
+            if dim == Dim::DimSubpassData {
+                if arrayed != 0 {
+                    return Err(
+                        ValidationError::ImageTypeSubpassDataMustNotBeArrayed { type_id }.into(),
+                    );
                 }
                 if sampled != 2 {
-                    return Err(ValidationError::ImageTypeSubpassDataSampledMustBeTwo {
-                        type_id: inst.result_id.and_then(|id| TypeId::try_from(id).ok()),
-                    }
-                    .into());
+                    return Err(
+                        ValidationError::ImageTypeSubpassDataSampledMustBeTwo { type_id }.into(),
+                    );
+                }
+                if format != rspirv::spirv::ImageFormat::Unknown {
+                    return Err(
+                        ValidationError::ImageTypeSubpassDataFormatMustBeUnknown { type_id }
+                            .into(),
+                    );
                 }
             }
         }
