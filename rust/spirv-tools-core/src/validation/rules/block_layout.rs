@@ -225,8 +225,11 @@ fn collect_member_offsets(module: &Module, struct_id: ResultId) -> HashMap<Membe
 
 fn type_layout_size(
     ty: TypeId,
+    module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
+    is_row_major: bool,
+    matrix_stride: u32,
 ) -> Option<u32> {
     if !visiting.insert(ty) {
         return None;
@@ -240,36 +243,75 @@ fn type_layout_size(
         Op::TypeVector => {
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
-            let elem_size = type_layout_size(elem, definitions, visiting)?;
+            let elem_size = type_layout_size(elem, module, definitions, visiting, false, 0)?;
             Some(elem_size.saturating_mul(count))
         }
         Op::TypeMatrix => {
-            let (column, count) = matrix_info(inst);
-            let (column, count) = (column?, count?);
-            let col_size = type_layout_size(column, definitions, visiting)?;
-            Some(col_size.saturating_mul(count))
+            let (column, num_columns) = matrix_info(inst);
+            let (column, num_columns) = (column?, num_columns?);
+            if matrix_stride > 0 {
+                if is_row_major {
+                    // Row major: (num_rows - 1) * stride + num_columns * scalar_size
+                    // (C++ getSize, validate_decorations.cpp lines 364-374)
+                    let col_inst =
+                        definitions.get(&ResultId::try_from(u32::from(column)).ok()?)?;
+                    let (scalar_type, num_rows) = vector_info(col_inst);
+                    let (scalar_type, num_rows) = (scalar_type?, num_rows?);
+                    let scalar_size =
+                        type_layout_size(scalar_type, module, definitions, visiting, false, 0)?;
+                    Some(
+                        num_rows
+                            .saturating_sub(1)
+                            .saturating_mul(matrix_stride)
+                            .saturating_add(num_columns.saturating_mul(scalar_size)),
+                    )
+                } else {
+                    // Column major: num_columns * stride
+                    // (C++ getSize, validate_decorations.cpp lines 362-363)
+                    Some(num_columns.saturating_mul(matrix_stride))
+                }
+            } else {
+                // No stride info, fall back to raw computation.
+                let col_size =
+                    type_layout_size(column, module, definitions, visiting, false, 0)?;
+                Some(col_size.saturating_mul(num_columns))
+            }
         }
         Op::TypeArray => {
             let elem = inst.operands.first().and_then(|op| match op {
                 rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
                 _ => None,
             })?;
-            let elem_size = type_layout_size(elem, definitions, visiting)?;
+            let elem_size =
+                type_layout_size(elem, module, definitions, visiting, is_row_major, matrix_stride)?;
             let len = array_length(inst, definitions)?;
             Some(elem_size.saturating_mul(len))
         }
         Op::TypeRuntimeArray => None, // unsized
         Op::TypeStruct => {
-            let mut offset: u32 = 0;
-            for op in &inst.operands {
-                let ty = match op {
+            let struct_id = ResultId::try_from(u32::from(ty)).ok()?;
+            let mut total: u32 = 0;
+            for (idx, op) in inst.operands.iter().enumerate() {
+                let member_ty = match op {
                     rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
                     _ => return None,
                 };
-                let size = type_layout_size(ty, definitions, visiting)?;
-                offset = offset.saturating_add(size);
+                let member_rm =
+                    member_is_row_major(module, struct_id, MemberIndex(idx as u32));
+                let member_ms =
+                    member_matrix_stride(module, struct_id, MemberIndex(idx as u32))
+                        .unwrap_or(0);
+                let size = type_layout_size(
+                    member_ty,
+                    module,
+                    definitions,
+                    visiting,
+                    member_rm,
+                    member_ms,
+                )?;
+                total = total.saturating_add(size);
             }
-            Some(offset)
+            Some(total)
         }
         _ => None,
     };
@@ -295,12 +337,17 @@ fn round_up(value: u32, align: u32) -> u32 {
 ///
 /// When `scalar_layout` is true, vectors use scalar element alignment instead
 /// of the standard 2N/4N rules.
+///
+/// When `is_row_major` is true, matrices use a virtual row-vector alignment
+/// (based on the number of columns) instead of column-vector alignment.
 fn type_alignment(
     ty: TypeId,
+    module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
     extended_alignment: bool,
+    is_row_major: bool,
 ) -> Option<u32> {
     if !visiting.insert(ty) {
         return None;
@@ -314,8 +361,15 @@ fn type_alignment(
         Op::TypeVector => {
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
-            let elem_align =
-                type_alignment(elem, definitions, visiting, scalar_layout, extended_alignment)?;
+            let elem_align = type_alignment(
+                elem,
+                module,
+                definitions,
+                visiting,
+                scalar_layout,
+                extended_alignment,
+                false,
+            )?;
             if scalar_layout {
                 Some(elem_align)
             } else {
@@ -325,11 +379,38 @@ fn type_alignment(
             }
         }
         Op::TypeMatrix => {
-            // Matrix alignment follows its column vector alignment.
-            let (column, _) = matrix_info(inst);
-            let column = column?;
-            let base_align =
-                type_alignment(column, definitions, visiting, scalar_layout, extended_alignment)?;
+            let (column, num_columns) = matrix_info(inst);
+            let (column, num_columns) = (column?, num_columns?);
+            let base_align = if is_row_major && !scalar_layout {
+                // Row-major: alignment of a virtual vector of num_columns scalar
+                // components (C++ getBaseAlignment, validate_decorations.cpp:210-219).
+                let col_inst =
+                    definitions.get(&ResultId::try_from(u32::from(column)).ok()?)?;
+                let (scalar_type, _) = vector_info(col_inst);
+                let scalar_type = scalar_type?;
+                let scalar_align = type_alignment(
+                    scalar_type,
+                    module,
+                    definitions,
+                    visiting,
+                    scalar_layout,
+                    extended_alignment,
+                    false,
+                )?;
+                let multiplier = if num_columns == 2 { 2 } else { 4 };
+                scalar_align.checked_mul(multiplier)?
+            } else {
+                // Column-major (or scalar layout): alignment of column vector.
+                type_alignment(
+                    column,
+                    module,
+                    definitions,
+                    visiting,
+                    scalar_layout,
+                    extended_alignment,
+                    false,
+                )?
+            };
             if extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
             } else {
@@ -341,8 +422,17 @@ fn type_alignment(
                 rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
                 _ => None,
             })?;
-            let base_align =
-                type_alignment(elem, definitions, visiting, scalar_layout, extended_alignment)?;
+            // Propagate is_row_major through arrays (array of matrices inherits
+            // majorness from the struct member decoration).
+            let base_align = type_alignment(
+                elem,
+                module,
+                definitions,
+                visiting,
+                scalar_layout,
+                extended_alignment,
+                is_row_major,
+            )?;
             if extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
             } else {
@@ -350,14 +440,25 @@ fn type_alignment(
             }
         }
         Op::TypeStruct => {
+            let struct_id = ResultId::try_from(u32::from(ty)).ok()?;
             let mut max_align = 1;
-            for op in &inst.operands {
-                let ty = match op {
+            for (idx, op) in inst.operands.iter().enumerate() {
+                let member_ty = match op {
                     rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
                     _ => return None,
                 };
-                let align =
-                    type_alignment(ty, definitions, visiting, scalar_layout, extended_alignment)?;
+                // Each struct member has its own RowMajor/ColMajor decoration.
+                let member_rm =
+                    member_is_row_major(module, struct_id, MemberIndex(idx as u32));
+                let align = type_alignment(
+                    member_ty,
+                    module,
+                    definitions,
+                    visiting,
+                    scalar_layout,
+                    extended_alignment,
+                    member_rm,
+                )?;
                 max_align = max_align.max(align);
             }
             if extended_alignment && !scalar_layout {
@@ -374,13 +475,14 @@ fn type_alignment(
 
 fn vector_scalar_alignment(
     vector_inst: &rspirv::dr::Instruction,
+    module: &Module,
     definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
 ) -> Option<u32> {
     let elem = vector_inst.operands.first().and_then(|op| match op {
         rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
         _ => None,
     })?;
-    type_alignment(elem, definitions, &mut HashSet::new(), true, false)
+    type_alignment(elem, module, definitions, &mut HashSet::new(), true, false, false)
 }
 
 fn vector_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) {
@@ -580,12 +682,20 @@ fn check_struct_layout(
             continue;
         };
 
+        // Look up matrix majorness and stride for this member (inherited
+        // through arrays to contained matrices, matching C++ LayoutConstraints).
+        let is_row_major = member_is_row_major(module, struct_id, MemberIndex(member_idx));
+        let mat_stride =
+            member_matrix_stride(module, struct_id, MemberIndex(member_idx)).unwrap_or(0);
+
         let Some(alignment) = type_alignment(
             member_type_id,
+            module,
             definitions,
             &mut HashSet::new(),
             scalar_layout,
             extended_alignment,
+            is_row_major,
         ) else {
             continue;
         };
@@ -594,7 +704,14 @@ fn check_struct_layout(
         let size = if member_inst.class.opcode == Op::TypeRuntimeArray {
             0
         } else {
-            match type_layout_size(member_type_id, definitions, &mut HashSet::new()) {
+            match type_layout_size(
+                member_type_id,
+                module,
+                definitions,
+                &mut HashSet::new(),
+                is_row_major,
+                mat_stride,
+            ) {
                 Some(s) => s,
                 None => continue,
             }
@@ -614,7 +731,7 @@ fn check_struct_layout(
         // Offset alignment checks.
         if relax_block_layout && !scalar_layout && member_inst.class.opcode == Op::TypeVector {
             // Relaxed layout: vector offset aligned to scalar element alignment.
-            let Some(scalar_align) = vector_scalar_alignment(member_inst, definitions) else {
+            let Some(scalar_align) = vector_scalar_alignment(member_inst, module, definitions) else {
                 continue;
             };
             if offset % scalar_align != 0 {
@@ -702,7 +819,7 @@ fn check_struct_layout(
             let (column_type, _) = matrix_info(member_inst);
             if let Some(col_ty) = column_type {
                 if let Some(col_size) =
-                    type_layout_size(col_ty, definitions, &mut HashSet::new())
+                    type_layout_size(col_ty, module, definitions, &mut HashSet::new(), false, 0)
                 {
                     if col_size > stride {
                         return Err(ValidationError::InvalidBlockLayout {
@@ -711,20 +828,6 @@ fn check_struct_layout(
                                 "matrix stride {} is smaller than column size {}",
                                 stride, col_size
                             ),
-                        }
-                        .into());
-                    }
-                    if relax_block_layout
-                        && !scalar_layout
-                        && member_is_row_major(module, struct_id, MemberIndex(member_idx))
-                        && col_size > 16
-                        && (offset % 16).saturating_add(col_size) > 16
-                    {
-                        return Err(ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason:
-                                "row-major matrix straddles 16-byte boundary under relaxed layout"
-                                    .to_string(),
                         }
                         .into());
                     }
@@ -823,9 +926,14 @@ fn check_struct_layout(
 
             // Check element_size <= stride (C++ lines 700-706).
             if stride_val > 0 {
-                if let Some(element_size) =
-                    type_layout_size(elem_type, definitions, &mut HashSet::new())
-                {
+                if let Some(element_size) = type_layout_size(
+                    elem_type,
+                    module,
+                    definitions,
+                    &mut HashSet::new(),
+                    is_row_major,
+                    mat_stride,
+                ) {
                     if element_size > stride_val {
                         return Err(ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
@@ -844,10 +952,12 @@ fn check_struct_layout(
             array_result_id = elem_result_id;
             array_alignment = type_alignment(
                 elem_type,
+                module,
                 definitions,
                 &mut HashSet::new(),
                 scalar_layout,
                 extended_alignment,
+                is_row_major,
             )
             .unwrap_or(1);
         }

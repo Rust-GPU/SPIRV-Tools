@@ -30852,3 +30852,90 @@ fn nested_array_correct_stride_accepted() {
         .validate(TargetEnv::Universal1_6)
         .expect("nested array with correct stride should pass");
 }
+#[test]
+fn row_major_matrix_bad_alignment_rejected() {
+    // A row-major mat4x2 (4 columns of vec2<f32>) has alignment equal to a
+    // virtual vec4<f32> (4*4=16), NOT the column vector alignment (vec2=8).
+    // Placing it at offset 8 should fail because 8 % 16 != 0.
+    // Uses Uniform+BufferBlock for std430 rules (no extended alignment rounding).
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%float = OpTypeFloat 32",
+        "%v2 = OpTypeVector %float 2",
+        "%mat = OpTypeMatrix %v2 4",
+        "%struct = OpTypeStruct %v2 %mat",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 8",
+        "OpMemberDecorate %struct 1 RowMajor",
+        "OpMemberDecorate %struct 1 MatrixStride 16",
+    ]
+    .join("\n");
+    let words = assemble_text(&text).expect("assemble");
+    let err = validate_module(&words, TargetEnv::Universal1_3)
+        .expect_err("row-major matrix at misaligned offset should fail");
+    assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
+}
+#[test]
+fn row_major_matrix_correct_alignment_accepted() {
+    // Same row-major mat4x2 but placed at offset 16 (aligned to 16). Should pass.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "%float = OpTypeFloat 32",
+        "%v2 = OpTypeVector %float 2",
+        "%mat = OpTypeMatrix %v2 4",
+        "%struct = OpTypeStruct %v2 %mat",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 16",
+        "OpMemberDecorate %struct 1 RowMajor",
+        "OpMemberDecorate %struct 1 MatrixStride 16",
+    ]
+    .join("\n");
+    let words = assemble_text(&text).expect("assemble");
+    validate_module(&words, TargetEnv::Universal1_3)
+        .expect("row-major matrix at aligned offset should pass");
+}
+#[test]
+fn row_major_matrix_large_column_no_straddle_rejection() {
+    // A row-major mat2x4 (2 columns of vec4<f64>) with col_size=32 bytes.
+    // The Vulkan spec only defines straddle checks for vectors, NOT matrices.
+    // Under relaxed layout, this should pass (the old overly strict straddle
+    // check for row-major matrices has been removed).
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Float64",
+        "OpMemoryModel Logical GLSL450",
+        "%f64 = OpTypeFloat 64",
+        "%v4 = OpTypeVector %f64 4",
+        "%mat = OpTypeMatrix %v4 2",
+        "%struct = OpTypeStruct %v4 %mat",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "OpMemberDecorate %struct 1 Offset 32",
+        "OpMemberDecorate %struct 1 RowMajor",
+        "OpMemberDecorate %struct 1 MatrixStride 32",
+    ]
+    .join("\n");
+    let words = assemble_text(&text).expect("assemble");
+    let opts = ValidationOptions {
+        relax_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    validate_module_with_options(&words, TargetEnv::Universal1_3, opts)
+        .expect("row-major matrix should not be rejected for straddle");
+}
