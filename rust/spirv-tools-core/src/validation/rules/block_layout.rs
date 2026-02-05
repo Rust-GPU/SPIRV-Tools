@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet};
 
 use rspirv::dr::Module;
-use rspirv::spirv::{Decoration, Op, StorageClass};
+use rspirv::spirv::{AddressingModel, Capability, Decoration, Op, StorageClass};
 
 use crate::validation::context::{ValidationContext, ValidationRule};
 use crate::validation::error::ValidationError;
@@ -18,6 +18,72 @@ use crate::validation::helpers::is_vulkan_env;
 use crate::validation::span::SpannedValidationError;
 use crate::validation::types::{MemberIndex, ResultId, TypeId};
 use crate::validation::ValidationResult;
+
+// ============================================================================
+// Layout Context
+// ============================================================================
+
+/// Context for layout calculation functions, holding all module-level
+/// information needed to compute type alignment and size.
+///
+/// This matches how C++ threads `ValidationState_t` through `getBaseAlignment`,
+/// `getSize`, and `checkLayout` in validate_decorations.cpp.
+struct LayoutContext<'a> {
+    module: &'a Module,
+    definitions: &'a HashMap<ResultId, rspirv::dr::Instruction>,
+    /// Pointer size in bytes, determined from the module's addressing model.
+    /// Physical32 → 4, Physical64/PhysicalStorageBuffer64 → 8, Logical → 0.
+    pointer_size: u32,
+    /// Declared capabilities, used for opaque type (image/sampler) handling.
+    capabilities: &'a HashSet<Capability>,
+}
+
+impl<'a> LayoutContext<'a> {
+    /// Computes the size and alignment for opaque types (images, samplers,
+    /// sampled images) based on declared capabilities.
+    ///
+    /// Matches C++ getBaseAlignment/getSize (validate_decorations.cpp lines
+    /// 169-179, 315-325):
+    /// - BindlessTextureNV → samplerimage_variable_address_mode / 8
+    ///   (we don't support this option yet, so return None to skip)
+    /// - DescriptorHeapEXT → 1
+    /// - Otherwise → None (opaque types shouldn't appear in block structs
+    ///   without one of these capabilities)
+    fn opaque_type_size_and_alignment(&self) -> Option<u32> {
+        if self.capabilities.contains(&Capability::BindlessTextureNV) {
+            // C++ returns samplerimage_variable_address_mode()/8.
+            // We don't support that option yet; return None to skip validation
+            // of this member rather than returning an incorrect value.
+            None
+        } else {
+            // DescriptorHeapEXT is not in our rspirv version yet.
+            // Without BindlessTextureNV or DescriptorHeapEXT, opaque types
+            // shouldn't appear in block structs at all, so skip.
+            None
+        }
+    }
+}
+
+/// Computes pointer size from the module's addressing model.
+///
+/// Matches C++ `pointer_size_and_alignment()` (validation_state.cpp):
+/// - Physical32 → 4
+/// - Physical64 / PhysicalStorageBuffer64 → 8
+/// - Logical (and others) → 0 (pointers have no layout in logical mode)
+fn compute_pointer_size(module: &Module) -> u32 {
+    if let Some(ref mm) = module.memory_model {
+        match mm.operands.first() {
+            Some(rspirv::dr::Operand::AddressingModel(AddressingModel::Physical32)) => 4,
+            Some(rspirv::dr::Operand::AddressingModel(AddressingModel::Physical64)) => 8,
+            Some(rspirv::dr::Operand::AddressingModel(
+                AddressingModel::PhysicalStorageBuffer64,
+            )) => 8,
+            _ => 0,
+        }
+    } else {
+        0
+    }
+}
 
 // ============================================================================
 // Block Layout Rule
@@ -37,6 +103,13 @@ impl ValidationRule for BlockLayoutRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         let relax_block_layout = ctx.options.relax_block_layout;
+
+        let layout_ctx = LayoutContext {
+            module: ctx.module,
+            definitions: ctx.definitions,
+            pointer_size: compute_pointer_size(ctx.module),
+            capabilities: ctx.declared_capabilities,
+        };
 
         let block_structs = collect_block_structs(ctx.module);
         for (struct_id, block_info) in block_structs {
@@ -82,8 +155,7 @@ impl ValidationRule for BlockLayoutRule {
             // runs for Vulkan environments (C++ line 1478).
             if is_vulkan_env(ctx.env) {
                 check_struct_layout(
-                    ctx.module,
-                    ctx.definitions,
+                    &layout_ctx,
                     struct_id,
                     0,
                     scalar_layout,
@@ -275,8 +347,7 @@ fn collect_member_offsets(module: &Module, struct_id: ResultId) -> HashMap<Membe
 
 fn type_layout_size(
     ty: TypeId,
-    module: &Module,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    ctx: &LayoutContext<'_>,
     visiting: &mut HashSet<TypeId>,
     is_row_major: bool,
     matrix_stride: u32,
@@ -284,7 +355,9 @@ fn type_layout_size(
     if !visiting.insert(ty) {
         return None;
     }
-    let inst = definitions.get(&ResultId::try_from(u32::from(ty)).ok()?)?;
+    let inst = ctx
+        .definitions
+        .get(&ResultId::try_from(u32::from(ty)).ok()?)?;
     let size = match inst.class.opcode {
         Op::TypeInt | Op::TypeFloat => inst.operands.first().and_then(|op| match op {
             rspirv::dr::Operand::LiteralBit32(bits) => Some(*bits / 8),
@@ -293,7 +366,7 @@ fn type_layout_size(
         Op::TypeVector => {
             let (elem, count) = vector_info(inst);
             let (elem, count) = (elem?, count?);
-            let elem_size = type_layout_size(elem, module, definitions, visiting, false, 0)?;
+            let elem_size = type_layout_size(elem, ctx, visiting, false, 0)?;
             Some(elem_size.saturating_mul(count))
         }
         Op::TypeMatrix => {
@@ -303,12 +376,12 @@ fn type_layout_size(
                 if is_row_major {
                     // Row major: (num_rows - 1) * stride + num_columns * scalar_size
                     // (C++ getSize, validate_decorations.cpp lines 364-374)
-                    let col_inst =
-                        definitions.get(&ResultId::try_from(u32::from(column)).ok()?)?;
+                    let col_inst = ctx
+                        .definitions
+                        .get(&ResultId::try_from(u32::from(column)).ok()?)?;
                     let (scalar_type, num_rows) = vector_info(col_inst);
                     let (scalar_type, num_rows) = (scalar_type?, num_rows?);
-                    let scalar_size =
-                        type_layout_size(scalar_type, module, definitions, visiting, false, 0)?;
+                    let scalar_size = type_layout_size(scalar_type, ctx, visiting, false, 0)?;
                     Some(
                         num_rows
                             .saturating_sub(1)
@@ -322,8 +395,7 @@ fn type_layout_size(
                 }
             } else {
                 // No stride info, fall back to raw computation.
-                let col_size =
-                    type_layout_size(column, module, definitions, visiting, false, 0)?;
+                let col_size = type_layout_size(column, ctx, visiting, false, 0)?;
                 Some(col_size.saturating_mul(num_columns))
             }
         }
@@ -332,13 +404,12 @@ fn type_layout_size(
                 rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
                 _ => None,
             })?;
-            let elem_size =
-                type_layout_size(elem, module, definitions, visiting, is_row_major, matrix_stride)?;
-            let len = array_length(inst, definitions)?;
+            let elem_size = type_layout_size(elem, ctx, visiting, is_row_major, matrix_stride)?;
+            let len = array_length(inst, ctx.definitions)?;
             // Use (N-1)*stride + elem_size to account for padding between elements
             // (C++ getSize, validate_decorations.cpp lines 344-357).
             let array_type_id = ResultId::try_from(u32::from(ty)).ok()?;
-            let stride = array_stride(module, array_type_id).unwrap_or(0);
+            let stride = array_stride(ctx.module, array_type_id).unwrap_or(0);
             if stride > 0 && len > 0 {
                 Some(
                     len.saturating_sub(1)
@@ -370,18 +441,31 @@ fn type_layout_size(
             if members.is_empty() {
                 return Some(0);
             }
-            let offsets = collect_member_offsets(module, struct_id);
+            let offsets = collect_member_offsets(ctx.module, struct_id);
             // Find the last member by offset order.
             let (last_idx, last_ty) = members
                 .iter()
                 .max_by_key(|(idx, _)| offsets.get(&MemberIndex(*idx)).copied().unwrap_or(0))?;
             let last_offset = offsets.get(&MemberIndex(*last_idx)).copied()?;
-            let last_rm = member_is_row_major(module, struct_id, MemberIndex(*last_idx));
+            let last_rm = member_is_row_major(ctx.module, struct_id, MemberIndex(*last_idx));
             let last_ms =
-                member_matrix_stride(module, struct_id, MemberIndex(*last_idx)).unwrap_or(0);
-            let last_size =
-                type_layout_size(*last_ty, module, definitions, visiting, last_rm, last_ms)?;
+                member_matrix_stride(ctx.module, struct_id, MemberIndex(*last_idx)).unwrap_or(0);
+            let last_size = type_layout_size(*last_ty, ctx, visiting, last_rm, last_ms)?;
             Some(last_offset.saturating_add(last_size))
+        }
+        // Pointer types (C++ getSize lines 398-400).
+        // Returns 0 for logical addressing (pointer_size == 0), which means
+        // pointer types have no layout in logical mode, matching C++.
+        Op::TypePointer => {
+            if ctx.pointer_size > 0 {
+                Some(ctx.pointer_size)
+            } else {
+                None
+            }
+        }
+        // Opaque types (images, samplers, sampled images) - C++ getSize lines 315-325.
+        Op::TypeImage | Op::TypeSampler | Op::TypeSampledImage => {
+            ctx.opaque_type_size_and_alignment()
         }
         _ => None,
     };
@@ -412,8 +496,7 @@ fn round_up(value: u32, align: u32) -> u32 {
 /// (based on the number of columns) instead of column-vector alignment.
 fn type_alignment(
     ty: TypeId,
-    module: &Module,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    ctx: &LayoutContext<'_>,
     visiting: &mut HashSet<TypeId>,
     scalar_layout: bool,
     extended_alignment: bool,
@@ -422,7 +505,9 @@ fn type_alignment(
     if !visiting.insert(ty) {
         return None;
     }
-    let inst = definitions.get(&ResultId::try_from(u32::from(ty)).ok()?)?;
+    let inst = ctx
+        .definitions
+        .get(&ResultId::try_from(u32::from(ty)).ok()?)?;
     let alignment = match inst.class.opcode {
         Op::TypeInt | Op::TypeFloat => inst.operands.first().and_then(|op| match op {
             rspirv::dr::Operand::LiteralBit32(bits) => Some(*bits / 8),
@@ -433,8 +518,7 @@ fn type_alignment(
             let (elem, count) = (elem?, count?);
             let elem_align = type_alignment(
                 elem,
-                module,
-                definitions,
+                ctx,
                 visiting,
                 scalar_layout,
                 extended_alignment,
@@ -454,14 +538,14 @@ fn type_alignment(
             let base_align = if is_row_major && !scalar_layout {
                 // Row-major: alignment of a virtual vector of num_columns scalar
                 // components (C++ getBaseAlignment, validate_decorations.cpp:210-219).
-                let col_inst =
-                    definitions.get(&ResultId::try_from(u32::from(column)).ok()?)?;
+                let col_inst = ctx
+                    .definitions
+                    .get(&ResultId::try_from(u32::from(column)).ok()?)?;
                 let (scalar_type, _) = vector_info(col_inst);
                 let scalar_type = scalar_type?;
                 let scalar_align = type_alignment(
                     scalar_type,
-                    module,
-                    definitions,
+                    ctx,
                     visiting,
                     scalar_layout,
                     extended_alignment,
@@ -471,15 +555,7 @@ fn type_alignment(
                 scalar_align.checked_mul(multiplier)?
             } else {
                 // Column-major (or scalar layout): alignment of column vector.
-                type_alignment(
-                    column,
-                    module,
-                    definitions,
-                    visiting,
-                    scalar_layout,
-                    extended_alignment,
-                    false,
-                )?
+                type_alignment(column, ctx, visiting, scalar_layout, extended_alignment, false)?
             };
             if extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
@@ -496,8 +572,7 @@ fn type_alignment(
             // majorness from the struct member decoration).
             let base_align = type_alignment(
                 elem,
-                module,
-                definitions,
+                ctx,
                 visiting,
                 scalar_layout,
                 extended_alignment,
@@ -519,11 +594,10 @@ fn type_alignment(
                 };
                 // Each struct member has its own RowMajor/ColMajor decoration.
                 let member_rm =
-                    member_is_row_major(module, struct_id, MemberIndex(idx as u32));
+                    member_is_row_major(ctx.module, struct_id, MemberIndex(idx as u32));
                 let align = type_alignment(
                     member_ty,
-                    module,
-                    definitions,
+                    ctx,
                     visiting,
                     scalar_layout,
                     extended_alignment,
@@ -537,6 +611,20 @@ fn type_alignment(
                 Some(max_align)
             }
         }
+        // Pointer types (C++ getBaseAlignment lines 243-246).
+        // Returns None for logical addressing (pointer_size == 0), which means
+        // pointer types have no layout in logical mode, matching C++.
+        Op::TypePointer => {
+            if ctx.pointer_size > 0 {
+                Some(ctx.pointer_size)
+            } else {
+                None
+            }
+        }
+        // Opaque types (images, samplers, sampled images) - C++ getBaseAlignment lines 169-179.
+        Op::TypeImage | Op::TypeSampler | Op::TypeSampledImage => {
+            ctx.opaque_type_size_and_alignment()
+        }
         _ => None,
     };
     visiting.remove(&ty);
@@ -545,14 +633,13 @@ fn type_alignment(
 
 fn vector_scalar_alignment(
     vector_inst: &rspirv::dr::Instruction,
-    module: &Module,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    ctx: &LayoutContext<'_>,
 ) -> Option<u32> {
     let elem = vector_inst.operands.first().and_then(|op| match op {
         rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok(),
         _ => None,
     })?;
-    type_alignment(elem, module, definitions, &mut HashSet::new(), true, false, false)
+    type_alignment(elem, ctx, &mut HashSet::new(), true, false, false)
 }
 
 fn vector_info(inst: &rspirv::dr::Instruction) -> (Option<TypeId>, Option<u32>) {
@@ -868,8 +955,7 @@ fn check_required_block_decorations(
 /// structs and arrays. This matches the C++ `checkLayout` function in
 /// validate_decorations.cpp.
 fn check_struct_layout(
-    module: &Module,
-    definitions: &HashMap<ResultId, rspirv::dr::Instruction>,
+    ctx: &LayoutContext<'_>,
     struct_id: ResultId,
     incoming_offset: u32,
     scalar_layout: bool,
@@ -882,14 +968,47 @@ fn check_struct_layout(
         return Ok(());
     }
 
-    let Some(struct_inst) = definitions.get(&struct_id) else {
+    let Some(struct_inst) = ctx.definitions.get(&struct_id) else {
         return Ok(());
     };
-    if struct_inst.class.opcode != Op::TypeStruct || struct_inst.operands.is_empty() {
+
+    // Non-struct pseudo-member: C++ checkLayout (validate_decorations.cpp lines
+    // 498-507) can handle non-struct types by creating a single pseudo-member at
+    // offset 0. This is used for PhysicalStorageBuffer pointers and untyped
+    // pointer operations where the pointee may not be a struct.
+    if struct_inst.class.opcode != Op::TypeStruct {
+        // Validate alignment of the non-struct type at offset 0.
+        let ty = TypeId::try_from(u32::from(struct_id)).ok();
+        if let Some(ty) = ty {
+            let align = type_alignment(
+                ty,
+                ctx,
+                &mut HashSet::new(),
+                scalar_layout,
+                extended_alignment,
+                false,
+            );
+            if let Some(a) = align {
+                if a > 0 && incoming_offset % a != 0 {
+                    return Err(ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: format!(
+                            "non-struct type at offset {} is not aligned to {}",
+                            incoming_offset, a
+                        ),
+                    }
+                    .into());
+                }
+            }
+        }
         return Ok(());
     }
 
-    let member_offsets_map = collect_member_offsets(module, struct_id);
+    if struct_inst.operands.is_empty() {
+        return Ok(());
+    }
+
+    let member_offsets_map = collect_member_offsets(ctx.module, struct_id);
 
     // Build member list sorted by absolute offset (matching C++ checkLayout).
     let mut sorted_members: Vec<(u32, u32)> = Vec::with_capacity(struct_inst.operands.len());
@@ -919,20 +1038,19 @@ fn check_struct_layout(
         let Ok(member_result_id) = ResultId::try_from(u32::from(member_type_id)) else {
             continue;
         };
-        let Some(member_inst) = definitions.get(&member_result_id) else {
+        let Some(member_inst) = ctx.definitions.get(&member_result_id) else {
             continue;
         };
 
         // Look up matrix majorness and stride for this member (inherited
         // through arrays to contained matrices, matching C++ LayoutConstraints).
-        let is_row_major = member_is_row_major(module, struct_id, MemberIndex(member_idx));
+        let is_row_major = member_is_row_major(ctx.module, struct_id, MemberIndex(member_idx));
         let mat_stride =
-            member_matrix_stride(module, struct_id, MemberIndex(member_idx)).unwrap_or(0);
+            member_matrix_stride(ctx.module, struct_id, MemberIndex(member_idx)).unwrap_or(0);
 
         let Some(alignment) = type_alignment(
             member_type_id,
-            module,
-            definitions,
+            ctx,
             &mut HashSet::new(),
             scalar_layout,
             extended_alignment,
@@ -947,8 +1065,7 @@ fn check_struct_layout(
         } else {
             match type_layout_size(
                 member_type_id,
-                module,
-                definitions,
+                ctx,
                 &mut HashSet::new(),
                 is_row_major,
                 mat_stride,
@@ -972,7 +1089,7 @@ fn check_struct_layout(
         // Offset alignment checks.
         if relax_block_layout && !scalar_layout && member_inst.class.opcode == Op::TypeVector {
             // Relaxed layout: vector offset aligned to scalar element alignment.
-            let Some(scalar_align) = vector_scalar_alignment(member_inst, module, definitions) else {
+            let Some(scalar_align) = vector_scalar_alignment(member_inst, ctx) else {
                 continue;
             };
             if offset % scalar_align != 0 {
@@ -1027,8 +1144,7 @@ fn check_struct_layout(
         // Recursive check for nested structs (C++ line 614).
         if member_inst.class.opcode == Op::TypeStruct {
             check_struct_layout(
-                module,
-                definitions,
+                ctx,
                 member_result_id,
                 offset,
                 scalar_layout,
@@ -1041,7 +1157,7 @@ fn check_struct_layout(
         // Matrix stride check (C++ line 622).
         if member_inst.class.opcode == Op::TypeMatrix {
             let stride =
-                member_matrix_stride(module, struct_id, MemberIndex(member_idx)).ok_or_else(
+                member_matrix_stride(ctx.module, struct_id, MemberIndex(member_idx)).ok_or_else(
                     || -> SpannedValidationError {
                         ValidationError::InvalidBlockLayout {
                             struct_type: struct_id,
@@ -1060,7 +1176,7 @@ fn check_struct_layout(
             let (column_type, _) = matrix_info(member_inst);
             if let Some(col_ty) = column_type {
                 if let Some(col_size) =
-                    type_layout_size(col_ty, module, definitions, &mut HashSet::new(), false, 0)
+                    type_layout_size(col_ty, ctx, &mut HashSet::new(), false, 0)
                 {
                     if col_size > stride {
                         return Err(ValidationError::InvalidBlockLayout {
@@ -1092,12 +1208,12 @@ fn check_struct_layout(
             let Ok(elem_result_id) = ResultId::try_from(u32::from(elem_type)) else {
                 break;
             };
-            let Some(elem_inst) = definitions.get(&elem_result_id) else {
+            let Some(elem_inst) = ctx.definitions.get(&elem_result_id) else {
                 break;
             };
 
             // Check array stride (C++ lines 638-652).
-            let stride = array_stride(module, array_result_id);
+            let stride = array_stride(ctx.module, array_result_id);
             if let Some(s) = stride {
                 if s == 0 {
                     return Err(ValidationError::InvalidBlockLayout {
@@ -1120,7 +1236,7 @@ fn check_struct_layout(
             let stride_val = stride.unwrap_or(0);
 
             let num_elements = if array_inst.class.opcode == Op::TypeArray {
-                array_length(array_inst, definitions).unwrap_or(1).max(1)
+                array_length(array_inst, ctx.definitions).unwrap_or(1).max(1)
             } else {
                 1
             };
@@ -1136,8 +1252,7 @@ fn check_struct_layout(
                         break;
                     }
                     check_struct_layout(
-                        module,
-                        definitions,
+                        ctx,
                         elem_result_id,
                         next_offset,
                         scalar_layout,
@@ -1150,7 +1265,7 @@ fn check_struct_layout(
             } else if elem_inst.class.opcode == Op::TypeMatrix {
                 // Matrix stride for matrices inside arrays (C++ lines 683-691).
                 if let Some(ms) =
-                    member_matrix_stride(module, struct_id, MemberIndex(member_idx))
+                    member_matrix_stride(ctx.module, struct_id, MemberIndex(member_idx))
                 {
                     if ms % alignment != 0 {
                         return Err(ValidationError::InvalidBlockLayout {
@@ -1169,8 +1284,7 @@ fn check_struct_layout(
             if stride_val > 0 {
                 if let Some(element_size) = type_layout_size(
                     elem_type,
-                    module,
-                    definitions,
+                    ctx,
                     &mut HashSet::new(),
                     is_row_major,
                     mat_stride,
@@ -1193,8 +1307,7 @@ fn check_struct_layout(
             array_result_id = elem_result_id;
             array_alignment = type_alignment(
                 elem_type,
-                module,
-                definitions,
+                ctx,
                 &mut HashSet::new(),
                 scalar_layout,
                 extended_alignment,
