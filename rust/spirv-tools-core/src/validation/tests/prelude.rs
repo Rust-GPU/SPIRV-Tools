@@ -58,3 +58,89 @@ pub const EXT_SPV_GOOGLE_DECORATE_STRING_WORDS: [u32; 7] = [
     0x6972_7473,
     0x0000_676e,
 ];
+
+/// Constructs a minimal valid SPIR-V module text with a Shader capability and
+/// the given extension name.
+pub fn module_with_extension(extension: &str) -> String {
+    module_with_extension_custom(
+        extension,
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+    )
+}
+
+/// Constructs a minimal valid SPIR-V module text with Kernel/Addresses
+/// capabilities and the given extension name.
+pub fn opencl_module_with_extension(extension: &str) -> String {
+    // Note: OpenCL requires Physical32/Physical64 addressing model
+    [
+        "OpCapability Kernel",
+        "OpCapability Addresses",
+        &format!("OpExtension \"{extension}\""),
+        "OpMemoryModel Physical64 OpenCL",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n")
+}
+
+/// Constructs a minimal valid SPIR-V module text with custom capability,
+/// extension, and memory model strings.
+pub fn module_with_extension_custom(
+    extension: &str,
+    capability: &str,
+    memory_model: &str,
+) -> String {
+    [
+        capability,
+        &format!("OpExtension \"{extension}\""),
+        memory_model,
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n")
+}
+
+/// Asserts that the given extension name is accepted in Vulkan but rejected
+/// in OpenCL and OpenGL environments.
+pub fn assert_vulkan_only_extension(name: &str) {
+    let text = module_with_extension(name);
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_2)
+        .unwrap_or_else(|_| panic!("{name} should be accepted for Vulkan targets"));
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
+        let error = text
+            .as_str()
+            .validate(env)
+            .expect_err("{name} should be rejected outside Vulkan");
+        assert_eq!(
+            error,
+            ValidationError::DisallowedExtension {
+                extension: ExtensionName::from(name),
+                env
+            }
+        );
+    }
+}
+
+/// Assembles the given text and validates it with a specific target environment.
+pub fn assemble_and_validate_with_env(
+    text: impl AsRef<str>,
+    env: TargetEnv,
+) -> Result<(), ValidationError> {
+    let binary = assemble_text(text.as_ref()).expect("assemble text");
+    validate_module(&binary, env)
+}
+
+/// Assembles the given text and validates it with `Universal1_3`.
+pub fn assemble_and_validate(text: impl AsRef<str>) -> Result<(), ValidationError> {
+    assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+}
