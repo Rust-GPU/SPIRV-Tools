@@ -1569,3 +1569,88 @@ fn access_chain_index_limit_enforced() {
         }
     );
 }
+
+#[test]
+fn switch_unique_case_literals_pass() {
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    let switch_inst = Instruction::new(
+        rspirv::spirv::Op::Switch,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2), // default
+            Operand::LiteralBit32(0),
+            Operand::IdRef(3), // case 0
+            Operand::LiteralBit32(1),
+            Operand::IdRef(4), // case 1
+            Operand::LiteralBit32(2),
+            Operand::IdRef(5), // case 2
+        ],
+    );
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![switch_inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
+
+    let mut test_data = TestContextData::default();
+    test_data.module.functions.push(function);
+
+    let ctx = test_data.as_context();
+    let rule = crate::validation::rules::cfg::SwitchCaseUniquenessRule;
+    rule.validate(&ctx)
+        .expect("switch with unique case literals should pass");
+}
+
+#[test]
+fn switch_duplicate_case_literal_fails() {
+    use crate::validation::{TestContextData, ValidationRule};
+    use rspirv::dr::{Instruction, Operand};
+
+    let switch_inst = Instruction::new(
+        rspirv::spirv::Op::Switch,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2), // default
+            Operand::LiteralBit32(42),
+            Operand::IdRef(3), // case 42
+            Operand::LiteralBit32(99),
+            Operand::IdRef(4), // case 99
+            Operand::LiteralBit32(42),
+            Operand::IdRef(5), // duplicate case 42
+        ],
+    );
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![switch_inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
+
+    let mut test_data = TestContextData::default();
+    test_data.module.functions.push(function);
+
+    let ctx = test_data.as_context();
+    let rule = crate::validation::rules::cfg::SwitchCaseUniquenessRule;
+    let err = rule
+        .validate(&ctx)
+        .expect_err("switch with duplicate case 42 should fail");
+    assert!(
+        matches!(err.error, ValidationError::SwitchDuplicateCaseLiteral { literal: 42, .. }),
+        "expected SwitchDuplicateCaseLiteral with literal 42, got {err:?}"
+    );
+}

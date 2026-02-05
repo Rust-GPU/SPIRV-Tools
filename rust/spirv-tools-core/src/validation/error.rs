@@ -2803,6 +2803,16 @@ pub enum ValidationError {
         /// The structured terminator opcode.
         terminator: rspirv::spirv::Op,
     },
+    /// OpSwitch contains a duplicate case literal.
+    #[error("OpSwitch in block {block:?} of function {function:?} has duplicate case literal {literal}")]
+    SwitchDuplicateCaseLiteral {
+        /// The function containing the switch.
+        function: Option<Id>,
+        /// The block containing the switch.
+        block: Option<Id>,
+        /// The duplicate literal value.
+        literal: u64,
+    },
     /// A basic block is missing its required `OpLabel`.
     #[error("function {function:?} contains a block without OpLabel at index {block_index}")]
     MissingBlockLabel {

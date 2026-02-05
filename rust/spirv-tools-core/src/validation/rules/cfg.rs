@@ -1675,6 +1675,68 @@ impl ValidationRule for LifetimeRule {
     }
 }
 
+// ============================================================================
+// Switch Case Uniqueness Rule
+// ============================================================================
+
+/// Validates that OpSwitch case literals are unique.
+pub struct SwitchCaseUniquenessRule;
+
+impl ValidationRule for SwitchCaseUniquenessRule {
+    fn name(&self) -> &'static str {
+        "switch-case-uniqueness"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::Switch {
+                        continue;
+                    }
+                    // OpSwitch operands: selector, default, [literal, target]...
+                    // Case literals start at index 2, at even indices
+                    let mut seen = HashSet::new();
+                    let mut i = 2;
+                    while i + 1 < inst.operands.len() {
+                        let literal = &inst.operands[i];
+                        let key = match literal {
+                            Operand::LiteralBit32(v) => *v as u64,
+                            Operand::LiteralBit64(v) => *v,
+                            _ => {
+                                i += 2;
+                                continue;
+                            }
+                        };
+                        if !seen.insert(key) {
+                            return Err(ValidationError::SwitchDuplicateCaseLiteral {
+                                function: function_id,
+                                block: block_id,
+                                literal: key,
+                            }
+                            .into());
+                        }
+                        i += 2;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Static rule instances
 static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
 static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
@@ -1689,6 +1751,7 @@ static BRANCH_CONDITIONAL_RULE: BranchConditionalRule = BranchConditionalRule;
 static MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE: MaximalReconvergencePredecessorsRule =
     MaximalReconvergencePredecessorsRule;
 static LIFETIME_RULE: LifetimeRule = LifetimeRule;
+static SWITCH_CASE_UNIQUENESS_RULE: SwitchCaseUniquenessRule = SwitchCaseUniquenessRule;
 
 /// Returns all CFG validation rules.
 pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
@@ -1705,5 +1768,6 @@ pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
         &BRANCH_CONDITIONAL_RULE,
         &MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE,
         &LIFETIME_RULE,
+        &SWITCH_CASE_UNIQUENESS_RULE,
     ]
 }
