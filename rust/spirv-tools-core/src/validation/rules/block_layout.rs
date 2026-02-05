@@ -285,33 +285,53 @@ fn type_layout_size(
             let elem_size =
                 type_layout_size(elem, module, definitions, visiting, is_row_major, matrix_stride)?;
             let len = array_length(inst, definitions)?;
-            Some(elem_size.saturating_mul(len))
+            // Use (N-1)*stride + elem_size to account for padding between elements
+            // (C++ getSize, validate_decorations.cpp lines 344-357).
+            let array_type_id = ResultId::try_from(u32::from(ty)).ok()?;
+            let stride = array_stride(module, array_type_id).unwrap_or(0);
+            if stride > 0 && len > 0 {
+                Some(
+                    len.saturating_sub(1)
+                        .saturating_mul(stride)
+                        .saturating_add(elem_size),
+                )
+            } else {
+                Some(elem_size.saturating_mul(len))
+            }
         }
         Op::TypeRuntimeArray => None, // unsized
         Op::TypeStruct => {
+            // Struct size = offset_of_last_member + size_of_last_member
+            // (C++ getSize, validate_decorations.cpp lines 376-397).
+            // This accounts for padding gaps between members specified by
+            // Offset decorations, rather than naively summing member sizes.
             let struct_id = ResultId::try_from(u32::from(ty)).ok()?;
-            let mut total: u32 = 0;
-            for (idx, op) in inst.operands.iter().enumerate() {
-                let member_ty = match op {
-                    rspirv::dr::Operand::IdRef(id) => TypeId::try_from(*id).ok()?,
-                    _ => return None,
-                };
-                let member_rm =
-                    member_is_row_major(module, struct_id, MemberIndex(idx as u32));
-                let member_ms =
-                    member_matrix_stride(module, struct_id, MemberIndex(idx as u32))
-                        .unwrap_or(0);
-                let size = type_layout_size(
-                    member_ty,
-                    module,
-                    definitions,
-                    visiting,
-                    member_rm,
-                    member_ms,
-                )?;
-                total = total.saturating_add(size);
+            let members: Vec<_> = inst
+                .operands
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, op)| match op {
+                    rspirv::dr::Operand::IdRef(id) => {
+                        TypeId::try_from(*id).ok().map(|ty| (idx as u32, ty))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if members.is_empty() {
+                return Some(0);
             }
-            Some(total)
+            let offsets = collect_member_offsets(module, struct_id);
+            // Find the last member by offset order.
+            let (last_idx, last_ty) = members
+                .iter()
+                .max_by_key(|(idx, _)| offsets.get(&MemberIndex(*idx)).copied().unwrap_or(0))?;
+            let last_offset = offsets.get(&MemberIndex(*last_idx)).copied()?;
+            let last_rm = member_is_row_major(module, struct_id, MemberIndex(*last_idx));
+            let last_ms =
+                member_matrix_stride(module, struct_id, MemberIndex(*last_idx)).unwrap_or(0);
+            let last_size =
+                type_layout_size(*last_ty, module, definitions, visiting, last_rm, last_ms)?;
+            Some(last_offset.saturating_add(last_size))
         }
         _ => None,
     };

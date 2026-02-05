@@ -14699,8 +14699,9 @@ fn member_in_array_padding_rejected() {
 }
 #[test]
 fn member_after_array_padding_accepted() {
-    // Same array of uint[2] (stride 16 under std140), but the next member is
-    // at offset 16, after the padding. This should be accepted.
+    // Array of uint[2] stride 16 under std140: size = (2-1)*16 + 4 = 20.
+    // Under std140, next_valid_offset rounds up to alignment: align(20, 16) = 32.
+    // So the next member must be at offset 32 or later.
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -14708,7 +14709,7 @@ fn member_after_array_padding_accepted() {
         "OpDecorate %var DescriptorSet 0",
         "OpDecorate %var Binding 0",
         "OpMemberDecorate %struct 0 Offset 0",
-        "OpMemberDecorate %struct 1 Offset 16",
+        "OpMemberDecorate %struct 1 Offset 32",
         "OpDecorate %arr ArrayStride 16",
         "%int = OpTypeInt 32 0",
         "%two = OpConstant %int 2",
@@ -14720,11 +14721,15 @@ fn member_after_array_padding_accepted() {
     .join("\n");
     text.as_str()
         .validate(TargetEnv::Universal1_6)
-        .expect("member at offset 16 is after array padding");
+        .expect("member at offset 32 is after array's std140-rounded extent");
 }
 #[test]
-fn scalar_layout_allows_member_in_array_padding() {
-    // Under scalar block layout, members CAN be placed in padding areas.
+fn scalar_layout_allows_member_after_array_raw_extent() {
+    // Under scalar block layout, next_valid_offset is NOT rounded up to
+    // alignment for arrays (unlike std140). Array uint[2] stride 16:
+    // size = (2-1)*16 + 4 = 20. Under scalar, next_valid = 20 (no rounding).
+    // Under std140, next_valid = align(20, 16) = 32.
+    // So scalar allows a member at offset 20, but std140 would require 32.
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -14732,7 +14737,7 @@ fn scalar_layout_allows_member_in_array_padding() {
         "OpDecorate %var DescriptorSet 0",
         "OpDecorate %var Binding 0",
         "OpMemberDecorate %struct 0 Offset 0",
-        "OpMemberDecorate %struct 1 Offset 8",
+        "OpMemberDecorate %struct 1 Offset 20",
         "OpDecorate %arr ArrayStride 16",
         "%int = OpTypeInt 32 0",
         "%two = OpConstant %int 2",
@@ -14748,7 +14753,7 @@ fn scalar_layout_allows_member_in_array_padding() {
     };
     text.as_str()
         .validate_with_options(TargetEnv::Universal1_6, opts)
-        .expect("scalar layout allows members in padding");
+        .expect("scalar layout allows member at offset 20 (after array raw extent)");
 }
 #[test]
 fn matrix_stride_alignment_and_size() {
@@ -30938,4 +30943,152 @@ fn row_major_matrix_large_column_no_straddle_rejection() {
     };
     validate_module_with_options(&words, TargetEnv::Universal1_3, opts)
         .expect("row-major matrix should not be rejected for straddle");
+}
+
+// ============================================================================
+// Struct size calculation tests (offset_of_last + size_of_last, not sum)
+// ============================================================================
+
+/// Positive: struct with padding gap between members should compute size correctly
+/// (float at 0 + vec4 at 16 → size = 16 + 16 = 32, not 4+16 = 20).
+/// A second member starting at offset 16 should not be flagged as overlapping.
+#[test]
+fn struct_size_accounts_for_offset_gaps() {
+    // struct { float a; /* offset 0, size 4 */ vec4 b; /* offset 16, size 16 */ }
+    // Nested inside an outer struct to exercise the overlap check against the
+    // inner struct's computed size.
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %inner 0 Offset 0",
+        "OpMemberDecorate %inner 1 Offset 16",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %outer 1 Offset 32",
+        "%float = OpTypeFloat 32",
+        "%v4 = OpTypeVector %float 4",
+        "%inner = OpTypeStruct %float %v4",
+        "%uint = OpTypeInt 32 0",
+        "%outer = OpTypeStruct %inner %uint",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect("struct with gap should pass: inner size is 32, member 1 at offset 32 is valid");
+}
+
+/// Negative: the second member overlaps the inner struct when accounting for
+/// offset-based struct size.
+#[test]
+fn struct_size_detects_overlap_with_offset_gaps() {
+    // inner = { float @0, vec4 @16 } → size 32
+    // outer member 1 at offset 20 overlaps inner (0..32)
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %inner 0 Offset 0",
+        "OpMemberDecorate %inner 1 Offset 16",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %outer 1 Offset 20",
+        "%float = OpTypeFloat 32",
+        "%v4 = OpTypeVector %float 4",
+        "%inner = OpTypeStruct %float %v4",
+        "%uint = OpTypeInt 32 0",
+        "%outer = OpTypeStruct %inner %uint",
+        "%ptr = OpTypePointer Uniform %outer",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("member at offset 20 overlaps inner struct ending at offset 32");
+    if let ValidationError::InvalidBlockLayout { reason, .. } = err {
+        assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
+    } else {
+        panic!("unexpected error: {err:?}");
+    }
+}
+
+// ============================================================================
+// Array size calculation tests ((N-1)*stride + elem_size, not elem_size*N)
+// ============================================================================
+
+/// Positive: array with stride larger than element size should compute size
+/// correctly. Array of vec3 (size 12) with stride 16, length 2 → size 28.
+#[test]
+fn array_size_accounts_for_stride() {
+    // struct { array<vec3, 2> @0 (stride 16, size 28); uint @28 }
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpDecorate %arr ArrayStride 16",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %outer 1 Offset 28",
+        "%float = OpTypeFloat 32",
+        "%v3 = OpTypeVector %float 3",
+        "%uint = OpTypeInt 32 0",
+        "%c2 = OpConstant %uint 2",
+        "%arr = OpTypeArray %v3 %c2",
+        "%outer = OpTypeStruct %arr %uint",
+        "%ptr = OpTypePointer StorageBuffer %outer",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        scalar_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    text.as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect("member at offset 28 is valid: array size is (2-1)*16+12 = 28");
+}
+
+/// Negative: second member overlaps the array when stride-based size is used.
+#[test]
+fn array_size_detects_overlap_with_stride() {
+    // array<vec3, 2> stride=16 → size = (2-1)*16+12 = 28
+    // second member at offset 24 overlaps array (0..28)
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %outer Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpDecorate %arr ArrayStride 16",
+        "OpMemberDecorate %outer 0 Offset 0",
+        "OpMemberDecorate %outer 1 Offset 24",
+        "%float = OpTypeFloat 32",
+        "%v3 = OpTypeVector %float 3",
+        "%uint = OpTypeInt 32 0",
+        "%c2 = OpConstant %uint 2",
+        "%arr = OpTypeArray %v3 %c2",
+        "%outer = OpTypeStruct %arr %uint",
+        "%ptr = OpTypePointer StorageBuffer %outer",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let opts = ValidationOptions {
+        scalar_block_layout: true,
+        ..ValidationOptions::default()
+    };
+    let err = text
+        .as_str()
+        .validate_with_options(TargetEnv::Universal1_6, opts)
+        .expect_err("member at offset 24 overlaps array ending at offset 28");
+    if let ValidationError::InvalidBlockLayout { reason, .. } = err {
+        assert!(reason.contains("overlap"), "unexpected reason: {reason:?}");
+    } else {
+        panic!("unexpected error: {err:?}");
+    }
 }
