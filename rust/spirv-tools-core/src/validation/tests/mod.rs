@@ -31914,3 +31914,231 @@ fn pointer_member_overlap_is_rejected() {
         .expect_err("int at offset 4 overlaps 8-byte pointer at offset 0");
     assert!(matches!(err, ValidationError::InvalidBlockLayout { .. }));
 }
+
+// ============================================================================
+// Vulkan Block/BufferBlock decoration tests (#11)
+// ============================================================================
+
+/// PushConstant variable must have Block decoration in Vulkan (VUID-06675).
+#[test]
+fn vulkan_push_constant_must_have_block_decoration() {
+    // PushConstant WITHOUT Block decoration
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer PushConstant %struct",
+        "%var = OpVariable %ptr PushConstant",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect_err("PushConstant without Block should fail in Vulkan");
+    assert!(matches!(
+        err,
+        ValidationError::VulkanBufferMissingBlockDecoration { .. }
+    ));
+}
+
+/// PushConstant with Block decoration should pass.
+#[test]
+fn vulkan_push_constant_with_block_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer PushConstant %struct",
+        "%var = OpVariable %ptr PushConstant",
+        "OpEntryPoint Vertex %main \"main\" %var",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect("PushConstant with Block decoration should pass");
+}
+
+/// StorageBuffer with BufferBlock is disallowed in Vulkan (VUID-06675).
+#[test]
+fn vulkan_storage_buffer_with_buffer_block_is_rejected() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("StorageBuffer with BufferBlock should fail in Vulkan");
+    assert!(matches!(
+        err,
+        ValidationError::VulkanStorageBufferHasBufferBlock { .. }
+    ));
+}
+
+/// StorageBuffer without Block is rejected in Vulkan (VUID-06675).
+#[test]
+fn vulkan_storage_buffer_must_have_block_decoration() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect_err("StorageBuffer without Block should fail in Vulkan");
+    assert!(matches!(
+        err,
+        ValidationError::VulkanBufferMissingBlockDecoration { .. }
+    ));
+}
+
+/// StorageBuffer with Block decoration should pass.
+#[test]
+fn vulkan_storage_buffer_with_block_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_1)
+        .expect("StorageBuffer with Block decoration should pass");
+}
+
+/// Uniform without Block or BufferBlock is rejected in Vulkan (VUID-06676).
+#[test]
+fn vulkan_uniform_must_have_block_or_buffer_block() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect_err("Uniform without Block or BufferBlock should fail in Vulkan");
+    assert!(matches!(
+        err,
+        ValidationError::VulkanUniformMissingBlockDecoration { .. }
+    ));
+}
+
+/// Uniform with Block decoration should pass.
+#[test]
+fn vulkan_uniform_with_block_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct Block",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect("Uniform with Block decoration should pass");
+}
+
+/// Uniform with BufferBlock decoration should also pass.
+#[test]
+fn vulkan_uniform_with_buffer_block_is_valid() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %struct BufferBlock",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer Uniform %struct",
+        "%var = OpVariable %ptr Uniform",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::Vulkan1_0)
+        .expect("Uniform with BufferBlock decoration should pass");
+}
+
+/// Vulkan-specific checks use VUID error types. Under Universal, the base
+/// SPIR-V spec also requires Block on StorageBuffer, but with a different
+/// error type (MissingBlockDecoration vs VulkanBufferMissingBlockDecoration).
+#[test]
+fn universal_env_uses_base_spec_error_for_missing_block() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpDecorate %var DescriptorSet 0",
+        "OpDecorate %var Binding 0",
+        "OpMemberDecorate %struct 0 Offset 0",
+        "%int = OpTypeInt 32 0",
+        "%struct = OpTypeStruct %int",
+        "%ptr = OpTypePointer StorageBuffer %struct",
+        "%var = OpVariable %ptr StorageBuffer",
+    ]
+    .join("\n");
+    // Under Universal, the base spec catches the missing Block decoration
+    let err = text
+        .as_str()
+        .validate(TargetEnv::Universal1_6)
+        .expect_err("Missing Block should fail in any env");
+    assert!(matches!(
+        err,
+        ValidationError::MissingBlockDecoration { .. }
+    ));
+}
