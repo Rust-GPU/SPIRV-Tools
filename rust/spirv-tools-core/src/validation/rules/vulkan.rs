@@ -566,6 +566,18 @@ impl ValidationRule for VulkanPushConstantBlockRule {
             return Ok(());
         }
 
+        // PushConstantBanksNV (capability 5423) allows multiple push constant blocks
+        let has_push_constant_banks_nv = ctx.module.capabilities.iter().any(|inst| {
+            inst.operands.first().is_some_and(|op| match op {
+                rspirv::dr::Operand::Capability(cap) => *cap as u32 == 5423,
+                rspirv::dr::Operand::LiteralBit32(v) => *v == 5423,
+                _ => false,
+            })
+        });
+        if has_push_constant_banks_nv {
+            return Ok(());
+        }
+
         // Check each entry point for multiple push constants
         for ep in &ctx.module.entry_points {
             let ep_id = ep.operands.get(1).and_then(|op| {
