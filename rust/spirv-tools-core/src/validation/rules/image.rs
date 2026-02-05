@@ -709,6 +709,52 @@ impl ValidationRule for ImageQueryRule {
                         }
 
                         Op::ImageQueryLod => {
+                            // Execution model check: must be Fragment, GLCompute, MeshEXT, or TaskEXT
+                            let valid_models = [
+                                ExecutionModel::Fragment,
+                                ExecutionModel::GLCompute,
+                                ExecutionModel::MeshEXT,
+                                ExecutionModel::TaskEXT,
+                            ];
+                            let has_valid_model = ctx.entry_models.iter().any(|m| valid_models.contains(m));
+                            if !has_valid_model && !ctx.entry_models.is_empty() {
+                                return Err(ValidationError::ImageQueryLodRequiresFragment {
+                                    function: function_id,
+                                    block: block_id,
+                                }
+                                .into());
+                            }
+
+                            // For GLCompute/MeshEXT/TaskEXT, require derivative group execution mode
+                            let needs_derivative_mode = ctx.entry_models.iter().any(|m| {
+                                matches!(
+                                    m,
+                                    ExecutionModel::GLCompute
+                                        | ExecutionModel::MeshEXT
+                                        | ExecutionModel::TaskEXT
+                                )
+                            });
+                            if needs_derivative_mode
+                                && !ctx.entry_models.contains(&ExecutionModel::Fragment)
+                            {
+                                let has_derivative_mode = ctx.module.execution_modes.iter().any(|mode_inst| {
+                                    mode_inst.operands.get(1).is_some_and(|operand| {
+                                        matches!(
+                                            operand,
+                                            Operand::ExecutionMode(ExecutionMode::DerivativeGroupQuadsKHR)
+                                                | Operand::ExecutionMode(ExecutionMode::DerivativeGroupLinearKHR)
+                                        )
+                                    })
+                                });
+                                if !has_derivative_mode {
+                                    return Err(ValidationError::ImageQueryLodRequiresFragment {
+                                        function: function_id,
+                                        block: block_id,
+                                    }
+                                    .into());
+                                }
+                            }
+
                             // Result must be float vector of 2 components
                             if let Some(result_type) = inst.result_type {
                                 if !resolver.is_float_scalar_or_vector(result_type, ctx.definitions)
