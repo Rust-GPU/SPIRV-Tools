@@ -2710,8 +2710,8 @@ OpExecutionMode %main LocalSize 1 1 1
 %void = OpTypeVoid
 %uint = OpTypeInt 32 0
 %fn = OpTypeFunction %void
-%c1 = OpConstant %uint 255
-%c2 = OpConstant %uint 15
+%c1 = OpConstant %uint 0xFF
+%c2 = OpConstant %uint 0x0F
 %c3 = OpConstant %uint 4
 %main = OpFunction %void None %fn
 %entry = OpLabel
@@ -2784,5 +2784,27 @@ OpReturn
 OpFunctionEnd
 "#;
         let binary = assemble_text(text).expect("should assemble OpCopyObject");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn hex_literals_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%c1 = OpConstant %uint 0x0
+%c2 = OpConstant %uint 0xFF
+%c3 = OpConstant %uint 0xDEADBEEF
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble hex literals");
         assert!(!binary.is_empty());
     }

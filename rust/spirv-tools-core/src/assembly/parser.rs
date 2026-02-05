@@ -686,8 +686,16 @@ fn parse_identifier<'a>(
     }
 }
 
+fn parse_hex_unsigned(text: &str) -> Option<u64> {
+    let hex = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))?;
+    u64::from_str_radix(hex, 16).ok()
+}
+
 fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, ParseError> {
     let text = word.as_str();
+    if let Some(value) = parse_hex_unsigned(text) {
+        return Ok(LiteralNumber::unsigned(value));
+    }
     if let Ok(value) = text.parse::<i64>() {
         if value < 0 {
             Ok(LiteralNumber::signed(value))
@@ -705,6 +713,9 @@ fn parse_integer(word: WordToken<'_>, span: Span) -> Result<LiteralNumber, Parse
 }
 
 fn parse_loose_integer(text: &str) -> Option<LiteralNumber> {
+    if let Some(value) = parse_hex_unsigned(text) {
+        return Some(LiteralNumber::unsigned(value));
+    }
     if text.starts_with('-') {
         text.parse::<i64>().ok().map(LiteralNumber::signed)
     } else {
