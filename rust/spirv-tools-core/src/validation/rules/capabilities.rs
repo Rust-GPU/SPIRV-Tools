@@ -89,7 +89,6 @@ pub fn validate_capabilities(
                         | Capability::Image1D
                         | Capability::SampledBuffer
                         | Capability::ImageBuffer
-                        | Capability::ImageReadWrite
                 )
                 && !declared.contains(&Capability::ImageBasic)
             {
@@ -99,12 +98,20 @@ pub fn validate_capabilities(
                 });
             }
 
-            // ImageReadWrite requires OpenCL 2.0+ (not just ImageBasic)
-            if env.is_opencl_1_2() && capability == Capability::ImageReadWrite {
-                return Err(ValidationError::DisallowedCapability {
-                    capability,
-                    env,
-                });
+            // ImageReadWrite requires ImageBasic + OpenCL 2.0+
+            if env.is_opencl() && capability == Capability::ImageReadWrite {
+                if !declared.contains(&Capability::ImageBasic) {
+                    return Err(ValidationError::MissingRequiredCapability {
+                        required_capability: Capability::ImageBasic,
+                        capability,
+                    });
+                }
+                if env.is_opencl_1_2() {
+                    return Err(ValidationError::DisallowedCapability {
+                        capability,
+                        env,
+                    });
+                }
             }
 
             let grammar_version = grammar_requirements.required_version;

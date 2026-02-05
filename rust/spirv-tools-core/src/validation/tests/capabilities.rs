@@ -3548,3 +3548,83 @@ fn physical_storage_buffer_capability_requires_spirv_1_4() {
         .validate(TargetEnv::Vulkan1_2)
         .expect("succeeds on newer SPIR-V");
 }
+
+#[test]
+fn opencl_1_2_rejects_image_read_write() {
+    let text = [
+        "OpCapability Kernel",
+        "OpCapability Addresses",
+        "OpCapability ImageBasic",
+        "OpCapability ImageReadWrite",
+        "OpMemoryModel Physical32 OpenCL",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::OpenCl1_2)
+        .expect_err("ImageReadWrite disallowed in OpenCL 1.2");
+    match error {
+        ValidationError::DisallowedCapability { capability, .. } => {
+            assert_eq!(capability, rspirv::spirv::Capability::ImageReadWrite);
+        }
+        other => panic!("expected DisallowedCapability, got {other:?}"),
+    }
+}
+
+#[test]
+fn opencl_2_0_allows_image_read_write_with_image_basic() {
+    let text = [
+        "OpCapability Kernel",
+        "OpCapability Addresses",
+        "OpCapability ImageBasic",
+        "OpCapability ImageReadWrite",
+        "OpMemoryModel Physical32 OpenCL",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    text.as_str()
+        .validate(TargetEnv::OpenCl2_0)
+        .expect("ImageReadWrite allowed in OpenCL 2.0 with ImageBasic");
+}
+
+#[test]
+fn opencl_image_read_write_requires_image_basic() {
+    let text = [
+        "OpCapability Kernel",
+        "OpCapability Addresses",
+        "OpCapability ImageReadWrite",
+        "OpMemoryModel Physical32 OpenCL",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = text
+        .as_str()
+        .validate(TargetEnv::OpenCl2_0)
+        .expect_err("ImageReadWrite requires ImageBasic");
+    match error {
+        ValidationError::MissingRequiredCapability {
+            required_capability,
+            capability,
+        } => {
+            assert_eq!(required_capability, rspirv::spirv::Capability::ImageBasic);
+            assert_eq!(capability, rspirv::spirv::Capability::ImageReadWrite);
+        }
+        other => panic!("expected MissingRequiredCapability, got {other:?}"),
+    }
+}
