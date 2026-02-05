@@ -138,17 +138,79 @@ impl<'a> AssemblyTranslator<'a> {
             spirv::Op::Switch => self.translate_switch(instruction),
             spirv::Op::Return => self.translate_return(instruction),
             spirv::Op::ReturnValue => self.translate_return_value(instruction),
+            spirv::Op::Kill => self.translate_no_operand_terminator(instruction),
+            spirv::Op::Unreachable => self.translate_no_operand_terminator(instruction),
+            spirv::Op::TerminateInvocation => self.translate_no_operand_terminator(instruction),
             spirv::Op::FunctionEnd => self.translate_function_end(instruction),
+            spirv::Op::FunctionCall => self.translate_function_call(instruction),
             spirv::Op::Constant => self.translate_constant(instruction),
+            spirv::Op::SpecConstant => self.translate_constant(instruction),
+            spirv::Op::SpecConstantTrue => self.translate_boolean_constant(instruction, true),
+            spirv::Op::SpecConstantFalse => self.translate_boolean_constant(instruction, false),
+            spirv::Op::SpecConstantComposite => self.translate_constant_composite(instruction),
             spirv::Op::Variable => self.translate_variable(instruction),
             spirv::Op::Load => self.translate_load(instruction),
             spirv::Op::Store => self.translate_store(instruction),
+            spirv::Op::Select => self.translate_select(instruction),
+            spirv::Op::Nop => { /* no-op */ }
+            // Binary operations: typed result + 2 IdRef
             spirv::Op::IAdd
             | spirv::Op::ISub
             | spirv::Op::IMul
+            | spirv::Op::SDiv
+            | spirv::Op::UDiv
             | spirv::Op::FAdd
             | spirv::Op::FSub
-            | spirv::Op::FMul => self.translate_binary_arithmetic(instruction),
+            | spirv::Op::FMul
+            | spirv::Op::FDiv
+            | spirv::Op::SRem
+            | spirv::Op::FRem
+            | spirv::Op::FMod
+            | spirv::Op::SMod
+            | spirv::Op::UMod
+            | spirv::Op::Dot
+            | spirv::Op::IAddCarry
+            | spirv::Op::ISubBorrow
+            | spirv::Op::UMulExtended
+            | spirv::Op::SMulExtended
+            // Integer comparison
+            | spirv::Op::IEqual
+            | spirv::Op::INotEqual
+            | spirv::Op::SLessThan
+            | spirv::Op::ULessThan
+            | spirv::Op::SLessThanEqual
+            | spirv::Op::ULessThanEqual
+            | spirv::Op::SGreaterThan
+            | spirv::Op::UGreaterThan
+            | spirv::Op::SGreaterThanEqual
+            | spirv::Op::UGreaterThanEqual
+            // Floating point comparison (ordered)
+            | spirv::Op::FOrdEqual
+            | spirv::Op::FOrdNotEqual
+            | spirv::Op::FOrdLessThan
+            | spirv::Op::FOrdGreaterThan
+            | spirv::Op::FOrdLessThanEqual
+            | spirv::Op::FOrdGreaterThanEqual
+            // Floating point comparison (unordered)
+            | spirv::Op::FUnordEqual
+            | spirv::Op::FUnordNotEqual
+            | spirv::Op::FUnordLessThan
+            | spirv::Op::FUnordGreaterThan
+            | spirv::Op::FUnordLessThanEqual
+            | spirv::Op::FUnordGreaterThanEqual
+            // Logical operations
+            | spirv::Op::LogicalEqual
+            | spirv::Op::LogicalNotEqual
+            | spirv::Op::LogicalAnd
+            | spirv::Op::LogicalOr
+            // Bitwise operations
+            | spirv::Op::BitwiseAnd
+            | spirv::Op::BitwiseOr
+            | spirv::Op::BitwiseXor
+            | spirv::Op::ShiftLeftLogical
+            | spirv::Op::ShiftRightLogical
+            | spirv::Op::ShiftRightArithmetic => self.translate_binary_arithmetic(instruction),
+            // Unary operations: typed result + 1 IdRef
             spirv::Op::Bitcast
             | spirv::Op::ConvertFToU
             | spirv::Op::ConvertFToS
@@ -156,7 +218,23 @@ impl<'a> AssemblyTranslator<'a> {
             | spirv::Op::ConvertUToF
             | spirv::Op::UConvert
             | spirv::Op::SConvert
-            | spirv::Op::FConvert => self.translate_unary_op(instruction),
+            | spirv::Op::FConvert
+            | spirv::Op::QuantizeToF16
+            | spirv::Op::SNegate
+            | spirv::Op::FNegate
+            | spirv::Op::Not
+            | spirv::Op::LogicalNot
+            | spirv::Op::Any
+            | spirv::Op::All
+            | spirv::Op::IsNan
+            | spirv::Op::IsInf
+            | spirv::Op::IsFinite
+            | spirv::Op::IsNormal
+            | spirv::Op::SignBitSet
+            | spirv::Op::CopyObject
+            | spirv::Op::CopyLogical
+            | spirv::Op::Transpose
+            | spirv::Op::ArrayLength => self.translate_unary_op(instruction),
             // Image operations: typed result + 1 IdRef (no image operands)
             spirv::Op::Image
             | spirv::Op::ImageQueryFormat
@@ -836,6 +914,113 @@ impl<'a> AssemblyTranslator<'a> {
         match self.builder.ret_value(value_id) {
             Ok(_) => self.record_from_current_block(),
             Err(error) => self.emit_builder_error(error, operand.span().start()),
+        }
+    }
+
+    fn translate_no_operand_terminator(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let result = match instruction.opcode() {
+            spirv::Op::Kill => self.builder.kill(),
+            spirv::Op::Unreachable => self.builder.unreachable(),
+            spirv::Op::TerminateInvocation => self.builder.terminate_invocation(),
+            _ => {
+                self.module_builder
+                    .emit_error(opcode_pos, "unexpected no-operand terminator");
+                return;
+            }
+        };
+        match result {
+            Ok(()) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
+        }
+    }
+
+    fn translate_function_call(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpFunctionCall missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpFunctionCall missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(function_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpFunctionCall missing function id");
+            return;
+        };
+        let Some(function_id) = self.operand_as_id(function_operand, "function") else {
+            return;
+        };
+        let mut args = Vec::new();
+        for arg_operand in operands {
+            let Some(arg_id) = self.operand_as_id(arg_operand, "argument") else {
+                return;
+            };
+            args.push(arg_id);
+        }
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        match self
+            .builder
+            .function_call(type_id, Some(result_id), function_id, args)
+        {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
+        }
+    }
+
+    fn translate_select(&mut self, instruction: &ParsedInstruction<'a>) {
+        let opcode_pos = instruction.opcode_position();
+        let Some(result_type) = instruction.result_type() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelect missing result type");
+            return;
+        };
+        let Some(result_id) = instruction.result_id() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelect missing result id");
+            return;
+        };
+        let mut operands = instruction.operands().iter();
+        let Some(cond_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelect missing condition");
+            return;
+        };
+        let Some(obj1_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelect missing object 1");
+            return;
+        };
+        let Some(obj2_operand) = operands.next() else {
+            self.module_builder
+                .emit_error(opcode_pos, "OpSelect missing object 2");
+            return;
+        };
+        let Some(cond_id) = self.operand_as_id(cond_operand, "condition") else {
+            return;
+        };
+        let Some(obj1_id) = self.operand_as_id(obj1_operand, "object 1") else {
+            return;
+        };
+        let Some(obj2_id) = self.operand_as_id(obj2_operand, "object 2") else {
+            return;
+        };
+        let (type_id, result_id) = self
+            .module_builder
+            .bind_typed_result(result_type, result_id);
+        match self
+            .builder
+            .select(type_id, Some(result_id), cond_id, obj1_id, obj2_id)
+        {
+            Ok(_) => self.record_from_current_block(),
+            Err(error) => self.emit_builder_error(error, opcode_pos),
         }
     }
 

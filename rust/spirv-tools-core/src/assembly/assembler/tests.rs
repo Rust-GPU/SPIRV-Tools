@@ -2565,3 +2565,224 @@ OpFunctionEnd
         let binary2 = assemble_text(&disasm).expect("should re-assemble");
         assert_eq!(binary, binary2, "round-trip should produce identical binary");
     }
+
+    #[test]
+    fn unreachable_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpUnreachable
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpUnreachable");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn kill_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpKill
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpKill");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn select_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%bool = OpTypeBool
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%true = OpConstantTrue %bool
+%c1 = OpConstant %uint 1
+%c2 = OpConstant %uint 2
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%result = OpSelect %uint %true %c1 %c2
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpSelect");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn function_call_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%helper = OpFunction %void None %fn
+%helper_entry = OpLabel
+OpReturn
+OpFunctionEnd
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%call = OpFunctionCall %void %helper
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpFunctionCall");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn comparison_and_logic_ops_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%bool = OpTypeBool
+%uint = OpTypeInt 32 0
+%int = OpTypeInt 32 1
+%float = OpTypeFloat 32
+%fn = OpTypeFunction %void
+%c1u = OpConstant %uint 1
+%c2u = OpConstant %uint 2
+%c1i = OpConstant %int 1
+%c2i = OpConstant %int 2
+%c1f = OpConstant %float 1.0
+%c2f = OpConstant %float 2.0
+%true = OpConstantTrue %bool
+%false = OpConstantFalse %bool
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%ieq = OpIEqual %bool %c1u %c2u
+%ine = OpINotEqual %bool %c1u %c2u
+%slt = OpSLessThan %bool %c1i %c2i
+%ult = OpULessThan %bool %c1u %c2u
+%sle = OpSLessThanEqual %bool %c1i %c2i
+%ule = OpULessThanEqual %bool %c1u %c2u
+%sgt = OpSGreaterThan %bool %c1i %c2i
+%ugt = OpUGreaterThan %bool %c1u %c2u
+%sge = OpSGreaterThanEqual %bool %c1i %c2i
+%uge = OpUGreaterThanEqual %bool %c1u %c2u
+%foeq = OpFOrdEqual %bool %c1f %c2f
+%fone = OpFOrdNotEqual %bool %c1f %c2f
+%folt = OpFOrdLessThan %bool %c1f %c2f
+%fogt = OpFOrdGreaterThan %bool %c1f %c2f
+%fole = OpFOrdLessThanEqual %bool %c1f %c2f
+%foge = OpFOrdGreaterThanEqual %bool %c1f %c2f
+%land = OpLogicalAnd %bool %true %false
+%lor = OpLogicalOr %bool %true %false
+%leq = OpLogicalEqual %bool %true %false
+%lne = OpLogicalNotEqual %bool %true %false
+%lnot = OpLogicalNot %bool %true
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble comparison and logic ops");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn bitwise_and_shift_ops_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%c1 = OpConstant %uint 255
+%c2 = OpConstant %uint 15
+%c3 = OpConstant %uint 4
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%and = OpBitwiseAnd %uint %c1 %c2
+%or = OpBitwiseOr %uint %c1 %c2
+%xor = OpBitwiseXor %uint %c1 %c2
+%not = OpNot %uint %c1
+%sll = OpShiftLeftLogical %uint %c1 %c3
+%srl = OpShiftRightLogical %uint %c1 %c3
+%sra = OpShiftRightArithmetic %uint %c1 %c3
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble bitwise and shift ops");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn arithmetic_ops_assemble() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%int = OpTypeInt 32 1
+%float = OpTypeFloat 32
+%fn = OpTypeFunction %void
+%c1u = OpConstant %uint 10
+%c2u = OpConstant %uint 3
+%c1i = OpConstant %int 10
+%c2i = OpConstant %int 3
+%c1f = OpConstant %float 10.0
+%c2f = OpConstant %float 3.0
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%sdiv = OpSDiv %int %c1i %c2i
+%udiv = OpUDiv %uint %c1u %c2u
+%fdiv = OpFDiv %float %c1f %c2f
+%srem = OpSRem %int %c1i %c2i
+%frem = OpFRem %float %c1f %c2f
+%fmod = OpFMod %float %c1f %c2f
+%smod = OpSMod %int %c1i %c2i
+%umod = OpUMod %uint %c1u %c2u
+%sneg = OpSNegate %int %c1i
+%fneg = OpFNegate %float %c1f
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble arithmetic ops");
+        assert!(!binary.is_empty());
+    }
+
+    #[test]
+    fn copy_object_assembles() {
+        let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%uint = OpTypeInt 32 0
+%fn = OpTypeFunction %void
+%c1 = OpConstant %uint 42
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%copy = OpCopyObject %uint %c1
+OpReturn
+OpFunctionEnd
+"#;
+        let binary = assemble_text(text).expect("should assemble OpCopyObject");
+        assert!(!binary.is_empty());
+    }
