@@ -6338,11 +6338,17 @@ pub enum ValidationError {
         product: u64,
     },
     /// OpExecutionModeId used with mode that doesn't take ID operands.
-    #[error("OpExecutionModeId is only valid when the Mode operand is an execution mode that takes Extra Operands that are id operands")]
-    ExecutionModeIdInvalidMode,
+    #[error("OpExecutionModeId is only valid when the Mode operand is an execution mode that takes Extra Operands that are id operands (mode {mode:?})")]
+    ExecutionModeIdInvalidMode {
+        /// The offending execution mode.
+        mode: rspirv::spirv::ExecutionMode,
+    },
     /// OpExecutionMode used with mode that takes ID operands.
-    #[error("OpExecutionMode is only valid when the Mode operand is an execution mode that takes no Extra Operands, or takes Extra Operands that are not id operands")]
-    ExecutionModeNonIdMode,
+    #[error("OpExecutionMode is only valid when the Mode operand is an execution mode that takes no Extra Operands, or takes Extra Operands that are not id operands (mode {mode:?})")]
+    ExecutionModeNonIdMode {
+        /// The offending execution mode.
+        mode: rspirv::spirv::ExecutionMode,
+    },
     /// Execution mode operands must be constants.
     #[error("For OpExecutionModeId all Extra Operand ids must be constant instructions")]
     ExecutionModeIdOperandsNotConstant,

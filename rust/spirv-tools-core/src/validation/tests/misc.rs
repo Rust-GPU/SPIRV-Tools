@@ -4445,3 +4445,509 @@ fn constant_composite_matrix_wrong_column_type_fails() {
         "expected ConstantCompositeConstituentTypeMismatch, got {err:?}"
     );
 }
+
+// ============================================================================
+// Commit 13: OpExecutionModeId vs OpExecutionMode distinction + mode→model
+// ============================================================================
+
+#[test]
+fn execution_mode_id_with_non_id_mode_fails() {
+    // OpExecutionModeId with OriginUpperLeft (not an id-form mode) should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(0x0001_0500));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    // Use OpExecutionModeId (not OpExecutionMode) with OriginUpperLeft
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionModeId,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        None,
+        Some(2),
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(4), vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpExecutionModeId with non-id mode should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ExecutionModeIdInvalidMode {
+                mode: rspirv::spirv::ExecutionMode::OriginUpperLeft,
+                ..
+            }
+        ),
+        "expected ExecutionModeIdInvalidMode, got {err:?}"
+    );
+}
+
+#[test]
+fn execution_mode_with_id_only_mode_fails() {
+    // OpExecutionMode with LocalSizeId (an id-form-only mode) should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(0x0001_0500));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    // Use OpExecutionMode (not OpExecutionModeId) with LocalSizeId
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSizeId),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+        ],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        None,
+        Some(2),
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(4), vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpExecutionMode with id-only mode should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ExecutionModeNonIdMode {
+                mode: rspirv::spirv::ExecutionMode::LocalSizeId,
+                ..
+            }
+        ),
+        "expected ExecutionModeNonIdMode, got {err:?}"
+    );
+}
+
+#[test]
+fn geometry_only_mode_invocations_accepted_with_geometry() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Geometry %main \"main\"",
+        "OpExecutionMode %main Invocations 1",
+        "OpExecutionMode %main InputPoints",
+        "OpExecutionMode %main OutputPoints",
+        "OpExecutionMode %main OutputVertices 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Geometry modes should be accepted with Geometry model");
+}
+
+#[test]
+fn geometry_only_mode_invocations_rejected_with_fragment() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "OpExecutionMode %main Invocations 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("Invocations should not be accepted with Fragment model");
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::Invocations,
+                execution_model: rspirv::spirv::ExecutionModel::Fragment,
+                ..
+            }
+        ),
+        "expected ExecutionModeRequiresExecutionModel for Invocations, got {error:?}"
+    );
+}
+
+#[test]
+fn tessellation_mode_quads_accepted_with_tess_eval() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Tessellation",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint TessellationEvaluation %main \"main\"",
+        "OpExecutionMode %main Quads",
+        "OpExecutionMode %main OutputVertices 3",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Quads should be accepted with TessellationEvaluation model");
+}
+
+#[test]
+fn tessellation_mode_quads_rejected_with_fragment() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Tessellation",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "OpExecutionMode %main Quads",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("Quads should not be accepted with Fragment model");
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::Quads,
+                execution_model: rspirv::spirv::ExecutionModel::Fragment,
+                ..
+            }
+        ),
+        "expected ExecutionModeRequiresExecutionModel for Quads, got {error:?}"
+    );
+}
+
+#[test]
+fn triangles_mode_accepted_with_geometry() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Geometry %main \"main\"",
+        "OpExecutionMode %main Triangles",
+        "OpExecutionMode %main Invocations 1",
+        "OpExecutionMode %main OutputPoints",
+        "OpExecutionMode %main OutputVertices 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Triangles should be accepted with Geometry model");
+}
+
+#[test]
+fn triangles_mode_rejected_with_fragment() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "OpExecutionMode %main Triangles",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("Triangles should not be accepted with Fragment model");
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::Triangles,
+                execution_model: rspirv::spirv::ExecutionModel::Fragment,
+                ..
+            }
+        ),
+        "expected ExecutionModeRequiresExecutionModel for Triangles, got {error:?}"
+    );
+}
+
+#[test]
+fn kernel_only_mode_rejected_with_fragment() {
+    // VecTypeHint is Kernel-only, using it with Fragment should fail
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Operand};
+    let mut module = rspirv::dr::Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(0x0001_0500));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Kernel)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::VecTypeHint),
+            Operand::LiteralBit32(0),
+        ],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        None,
+        Some(2),
+        vec![],
+    ));
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(4), vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    // Use Universal env since Kernel capability is disallowed in Vulkan
+    let err = validate_module(&binary, TargetEnv::Universal1_5)
+        .expect_err("VecTypeHint should not be accepted with Fragment model");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::VecTypeHint,
+                execution_model: rspirv::spirv::ExecutionModel::Fragment,
+                ..
+            }
+        ),
+        "expected ExecutionModeRequiresExecutionModel for VecTypeHint, got {err:?}"
+    );
+}
+
+#[test]
+fn output_points_accepted_with_geometry() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Geometry %main \"main\"",
+        "OpExecutionMode %main InputPoints",
+        "OpExecutionMode %main Invocations 1",
+        "OpExecutionMode %main OutputPoints",
+        "OpExecutionMode %main OutputVertices 1",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("OutputPoints should be accepted with Geometry model");
+}
+
+#[test]
+fn output_points_rejected_with_fragment() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Geometry",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "OpExecutionMode %main OutputPoints",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("OutputPoints should not be accepted with Fragment model");
+    assert!(
+        matches!(
+            error,
+            ValidationError::ExecutionModeRequiresExecutionModel {
+                mode: rspirv::spirv::ExecutionMode::OutputPoints,
+                execution_model: rspirv::spirv::ExecutionModel::Fragment,
+                ..
+            }
+        ),
+        "expected ExecutionModeRequiresExecutionModel for OutputPoints, got {error:?}"
+    );
+}

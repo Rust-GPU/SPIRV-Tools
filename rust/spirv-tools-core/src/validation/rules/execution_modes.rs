@@ -85,115 +85,28 @@ impl ValidationRule for ExecutionModesRule {
 
             let execution_mode = execution_mode_from_operand(mode.operands.get(1));
             if let Some(execution_mode) = execution_mode {
+                // Validate OpExecutionModeId vs OpExecutionMode distinction
+                let is_id_form = mode.class.opcode == Op::ExecutionModeId;
+                if is_id_form && !is_id_form_mode(execution_mode) {
+                    return Err(ValidationError::ExecutionModeIdInvalidMode {
+                        mode: execution_mode,
+                    }
+                    .into());
+                }
+                if !is_id_form && is_id_form_mode(execution_mode) {
+                    return Err(ValidationError::ExecutionModeNonIdMode {
+                        mode: execution_mode,
+                    }
+                    .into());
+                }
+
                 if execution_mode == ExecutionMode::LocalSizeId
                     && !local_size_id_allowed(ctx.env, ctx.options)
                 {
                     return Err(ValidationError::LocalSizeIdNotAllowed { env: ctx.env }.into());
                 }
                 if let Some(model) = entry_point_models.get(&function) {
-                    match execution_mode {
-                        ExecutionMode::OutputVertices => {
-                            let allowed = [
-                                ExecutionModel::Geometry,
-                                ExecutionModel::TessellationControl,
-                                ExecutionModel::TessellationEvaluation,
-                                ExecutionModel::MeshEXT,
-                                ExecutionModel::MeshNV,
-                            ];
-                            if !allowed.contains(model) {
-                                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
-                                    entry_point: function.into_inner(),
-                                    mode: execution_mode,
-                                    execution_model: *model,
-                                    allowed_models: allowed.to_vec(),
-                                }
-                                .into());
-                            }
-                            if ctx.env.is_vulkan()
-                                && ctx
-                                    .declared_capabilities
-                                    .contains(&Capability::MeshShadingEXT)
-                                && matches!(mode.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
-                                && (*model == ExecutionModel::MeshEXT
-                                    || *model == ExecutionModel::MeshNV)
-                            {
-                                return Err(ValidationError::InvalidExecutionModeValue {
-                                    entry_point: function.into_inner(),
-                                    mode: execution_mode,
-                                    value: 0,
-                                }
-                                .into());
-                            }
-                        }
-                        ExecutionMode::OutputLinesEXT
-                        | ExecutionMode::OutputTrianglesEXT
-                        | ExecutionMode::OutputPrimitivesEXT => {
-                            let allowed = [ExecutionModel::MeshEXT, ExecutionModel::MeshNV];
-                            if !allowed.contains(model) {
-                                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
-                                    entry_point: function.into_inner(),
-                                    mode: execution_mode,
-                                    execution_model: *model,
-                                    allowed_models: allowed.to_vec(),
-                                }
-                                .into());
-                            }
-                            if ctx.env.is_vulkan()
-                                && ctx
-                                    .declared_capabilities
-                                    .contains(&Capability::MeshShadingEXT)
-                                && execution_mode == ExecutionMode::OutputPrimitivesEXT
-                                && matches!(mode.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
-                            {
-                                return Err(ValidationError::InvalidExecutionModeValue {
-                                    entry_point: function.into_inner(),
-                                    mode: execution_mode,
-                                    value: 0,
-                                }
-                                .into());
-                            }
-                        }
-                        // Fragment-only execution modes
-                        ExecutionMode::PixelCenterInteger
-                        | ExecutionMode::OriginUpperLeft
-                        | ExecutionMode::OriginLowerLeft
-                        | ExecutionMode::EarlyFragmentTests
-                        | ExecutionMode::DepthReplacing
-                        | ExecutionMode::DepthGreater
-                        | ExecutionMode::DepthLess
-                        | ExecutionMode::DepthUnchanged
-                        | ExecutionMode::StencilRefReplacingEXT
-                        | ExecutionMode::NonCoherentColorAttachmentReadEXT
-                        | ExecutionMode::NonCoherentDepthAttachmentReadEXT
-                        | ExecutionMode::NonCoherentStencilAttachmentReadEXT
-                        | ExecutionMode::PixelInterlockOrderedEXT
-                        | ExecutionMode::PixelInterlockUnorderedEXT
-                        | ExecutionMode::SampleInterlockOrderedEXT
-                        | ExecutionMode::SampleInterlockUnorderedEXT
-                        | ExecutionMode::ShadingRateInterlockOrderedEXT
-                        | ExecutionMode::ShadingRateInterlockUnorderedEXT
-                        | ExecutionMode::PostDepthCoverage
-                        | ExecutionMode::EarlyAndLateFragmentTestsAMD
-                        | ExecutionMode::StencilRefUnchangedFrontAMD
-                        | ExecutionMode::StencilRefGreaterFrontAMD
-                        | ExecutionMode::StencilRefLessFrontAMD
-                        | ExecutionMode::StencilRefUnchangedBackAMD
-                        | ExecutionMode::StencilRefGreaterBackAMD
-                        | ExecutionMode::StencilRefLessBackAMD
-                        | ExecutionMode::RequireFullQuadsKHR => {
-                            let allowed = [ExecutionModel::Fragment];
-                            if !allowed.contains(model) {
-                                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
-                                    entry_point: function.into_inner(),
-                                    mode: execution_mode,
-                                    execution_model: *model,
-                                    allowed_models: allowed.to_vec(),
-                                }
-                                .into());
-                            }
-                        }
-                        _ => {}
-                    }
+                    validate_mode_model(execution_mode, *model, function, ctx, mode)?;
                 }
             }
         }
@@ -475,6 +388,232 @@ impl ValidationRule for FloatControls2Rule {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Returns true if this execution mode is "id-form only" — it must use
+/// OpExecutionModeId (not OpExecutionMode) because its extra operands are ids.
+fn is_id_form_mode(mode: ExecutionMode) -> bool {
+    matches!(
+        mode,
+        ExecutionMode::SubgroupsPerWorkgroupId
+            | ExecutionMode::LocalSizeHintId
+            | ExecutionMode::LocalSizeId
+            | ExecutionMode::FPFastMathDefault
+            // INTEL/AMDX modes: raw values since rspirv may not have them
+    )
+    || matches!(mode as u32,
+        5893  // MaximumRegistersIdINTEL
+        | 5073  // IsApiEntryAMDX
+        | 5071  // MaxNodeRecursionAMDX
+        | 5077  // MaxNumWorkgroupsAMDX
+        | 5072  // ShaderIndexAMDX
+        | 5074  // SharesInputWithAMDX
+        | 5078  // StaticNumWorkgroupsAMDX
+    )
+}
+
+/// Validate execution mode → execution model restrictions.
+fn validate_mode_model(
+    execution_mode: ExecutionMode,
+    model: ExecutionModel,
+    function: ResultId,
+    ctx: &ValidationContext<'_>,
+    mode_inst: &rspirv::dr::Instruction,
+) -> ValidationResult {
+    match execution_mode {
+        // Geometry-only modes
+        ExecutionMode::Invocations
+        | ExecutionMode::InputPoints
+        | ExecutionMode::InputLines
+        | ExecutionMode::InputLinesAdjacency
+        | ExecutionMode::InputTrianglesAdjacency
+        | ExecutionMode::OutputLineStrip
+        | ExecutionMode::OutputTriangleStrip => {
+            let allowed = [ExecutionModel::Geometry];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        // Tessellation-only modes
+        ExecutionMode::SpacingEqual
+        | ExecutionMode::SpacingFractionalEven
+        | ExecutionMode::SpacingFractionalOdd
+        | ExecutionMode::VertexOrderCw
+        | ExecutionMode::VertexOrderCcw
+        | ExecutionMode::PointMode
+        | ExecutionMode::Quads
+        | ExecutionMode::Isolines => {
+            let allowed = [
+                ExecutionModel::TessellationControl,
+                ExecutionModel::TessellationEvaluation,
+            ];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        // Triangles: Geometry OR Tessellation
+        ExecutionMode::Triangles => {
+            let allowed = [
+                ExecutionModel::Geometry,
+                ExecutionModel::TessellationControl,
+                ExecutionModel::TessellationEvaluation,
+            ];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        // Kernel-only modes
+        ExecutionMode::LocalSizeHint
+        | ExecutionMode::VecTypeHint
+        | ExecutionMode::ContractionOff => {
+            let allowed = [ExecutionModel::Kernel];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        // OutputPoints: Geometry + Mesh (with capabilities)
+        ExecutionMode::OutputPoints => {
+            let allowed = [
+                ExecutionModel::Geometry,
+                ExecutionModel::MeshEXT,
+                ExecutionModel::MeshNV,
+            ];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        ExecutionMode::OutputVertices => {
+            let allowed = [
+                ExecutionModel::Geometry,
+                ExecutionModel::TessellationControl,
+                ExecutionModel::TessellationEvaluation,
+                ExecutionModel::MeshEXT,
+                ExecutionModel::MeshNV,
+            ];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+            if ctx.env.is_vulkan()
+                && ctx
+                    .declared_capabilities
+                    .contains(&Capability::MeshShadingEXT)
+                && matches!(mode_inst.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
+                && (model == ExecutionModel::MeshEXT || model == ExecutionModel::MeshNV)
+            {
+                return Err(ValidationError::InvalidExecutionModeValue {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    value: 0,
+                }
+                .into());
+            }
+        }
+        ExecutionMode::OutputLinesEXT
+        | ExecutionMode::OutputTrianglesEXT
+        | ExecutionMode::OutputPrimitivesEXT => {
+            let allowed = [ExecutionModel::MeshEXT, ExecutionModel::MeshNV];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+            if ctx.env.is_vulkan()
+                && ctx
+                    .declared_capabilities
+                    .contains(&Capability::MeshShadingEXT)
+                && execution_mode == ExecutionMode::OutputPrimitivesEXT
+                && matches!(mode_inst.operands.get(2), Some(rspirv::dr::Operand::LiteralBit32(v)) if *v == 0)
+            {
+                return Err(ValidationError::InvalidExecutionModeValue {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    value: 0,
+                }
+                .into());
+            }
+        }
+        // Fragment-only execution modes
+        ExecutionMode::PixelCenterInteger
+        | ExecutionMode::OriginUpperLeft
+        | ExecutionMode::OriginLowerLeft
+        | ExecutionMode::EarlyFragmentTests
+        | ExecutionMode::DepthReplacing
+        | ExecutionMode::DepthGreater
+        | ExecutionMode::DepthLess
+        | ExecutionMode::DepthUnchanged
+        | ExecutionMode::StencilRefReplacingEXT
+        | ExecutionMode::NonCoherentColorAttachmentReadEXT
+        | ExecutionMode::NonCoherentDepthAttachmentReadEXT
+        | ExecutionMode::NonCoherentStencilAttachmentReadEXT
+        | ExecutionMode::PixelInterlockOrderedEXT
+        | ExecutionMode::PixelInterlockUnorderedEXT
+        | ExecutionMode::SampleInterlockOrderedEXT
+        | ExecutionMode::SampleInterlockUnorderedEXT
+        | ExecutionMode::ShadingRateInterlockOrderedEXT
+        | ExecutionMode::ShadingRateInterlockUnorderedEXT
+        | ExecutionMode::PostDepthCoverage
+        | ExecutionMode::EarlyAndLateFragmentTestsAMD
+        | ExecutionMode::StencilRefUnchangedFrontAMD
+        | ExecutionMode::StencilRefGreaterFrontAMD
+        | ExecutionMode::StencilRefLessFrontAMD
+        | ExecutionMode::StencilRefUnchangedBackAMD
+        | ExecutionMode::StencilRefGreaterBackAMD
+        | ExecutionMode::StencilRefLessBackAMD
+        | ExecutionMode::RequireFullQuadsKHR => {
+            let allowed = [ExecutionModel::Fragment];
+            if !allowed.contains(&model) {
+                return Err(ValidationError::ExecutionModeRequiresExecutionModel {
+                    entry_point: function.into_inner(),
+                    mode: execution_mode,
+                    execution_model: model,
+                    allowed_models: allowed.to_vec(),
+                }
+                .into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
 
 fn execution_mode_from_operand(operand: Option<&rspirv::dr::Operand>) -> Option<ExecutionMode> {
     match operand {
