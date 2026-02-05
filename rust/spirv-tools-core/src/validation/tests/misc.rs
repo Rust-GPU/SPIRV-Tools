@@ -5713,3 +5713,48 @@ fn local_size_id_operands_must_be_constants() {
         "expected LocalSizeIdOperandNotConstant at index 4, got {err:?}"
     );
 }
+
+#[test]
+fn output_points_requires_mesh_capability_for_mesh_model() {
+    // OutputPoints with MeshEXT model but without MeshShadingEXT capability should fail
+    // (only Geometry is allowed without mesh capabilities)
+    let text = r#"
+OpCapability Shader
+OpCapability Geometry
+OpMemoryModel Logical GLSL450
+OpEntryPoint Geometry %main "main"
+OpExecutionMode %main InputPoints
+OpExecutionMode %main Invocations 1
+OpExecutionMode %main OutputPoints
+OpExecutionMode %main OutputVertices 3
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("OutputPoints with Geometry model should pass");
+
+    // MeshEXT + OutputPoints + MeshShadingEXT should be OK
+    let text_mesh = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main"
+OpExecutionMode %main OutputPoints
+OpExecutionMode %main OutputVertices 3
+OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text_mesh, TargetEnv::Vulkan1_2)
+        .expect("OutputPoints with MeshEXT and MeshShadingEXT capability should pass");
+}

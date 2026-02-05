@@ -521,19 +521,41 @@ fn validate_mode_model(
                 .into());
             }
         }
-        // OutputPoints: Geometry + Mesh (with capabilities)
+        // OutputPoints: Geometry always; MeshNV with MeshShadingNV; MeshEXT with MeshShadingEXT
         ExecutionMode::OutputPoints => {
-            let allowed = [
-                ExecutionModel::Geometry,
-                ExecutionModel::MeshEXT,
-                ExecutionModel::MeshNV,
-            ];
-            if !allowed.contains(&model) {
+            let model_allowed = match model {
+                ExecutionModel::Geometry => true,
+                ExecutionModel::MeshNV => {
+                    ctx.declared_capabilities
+                        .contains(&Capability::MeshShadingNV)
+                }
+                ExecutionModel::MeshEXT => {
+                    ctx.declared_capabilities
+                        .contains(&Capability::MeshShadingEXT)
+                }
+                _ => false,
+            };
+            if !model_allowed {
+                let has_mesh_cap =
+                    ctx.declared_capabilities
+                        .contains(&Capability::MeshShadingNV)
+                        || ctx
+                            .declared_capabilities
+                            .contains(&Capability::MeshShadingEXT);
+                let allowed = if has_mesh_cap {
+                    vec![
+                        ExecutionModel::Geometry,
+                        ExecutionModel::MeshEXT,
+                        ExecutionModel::MeshNV,
+                    ]
+                } else {
+                    vec![ExecutionModel::Geometry]
+                };
                 return Err(ValidationError::ExecutionModeRequiresExecutionModel {
                     entry_point: function.into_inner(),
                     mode: execution_mode,
                     execution_model: model,
-                    allowed_models: allowed.to_vec(),
+                    allowed_models: allowed,
                 }
                 .into());
             }
