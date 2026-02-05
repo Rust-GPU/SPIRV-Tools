@@ -3349,3 +3349,1099 @@ fn group_fadd_non_float_result_rejected() {
         "Expected GroupResultMustBeFloatScalarOrVector, got: {error:?}"
     );
 }
+
+// ============================================================================
+// Commit 4: GLSL Refract eta type check
+// ============================================================================
+
+#[test]
+fn glsl_refract_vec3_f32_with_f32_eta_passes() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %out
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec3 = OpTypeVector %f32 3
+%ptr_out = OpTypePointer Output %vec3
+%out = OpVariable %ptr_out Output
+%glsl = OpExtInstImport "GLSL.std.450"
+%f32_1 = OpConstant %f32 1.0
+%vec3_val = OpConstantComposite %vec3 %f32_1 %f32_1 %f32_1
+%main = OpFunction %void None %fn
+%entry = OpLabel
+%result = OpExtInst %vec3 %glsl 72 %vec3_val %vec3_val %f32_1
+OpStore %out %result
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Refract vec3<f32> with f32 eta should pass");
+}
+
+#[test]
+fn glsl_refract_vec3_f32_with_f64_eta_fails() {
+    // Use binary construction to precisely test the eta type mismatch
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 20,
+        reserved_word: 0,
+    });
+
+    // OpCapability Shader
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    // OpCapability Float64
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Float64)],
+    ));
+
+    // OpExtInstImport %1 "GLSL.std.450"
+    module.ext_inst_imports.push(Instruction::new(
+        Op::ExtInstImport,
+        None,
+        Some(1),
+        vec![Operand::LiteralString("GLSL.std.450".to_string())],
+    ));
+
+    // OpMemoryModel Logical GLSL450
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+
+    // OpEntryPoint Fragment %10 "main" %15
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+            Operand::IdRef(15),
+        ],
+    ));
+
+    // OpExecutionMode %10 OriginUpperLeft
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // Types and constants
+    // %2 = OpTypeVoid
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVoid,
+        None,
+        Some(2),
+        vec![],
+    ));
+    // %3 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
+    // %4 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %5 = OpTypeFloat 64
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(5),
+        vec![Operand::LiteralBit32(64)],
+    ));
+    // %6 = OpTypeVector %4 3
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(6),
+        vec![Operand::IdRef(4), Operand::LiteralBit32(3)],
+    ));
+    // %7 = OpTypePointer Output %6
+    module.types_global_values.push(Instruction::new(
+        Op::TypePointer,
+        None,
+        Some(7),
+        vec![
+            Operand::StorageClass(rspirv::spirv::StorageClass::Output),
+            Operand::IdRef(6),
+        ],
+    ));
+    // %8 = OpConstant %4 1.0
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(4),
+        Some(8),
+        vec![Operand::LiteralBit32(0x3F80_0000)], // 1.0f32
+    ));
+    // %9 = OpConstant %5 1.0 (64-bit needs two words)
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(5),
+        Some(9),
+        vec![
+            Operand::LiteralBit32(0x0000_0000),
+            Operand::LiteralBit32(0x3FF0_0000),
+        ], // 1.0f64
+    ));
+    // %11 = OpConstantComposite %6 %8 %8 %8
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(6),
+        Some(11),
+        vec![Operand::IdRef(8), Operand::IdRef(8), Operand::IdRef(8)],
+    ));
+    // %15 = OpVariable %7 Output
+    module.types_global_values.push(Instruction::new(
+        Op::Variable,
+        Some(7),
+        Some(15),
+        vec![Operand::StorageClass(
+            rspirv::spirv::StorageClass::Output,
+        )],
+    ));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
+    // %13 = OpExtInst %6 %1 72 %11 %11 %9  (Refract with f64 eta)
+    block.instructions.push(Instruction::new(
+        Op::ExtInst,
+        Some(6),
+        Some(13),
+        vec![
+            Operand::IdRef(1),                     // GLSL import
+            Operand::LiteralExtInstInteger(72),     // Refract opcode
+            Operand::IdRef(11),                     // I
+            Operand::IdRef(11),                     // N
+            Operand::IdRef(9),                      // eta (f64!)
+        ],
+    ));
+    block.instructions.push(Instruction::new(
+        Op::Store,
+        None,
+        None,
+        vec![Operand::IdRef(15), Operand::IdRef(13)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("Refract vec3<f32> with f64 eta should fail");
+    assert!(
+        matches!(err, ValidationError::ExtInstEtaTypeMismatch { .. }),
+        "expected ExtInstEtaTypeMismatch, got {err:?}"
+    );
+}
+
+// ============================================================================
+// Commit 2: OutputVertices with TessellationEvaluation
+// ============================================================================
+
+#[test]
+fn output_vertices_accepted_with_tess_evaluation() {
+    let text = [
+        "OpCapability Shader",
+        "OpCapability Tessellation",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint TessellationEvaluation %main \"main\"",
+        "OpExecutionMode %main Triangles",
+        "OpExecutionMode %main OutputVertices 3",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("OutputVertices should be accepted with TessellationEvaluation");
+}
+
+#[test]
+fn output_vertices_rejected_with_fragment() {
+    let text = [
+        "OpCapability Shader",
+        "OpMemoryModel Logical GLSL450",
+        "OpEntryPoint Fragment %main \"main\"",
+        "OpExecutionMode %main OriginUpperLeft",
+        "OpExecutionMode %main OutputVertices 3",
+        "%void = OpTypeVoid",
+        "%fn = OpTypeFunction %void",
+        "%main = OpFunction %void None %fn",
+        "%entry = OpLabel",
+        "OpReturn",
+        "OpFunctionEnd",
+    ]
+    .join("\n");
+    let error = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("OutputVertices should not be accepted with Fragment");
+    assert!(matches!(
+        error,
+        ValidationError::ExecutionModeRequiresExecutionModel {
+            mode: rspirv::spirv::ExecutionMode::OutputVertices,
+            execution_model: rspirv::spirv::ExecutionModel::Fragment,
+            ..
+        }
+    ));
+}
+
+// ============================================================================
+// Commit 3: Switch branch count off-by-one fix
+// ============================================================================
+
+#[test]
+fn switch_at_exact_limit_passes() {
+    use crate::validation::rules::limits::SwitchBranchLimitRule;
+    use crate::validation::{TestContextData, ValidationRule, LIMIT_MAX_SWITCH_BRANCHES};
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build a switch with 2 case branches
+    let switch_inst = Instruction::new(
+        rspirv::spirv::Op::Switch,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2), // default
+            Operand::LiteralBit32(0),
+            Operand::IdRef(3), // case 0
+            Operand::LiteralBit32(1),
+            Operand::IdRef(4), // case 1
+        ],
+    );
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![switch_inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
+
+    let mut test_data = TestContextData::default();
+    test_data.module.functions.push(function);
+    test_data
+        .options
+        .limits
+        .insert(LIMIT_MAX_SWITCH_BRANCHES, 2); // limit = 2, cases = 2 -> should pass
+
+    let ctx = test_data.as_context();
+    let rule = SwitchBranchLimitRule;
+    rule.validate(&ctx)
+        .expect("switch with 2 cases at limit of 2 should pass");
+}
+
+#[test]
+fn switch_over_limit_fails() {
+    use crate::validation::rules::limits::SwitchBranchLimitRule;
+    use crate::validation::{TestContextData, ValidationRule, LIMIT_MAX_SWITCH_BRANCHES};
+    use rspirv::dr::{Instruction, Operand};
+
+    // Build a switch with 3 case branches
+    let switch_inst = Instruction::new(
+        rspirv::spirv::Op::Switch,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::IdRef(2), // default
+            Operand::LiteralBit32(0),
+            Operand::IdRef(3), // case 0
+            Operand::LiteralBit32(1),
+            Operand::IdRef(4), // case 1
+            Operand::LiteralBit32(2),
+            Operand::IdRef(5), // case 2
+        ],
+    );
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![switch_inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
+
+    let mut test_data = TestContextData::default();
+    test_data.module.functions.push(function);
+    test_data
+        .options
+        .limits
+        .insert(LIMIT_MAX_SWITCH_BRANCHES, 2); // limit = 2, cases = 3 -> should fail
+
+    let ctx = test_data.as_context();
+    let rule = SwitchBranchLimitRule;
+    let err = rule
+        .validate(&ctx)
+        .expect_err("switch with 3 cases at limit of 2 should fail");
+    assert_eq!(
+        err.error,
+        ValidationError::LimitExceeded {
+            limit_kind: LIMIT_MAX_SWITCH_BRANCHES,
+            limit: 2,
+            found: 3
+        }
+    );
+}
+
+// ============================================================================
+// Commit 6: Transpose dimension validation
+// ============================================================================
+
+/// Helper to build a minimal binary module with OpTranspose.
+/// `input_mat_type`: (col_count, row_count) of input matrix
+/// `result_mat_type`: (col_count, row_count) of result matrix
+fn build_transpose_module(
+    input_cols: u32,
+    input_rows: u32,
+    result_cols: u32,
+    result_rows: u32,
+) -> Vec<u32> {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 30,
+        reserved_word: 0,
+    });
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Matrix)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(20),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(20),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(1), vec![]));
+    // %2 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(2),
+        vec![Operand::IdRef(1)],
+    ));
+    // %3 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(3),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %4 = OpTypeVector %f32 <input_rows>
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(4),
+        vec![Operand::IdRef(3), Operand::LiteralBit32(input_rows)],
+    ));
+    // %5 = OpTypeVector %f32 <result_rows>
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(5),
+        vec![Operand::IdRef(3), Operand::LiteralBit32(result_rows)],
+    ));
+    // %6 = OpTypeMatrix %vec_input_rows <input_cols>
+    module.types_global_values.push(Instruction::new(
+        Op::TypeMatrix,
+        None,
+        Some(6),
+        vec![Operand::IdRef(4), Operand::LiteralBit32(input_cols)],
+    ));
+    // %7 = OpTypeMatrix %vec_result_rows <result_cols>
+    module.types_global_values.push(Instruction::new(
+        Op::TypeMatrix,
+        None,
+        Some(7),
+        vec![Operand::IdRef(5), Operand::LiteralBit32(result_cols)],
+    ));
+    // %8 = OpConstant %f32 1.0
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(8),
+        vec![Operand::LiteralBit32(0x3F80_0000)],
+    ));
+    // Build input matrix constant
+    let mut col_operands = Vec::new();
+    for _ in 0..input_rows {
+        col_operands.push(Operand::IdRef(8));
+    }
+    // %9 = OpConstantComposite %vec_input_rows ...
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(4),
+        Some(9),
+        col_operands,
+    ));
+    let mut mat_operands = Vec::new();
+    for _ in 0..input_cols {
+        mat_operands.push(Operand::IdRef(9));
+    }
+    // %10 = OpConstantComposite %mat_input ...
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(6),
+        Some(10),
+        mat_operands,
+    ));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(20),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(21), vec![]));
+    // %22 = OpTranspose %mat_result %mat_input
+    block.instructions.push(Instruction::new(
+        Op::Transpose,
+        Some(7),
+        Some(22),
+        vec![Operand::IdRef(10)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    module.assemble()
+}
+
+#[test]
+fn transpose_mat2x3_to_mat3x2_passes() {
+    // mat2x3 (2 cols of vec3) transposed = mat3x2 (3 cols of vec2) - valid
+    let binary = build_transpose_module(2, 3, 3, 2);
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("Transpose mat2x3 -> mat3x2 should pass");
+}
+
+#[test]
+fn transpose_mat2x3_to_mat2x3_fails() {
+    // mat2x3 transposed should be mat3x2, NOT mat2x3 - dimensions don't match
+    let binary = build_transpose_module(2, 3, 2, 3);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("Transpose mat2x3 -> mat2x3 should fail");
+    assert!(
+        matches!(err, ValidationError::TransposeDimensionMismatch { .. }),
+        "expected TransposeDimensionMismatch, got {err:?}"
+    );
+}
+
+// ============================================================================
+// Commit 5: CopyLogical structural match
+// ============================================================================
+
+/// Helper to build a binary module with OpCopyLogical between two struct types.
+fn build_copy_logical_module(
+    struct_a_members: &[u32],
+    struct_b_members: &[u32],
+) -> Vec<u32> {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 30,
+        reserved_word: 0,
+    });
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(20),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(20),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(1), vec![]));
+    // %2 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(2),
+        vec![Operand::IdRef(1)],
+    ));
+    // %3 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(3),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %4 = OpTypeInt 32 1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(1)],
+    ));
+
+    // %5 = OpTypeStruct <struct_a_members>
+    let a_ops: Vec<_> = struct_a_members.iter().map(|id| Operand::IdRef(*id)).collect();
+    module.types_global_values.push(Instruction::new(
+        Op::TypeStruct,
+        None,
+        Some(5),
+        a_ops,
+    ));
+    // %6 = OpTypeStruct <struct_b_members>
+    let b_ops: Vec<_> = struct_b_members.iter().map(|id| Operand::IdRef(*id)).collect();
+    module.types_global_values.push(Instruction::new(
+        Op::TypeStruct,
+        None,
+        Some(6),
+        b_ops,
+    ));
+
+    // Build constant for struct_a
+    let mut const_ops = Vec::new();
+    for (i, &member_type_id) in struct_a_members.iter().enumerate() {
+        let const_id = 10 + i as u32;
+        // Create a constant of the appropriate type
+        if member_type_id == 3 {
+            // float
+            module.types_global_values.push(Instruction::new(
+                Op::Constant,
+                Some(3),
+                Some(const_id),
+                vec![Operand::LiteralBit32(0x3F80_0000)],
+            ));
+        } else {
+            // int
+            module.types_global_values.push(Instruction::new(
+                Op::Constant,
+                Some(4),
+                Some(const_id),
+                vec![Operand::LiteralBit32(1)],
+            ));
+        }
+        const_ops.push(Operand::IdRef(const_id));
+    }
+    // %15 = OpConstantComposite %struct_a ...
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(5),
+        Some(15),
+        const_ops,
+    ));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(20),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(21), vec![]));
+    // %22 = OpCopyLogical %struct_b %val_a
+    block.instructions.push(Instruction::new(
+        Op::CopyLogical,
+        Some(6),
+        Some(22),
+        vec![Operand::IdRef(15)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    module.assemble()
+}
+
+#[test]
+fn copy_logical_matching_structs_passes() {
+    // Both structs have {f32, f32} - logically matching
+    let binary = build_copy_logical_module(&[3, 3], &[3, 3]);
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("CopyLogical between structurally matching structs should pass");
+}
+
+#[test]
+fn copy_logical_mismatched_member_count_fails() {
+    // struct_a has {f32, f32}, struct_b has {f32, f32, i32}
+    let binary = build_copy_logical_module(&[3, 3], &[3, 3, 4]);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("CopyLogical between structs with different member counts should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::CopyLogicalTypesNotLogicallyMatching { .. }
+        ),
+        "expected CopyLogicalTypesNotLogicallyMatching, got {err:?}"
+    );
+}
+
+#[test]
+fn copy_logical_mismatched_member_types_fails() {
+    // struct_a has {f32, f32}, struct_b has {f32, i32}
+    let binary = build_copy_logical_module(&[3, 3], &[3, 4]);
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("CopyLogical between structs with different member types should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::CopyLogicalTypesNotLogicallyMatching { .. }
+        ),
+        "expected CopyLogicalTypesNotLogicallyMatching, got {err:?}"
+    );
+}
+
+// ============================================================================
+// Commit 7: ConstantComposite constituent type checks
+// ============================================================================
+
+#[test]
+fn constant_composite_struct_correct_types_passes() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%struct = OpTypeStruct %f32 %i32
+%f32_1 = OpConstant %f32 1.0
+%i32_1 = OpConstant %i32 1
+%val = OpConstantComposite %struct %f32_1 %i32_1
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("ConstantComposite struct with correct member types should pass");
+}
+
+#[test]
+fn constant_composite_struct_wrong_member_type_fails() {
+    // struct has {f32, i32} but we provide {f32, f32}
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 20,
+        reserved_word: 0,
+    });
+
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(1), vec![]));
+    // %2 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(2),
+        vec![Operand::IdRef(1)],
+    ));
+    // %3 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(3),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %4 = OpTypeInt 32 1
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(1)],
+    ));
+    // %5 = OpTypeStruct %f32 %i32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeStruct,
+        None,
+        Some(5),
+        vec![Operand::IdRef(3), Operand::IdRef(4)],
+    ));
+    // %6 = OpConstant %f32 1.0
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(6),
+        vec![Operand::LiteralBit32(0x3F80_0000)],
+    ));
+    // %7 = OpConstant %f32 2.0  (wrong type for member 1 which expects i32)
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(7),
+        vec![Operand::LiteralBit32(0x4000_0000)],
+    ));
+    // %8 = OpConstantComposite %struct %f32_val %f32_val (member 1 should be i32!)
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(5),
+        Some(8),
+        vec![Operand::IdRef(6), Operand::IdRef(7)],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("ConstantComposite with wrong member type should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ConstantCompositeConstituentTypeMismatch { index: 1 }
+        ),
+        "expected ConstantCompositeConstituentTypeMismatch at index 1, got {err:?}"
+    );
+}
+
+#[test]
+fn constant_composite_matrix_wrong_column_type_fails() {
+    // Matrix expects vec3 columns but we provide vec2
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 20,
+        reserved_word: 0,
+    });
+
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Shader)],
+    ));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(Capability::Matrix)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(15),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(15),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // %1 = OpTypeVoid
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(1), vec![]));
+    // %2 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(2),
+        vec![Operand::IdRef(1)],
+    ));
+    // %3 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(3),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %4 = OpTypeVector %f32 3
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(4),
+        vec![Operand::IdRef(3), Operand::LiteralBit32(3)],
+    ));
+    // %5 = OpTypeVector %f32 2
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(5),
+        vec![Operand::IdRef(3), Operand::LiteralBit32(2)],
+    ));
+    // %6 = OpTypeMatrix %vec3 2
+    module.types_global_values.push(Instruction::new(
+        Op::TypeMatrix,
+        None,
+        Some(6),
+        vec![Operand::IdRef(4), Operand::LiteralBit32(2)],
+    ));
+    // %7 = OpConstant %f32 1.0
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(3),
+        Some(7),
+        vec![Operand::LiteralBit32(0x3F80_0000)],
+    ));
+    // %8 = OpConstantComposite %vec2 %f32_1 %f32_1 (wrong column type)
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(5),
+        Some(8),
+        vec![Operand::IdRef(7), Operand::IdRef(7)],
+    ));
+    // %9 = OpConstantComposite %vec2 %f32_1 %f32_1 (wrong column type)
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(5),
+        Some(9),
+        vec![Operand::IdRef(7), Operand::IdRef(7)],
+    ));
+    // %10 = OpConstantComposite %mat2x3 %vec2_a %vec2_b (columns are vec2, should be vec3)
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(6),
+        Some(10),
+        vec![Operand::IdRef(8), Operand::IdRef(9)],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(1),
+        Some(15),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(2),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(16), vec![]));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("ConstantComposite matrix with wrong column type should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ConstantCompositeConstituentTypeMismatch { .. }
+        ),
+        "expected ConstantCompositeConstituentTypeMismatch, got {err:?}"
+    );
+}

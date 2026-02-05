@@ -725,7 +725,7 @@ impl ValidationRule for TransposeRule {
                         }
                     }
 
-                    // Matrix operand must be matrix
+                    // Matrix operand must be matrix and dimensions must be transposed
                     if let Some(rspirv::dr::Operand::IdRef(matrix_id)) = inst.operands.first() {
                         let matrix_inst = crate::validation::types::ResultId::try_from(*matrix_id)
                             .ok()
@@ -759,6 +759,79 @@ impl ValidationRule for TransposeRule {
                                                 }
                                                 .into(),
                                             );
+                                        }
+                                    }
+
+                                    // Validate transpose dimensions:
+                                    // Input MxN (M columns of N-row vectors) -> Result NxM
+                                    if matrix_type_inst.is_matrix_type()
+                                        && result_type_inst.is_matrix_type()
+                                    {
+                                        let input_col_count =
+                                            matrix_type_inst.matrix_column_count();
+                                        let input_col_type_id =
+                                            matrix_type_inst.matrix_column_type_id();
+                                        let result_col_count =
+                                            result_type_inst.matrix_column_count();
+                                        let result_col_type_id =
+                                            result_type_inst.matrix_column_type_id();
+
+                                        // Get row counts from column vector types
+                                        let input_row_count = input_col_type_id
+                                            .and_then(|id| ResultId::try_from(id).ok())
+                                            .and_then(|rid| ctx.definitions.get(&rid))
+                                            .and_then(|inst| inst.vector_component_count());
+                                        let result_row_count = result_col_type_id
+                                            .and_then(|id| ResultId::try_from(id).ok())
+                                            .and_then(|rid| ctx.definitions.get(&rid))
+                                            .and_then(|inst| inst.vector_component_count());
+
+                                        // Check that result columns = input rows
+                                        // and result rows = input columns
+                                        if let (
+                                            Some(in_cols),
+                                            Some(in_rows),
+                                            Some(res_cols),
+                                            Some(res_rows),
+                                        ) = (
+                                            input_col_count,
+                                            input_row_count,
+                                            result_col_count,
+                                            result_row_count,
+                                        ) {
+                                            if res_cols != in_rows || res_rows != in_cols {
+                                                return Err(
+                                                    ValidationError::TransposeDimensionMismatch {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                    }
+                                                    .into(),
+                                                );
+                                            }
+                                        }
+
+                                        // Also check that component types match
+                                        let input_component_type = input_col_type_id
+                                            .and_then(|id| ResultId::try_from(id).ok())
+                                            .and_then(|rid| ctx.definitions.get(&rid))
+                                            .and_then(|inst| inst.vector_component_type_id());
+                                        let result_component_type = result_col_type_id
+                                            .and_then(|id| ResultId::try_from(id).ok())
+                                            .and_then(|rid| ctx.definitions.get(&rid))
+                                            .and_then(|inst| inst.vector_component_type_id());
+
+                                        if let (Some(in_comp), Some(res_comp)) =
+                                            (input_component_type, result_component_type)
+                                        {
+                                            if in_comp != res_comp {
+                                                return Err(
+                                                    ValidationError::TransposeDimensionMismatch {
+                                                        function: function_id,
+                                                        block: block_id,
+                                                    }
+                                                    .into(),
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -1634,6 +1707,17 @@ impl ValidationRule for CopyLogicalRule {
                         .into());
                     }
 
+                    // Result type must logically match operand type
+                    if !types_logically_match(result_type_raw, source_type, ctx.definitions) {
+                        return Err(
+                            ValidationError::CopyLogicalTypesNotLogicallyMatching {
+                                function: function_id,
+                                block: block_id,
+                            }
+                            .into(),
+                        );
+                    }
+
                     // Check Shader capability restriction for 8/16-bit types
                     if ctx.has_capability(Capability::Shader) {
                         // Check if result type contains limited use int/float types
@@ -1651,6 +1735,136 @@ impl ValidationRule for CopyLogicalRule {
             }
         }
         Ok(())
+    }
+}
+
+/// Check if two types are "logically matching" for OpCopyLogical.
+///
+/// Two types logically match if they are the same type, or if they are composites
+/// with the same structure (same opcode, same number of members/elements, and
+/// recursively logically-matching member types).
+fn types_logically_match(
+    type_a: u32,
+    type_b: u32,
+    definitions: &std::collections::HashMap<ResultId, rspirv::dr::Instruction>,
+) -> bool {
+    if type_a == type_b {
+        return true;
+    }
+    let Ok(rid_a) = ResultId::try_from(type_a) else {
+        return false;
+    };
+    let Ok(rid_b) = ResultId::try_from(type_b) else {
+        return false;
+    };
+    let Some(inst_a) = definitions.get(&rid_a) else {
+        return false;
+    };
+    let Some(inst_b) = definitions.get(&rid_b) else {
+        return false;
+    };
+
+    // Must be same opcode to logically match
+    if inst_a.class.opcode != inst_b.class.opcode {
+        return false;
+    }
+
+    match inst_a.class.opcode {
+        Op::TypeStruct => {
+            // Same number of members
+            if inst_a.operands.len() != inst_b.operands.len() {
+                return false;
+            }
+            // Each member must logically match
+            for (op_a, op_b) in inst_a.operands.iter().zip(inst_b.operands.iter()) {
+                let (Some(member_a), Some(member_b)) = (
+                    match op_a {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    },
+                    match op_b {
+                        rspirv::dr::Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    },
+                ) else {
+                    return false;
+                };
+                if !types_logically_match(member_a, member_b, definitions) {
+                    return false;
+                }
+            }
+            true
+        }
+        Op::TypeArray => {
+            // Element types must logically match, and lengths must be identical
+            let elem_a = inst_a.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let elem_b = inst_b.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let len_a = inst_a.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let len_b = inst_b.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            // Array lengths must be the same ID (same constant)
+            if len_a != len_b {
+                return false;
+            }
+            match (elem_a, elem_b) {
+                (Some(a), Some(b)) => types_logically_match(a, b, definitions),
+                _ => false,
+            }
+        }
+        Op::TypeRuntimeArray => {
+            // Element types must logically match
+            let elem_a = inst_a.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let elem_b = inst_b.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            match (elem_a, elem_b) {
+                (Some(a), Some(b)) => types_logically_match(a, b, definitions),
+                _ => false,
+            }
+        }
+        Op::TypeVector | Op::TypeMatrix => {
+            // Element types must logically match and counts must be the same
+            let elem_a = inst_a.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let elem_b = inst_b.operands.first().and_then(|op| match op {
+                rspirv::dr::Operand::IdRef(id) => Some(*id),
+                _ => None,
+            });
+            let count_a = inst_a.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                _ => None,
+            });
+            let count_b = inst_b.operands.get(1).and_then(|op| match op {
+                rspirv::dr::Operand::LiteralBit32(v) => Some(*v),
+                _ => None,
+            });
+            if count_a != count_b {
+                return false;
+            }
+            match (elem_a, elem_b) {
+                (Some(a), Some(b)) => types_logically_match(a, b, definitions),
+                _ => false,
+            }
+        }
+        // For non-composite types, they must be identical (already checked type_a == type_b above)
+        _ => false,
     }
 }
 

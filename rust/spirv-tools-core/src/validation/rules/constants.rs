@@ -492,7 +492,14 @@ impl ValidationRule for ConstantCompositeRule {
             // Validate type-specific requirements
             match result_type_inst.class.opcode {
                 Op::TypeVector => {
-                    // Get expected component count
+                    // Get expected component type and count
+                    let component_type_id = result_type_inst
+                        .operands
+                        .first()
+                        .and_then(|op| match op {
+                            Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        });
                     let component_count = result_type_inst
                         .operands
                         .get(1)
@@ -515,9 +522,38 @@ impl ValidationRule for ConstantCompositeRule {
                             .into());
                         }
                     }
+
+                    // Check each constituent type matches component type
+                    if let Some(expected_type) = component_type_id {
+                        for (idx, constituent_op) in inst.operands.iter().enumerate() {
+                            if let Operand::IdRef(cid) = constituent_op {
+                                let constituent_type = ResultId::try_from(*cid)
+                                    .ok()
+                                    .and_then(|rid| ctx.definitions.get(&rid))
+                                    .and_then(|ci| ci.result_type);
+                                if let Some(ct) = constituent_type {
+                                    if ct != expected_type {
+                                        return Err(
+                                            ValidationError::ConstantCompositeConstituentTypeMismatch {
+                                                index: idx,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Op::TypeMatrix => {
-                    // Get expected column count
+                    // Get expected column type and count
+                    let column_type_id = result_type_inst
+                        .operands
+                        .first()
+                        .and_then(|op| match op {
+                            Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        });
                     let column_count = result_type_inst
                         .operands
                         .get(1)
@@ -540,9 +576,38 @@ impl ValidationRule for ConstantCompositeRule {
                             .into());
                         }
                     }
+
+                    // Check each constituent type matches column type
+                    if let Some(expected_type) = column_type_id {
+                        for (idx, constituent_op) in inst.operands.iter().enumerate() {
+                            if let Operand::IdRef(cid) = constituent_op {
+                                let constituent_type = ResultId::try_from(*cid)
+                                    .ok()
+                                    .and_then(|rid| ctx.definitions.get(&rid))
+                                    .and_then(|ci| ci.result_type);
+                                if let Some(ct) = constituent_type {
+                                    if ct != expected_type {
+                                        return Err(
+                                            ValidationError::ConstantCompositeConstituentTypeMismatch {
+                                                index: idx,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Op::TypeArray => {
-                    // Get array length from the Length operand (second operand)
+                    // Get array element type and length
+                    let element_type_id = result_type_inst
+                        .operands
+                        .first()
+                        .and_then(|op| match op {
+                            Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        });
                     let length_id = result_type_inst.operands.get(1).and_then(|op| match op {
                         Operand::IdRef(id) => Some(*id),
                         _ => None,
@@ -565,6 +630,28 @@ impl ValidationRule for ConstantCompositeRule {
                             }
                         }
                     }
+
+                    // Check each constituent type matches element type
+                    if let Some(expected_type) = element_type_id {
+                        for (idx, constituent_op) in inst.operands.iter().enumerate() {
+                            if let Operand::IdRef(cid) = constituent_op {
+                                let constituent_type = ResultId::try_from(*cid)
+                                    .ok()
+                                    .and_then(|rid| ctx.definitions.get(&rid))
+                                    .and_then(|ci| ci.result_type);
+                                if let Some(ct) = constituent_type {
+                                    if ct != expected_type {
+                                        return Err(
+                                            ValidationError::ConstantCompositeConstituentTypeMismatch {
+                                                index: idx,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Op::TypeStruct => {
                     // Struct member count
@@ -580,6 +667,38 @@ impl ValidationRule for ConstantCompositeRule {
                                 found: constituent_count,
                             }
                             .into());
+                        }
+                    }
+
+                    // Check each constituent type matches the corresponding member type
+                    for (idx, (member_op, constituent_op)) in result_type_inst
+                        .operands
+                        .iter()
+                        .zip(inst.operands.iter())
+                        .enumerate()
+                    {
+                        let expected_member_type = match member_op {
+                            Operand::IdRef(id) => Some(*id),
+                            _ => None,
+                        };
+                        let constituent_type = match constituent_op {
+                            Operand::IdRef(cid) => ResultId::try_from(*cid)
+                                .ok()
+                                .and_then(|rid| ctx.definitions.get(&rid))
+                                .and_then(|ci| ci.result_type),
+                            _ => None,
+                        };
+                        if let (Some(expected), Some(actual)) =
+                            (expected_member_type, constituent_type)
+                        {
+                            if actual != expected {
+                                return Err(
+                                    ValidationError::ConstantCompositeConstituentTypeMismatch {
+                                        index: idx,
+                                    }
+                                    .into(),
+                                );
+                            }
                         }
                     }
                 }
