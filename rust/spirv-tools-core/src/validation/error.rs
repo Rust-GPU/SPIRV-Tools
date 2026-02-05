@@ -4659,6 +4659,28 @@ pub enum ValidationError {
         /// The opcode of the image operation.
         opcode: rspirv::spirv::Op,
     },
+    /// Image coordinate type mismatch (float vs int vs either).
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: expected Coordinate to be {expected} scalar or vector")]
+    ImageCoordinateTypeMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// Expected type description.
+        expected: &'static str,
+    },
+    /// Image coordinate must be 32-bit.
+    #[error("instruction {opcode:?} in block {block:?} of function {function:?}: expected Coordinate to be 32-bit")]
+    ImageCoordinateNot32Bit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
     /// OpSampledImage in SPIR-V 1.6+ cannot use Buffer dimension.
     #[error("OpSampledImage in block {block:?} of function {function:?} cannot use Buffer dimension in SPIR-V 1.6 or later")]
     SampledImageBufferDimInvalid {

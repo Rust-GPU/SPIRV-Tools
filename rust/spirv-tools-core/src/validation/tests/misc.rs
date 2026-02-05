@@ -5126,6 +5126,29 @@ fn build_image_fetch_module(
         vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
     ));
 
+    // Coordinate type depends on image dimension
+    let coord_components = match dim {
+        rspirv::spirv::Dim::Dim1D | rspirv::spirv::Dim::DimBuffer => 1,
+        rspirv::spirv::Dim::Dim2D | rspirv::spirv::Dim::DimRect => 2,
+        _ => 3,
+    };
+
+    let coord_type_id = if coord_components == 1 {
+        9 // scalar uint
+    } else {
+        // %13 = OpTypeVector %uint <coord_components>
+        module.types_global_values.push(Instruction::new(
+            Op::TypeVector,
+            None,
+            Some(13),
+            vec![
+                Operand::IdRef(9),
+                Operand::LiteralBit32(coord_components),
+            ],
+        ));
+        13
+    };
+
     // %10 = OpVariable %ptr UniformConstant
     module.types_global_values.push(Instruction::new(
         Op::Variable,
@@ -5135,13 +5158,32 @@ fn build_image_fetch_module(
             rspirv::spirv::StorageClass::UniformConstant,
         )],
     ));
-    // %11 = OpConstant %uint 0 (for coordinate)
-    module.types_global_values.push(Instruction::new(
-        Op::Constant,
-        Some(9),
-        Some(11),
-        vec![Operand::LiteralBit32(0)],
-    ));
+    // %11 = coordinate constant
+    if coord_components == 1 {
+        // Scalar constant
+        module.types_global_values.push(Instruction::new(
+            Op::Constant,
+            Some(9),
+            Some(11),
+            vec![Operand::LiteralBit32(0)],
+        ));
+    } else {
+        // Build scalar constants and composite
+        module.types_global_values.push(Instruction::new(
+            Op::Constant,
+            Some(9),
+            Some(14),
+            vec![Operand::LiteralBit32(0)],
+        ));
+        let constituents: Vec<Operand> =
+            (0..coord_components).map(|_| Operand::IdRef(14)).collect();
+        module.types_global_values.push(Instruction::new(
+            Op::ConstantComposite,
+            Some(coord_type_id),
+            Some(11),
+            constituents,
+        ));
+    }
 
     // Function
     let mut func = rspirv::dr::Function::new();
@@ -5248,4 +5290,203 @@ fn image_fetch_non_4_component_result_fails() {
         ),
         "expected ImageSampleResultMustBe4ComponentVector, got {err:?}"
     );
+}
+
+// ============================================================================
+// Commit 15: Image coordinate validation
+// ============================================================================
+
+#[test]
+fn image_fetch_with_float_coordinate_fails() {
+    // OpImageFetch requires integer coordinates, test with float
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+    use rspirv::spirv::ImageFormat;
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader::new(0x0001_0500));
+    module.capabilities.push(Instruction::new(
+        Op::Capability,
+        None,
+        None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel,
+        None,
+        None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint,
+        None,
+        None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::Fragment),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+            Operand::IdRef(10),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode,
+        None,
+        None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+    module.annotations.push(Instruction::new(
+        Op::Decorate,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::Decoration(rspirv::spirv::Decoration::DescriptorSet),
+            Operand::LiteralBit32(0),
+        ],
+    ));
+    module.annotations.push(Instruction::new(
+        Op::Decorate,
+        None,
+        None,
+        vec![
+            Operand::IdRef(10),
+            Operand::Decoration(rspirv::spirv::Decoration::Binding),
+            Operand::LiteralBit32(0),
+        ],
+    ));
+
+    // Types
+    // %2 = OpTypeVoid
+    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    // %3 = OpTypeFunction %void
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)]));
+    // %4 = OpTypeFloat 32
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFloat,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32)],
+    ));
+    // %6 = OpTypeVector %float 4 (result type)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(6),
+        vec![Operand::IdRef(4), Operand::LiteralBit32(4)],
+    ));
+    // %7 = OpTypeImage %float 2D 0 0 0 1 Unknown
+    module.types_global_values.push(Instruction::new(
+        Op::TypeImage,
+        None,
+        Some(7),
+        vec![
+            Operand::IdRef(4),
+            Operand::Dim(rspirv::spirv::Dim::Dim2D),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0),
+            Operand::LiteralBit32(1),
+            Operand::ImageFormat(ImageFormat::Unknown),
+        ],
+    ));
+    // %8 = OpTypePointer UniformConstant %image
+    module.types_global_values.push(Instruction::new(
+        Op::TypePointer,
+        None,
+        Some(8),
+        vec![
+            Operand::StorageClass(rspirv::spirv::StorageClass::UniformConstant),
+            Operand::IdRef(7),
+        ],
+    ));
+    // %15 = OpTypeVector %float 2 (FLOAT coordinate - invalid for fetch!)
+    module.types_global_values.push(Instruction::new(
+        Op::TypeVector,
+        None,
+        Some(15),
+        vec![Operand::IdRef(4), Operand::LiteralBit32(2)],
+    ));
+    // %10 = OpVariable
+    module.types_global_values.push(Instruction::new(
+        Op::Variable,
+        Some(8),
+        Some(10),
+        vec![Operand::StorageClass(rspirv::spirv::StorageClass::UniformConstant)],
+    ));
+    // %16 = OpConstant %float 0.0
+    module.types_global_values.push(Instruction::new(
+        Op::Constant,
+        Some(4),
+        Some(16),
+        vec![Operand::LiteralBit32(0)],
+    ));
+    // %11 = OpConstantComposite %vec2float %16 %16
+    module.types_global_values.push(Instruction::new(
+        Op::ConstantComposite,
+        Some(15),
+        Some(11),
+        vec![Operand::IdRef(16), Operand::IdRef(16)],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function,
+        Some(2),
+        Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+    let mut block = rspirv::dr::Block::new();
+    block.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
+    block.instructions.push(Instruction::new(
+        Op::Load,
+        Some(7),
+        Some(20),
+        vec![Operand::IdRef(10)],
+    ));
+    // OpImageFetch with float coordinate - should fail
+    block.instructions.push(Instruction::new(
+        Op::ImageFetch,
+        Some(6),
+        Some(21),
+        vec![Operand::IdRef(20), Operand::IdRef(11)],
+    ));
+    block
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(block);
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect_err("OpImageFetch with float coordinate should fail");
+    assert!(
+        matches!(
+            err,
+            ValidationError::ImageCoordinateTypeMismatch {
+                expected: "integer",
+                ..
+            }
+        ),
+        "expected ImageCoordinateTypeMismatch with integer, got {err:?}"
+    );
+}
+
+#[test]
+fn image_fetch_1d_with_scalar_coord_passes() {
+    // 1D image with scalar int coordinate should be valid
+    let binary = build_image_fetch_module(1, rspirv::spirv::Dim::Dim1D, 4, true);
+    validate_module(&binary, TargetEnv::Vulkan1_2)
+        .expect("Valid OpImageFetch with 1D scalar coordinate should pass");
 }

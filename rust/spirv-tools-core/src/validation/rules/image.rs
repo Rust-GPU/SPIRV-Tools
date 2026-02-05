@@ -124,7 +124,6 @@ impl ImageTypeInfo {
 // ============================================================================
 
 /// Get the number of coordinate components for a single plane.
-#[allow(dead_code)] // Will be used in Phase 2 (image coordinate validation)
 fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
     match info.dim {
         Dim::Dim1D | Dim::DimBuffer => 1,
@@ -134,7 +133,6 @@ fn get_plane_coord_size(info: &ImageTypeInfo) -> u32 {
 }
 
 /// Get the minimum coordinate size for an image operation.
-#[allow(dead_code)] // Will be used in Phase 2 (image coordinate validation)
 fn get_min_coord_size(op: Op, info: &ImageTypeInfo) -> u32 {
     // Read/Write on Cube use UV (2D), not direction vector
     if info.dim == Dim::DimCube && op.is_image_read_write() {
@@ -2340,6 +2338,157 @@ impl ValidationRule for ImageGatherRule {
 }
 
 // ============================================================================
+// Image Coordinate Rule
+// ============================================================================
+
+/// Returns true if the operation requires float-only coordinates.
+fn requires_float_coords(op: Op) -> bool {
+    op.is_implicit_lod() || op.is_gather() || op == Op::ImageQueryLod
+}
+
+/// Returns true if the operation requires int-only coordinates.
+fn requires_int_coords(op: Op) -> bool {
+    op.is_fetch() || op == Op::ImageTexelPointer
+}
+
+/// Returns true if the operation accepts either int or float coordinates.
+fn accepts_int_or_float_coords(op: Op) -> bool {
+    op.is_explicit_lod() || op.is_image_read_write()
+}
+
+/// Returns true if this opcode has a coordinate operand to validate.
+fn has_coordinate_operand(op: Op) -> bool {
+    requires_float_coords(op) || requires_int_coords(op) || accepts_int_or_float_coords(op)
+}
+
+/// Validates image coordinate types and component counts.
+///
+/// Checks:
+/// - Coordinate type: float for sample/gather, int for fetch/texel pointer,
+///   int or float for explicit LOD/read/write
+/// - Coordinate width: must be 32-bit
+/// - Component count: must have at least the required number of components
+pub struct ImageCoordinateRule;
+
+impl ValidationRule for ImageCoordinateRule {
+    fn name(&self) -> &'static str {
+        "image-coordinate"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    let opcode = inst.class.opcode;
+
+                    if !has_coordinate_operand(opcode) {
+                        continue;
+                    }
+
+                    // Coordinate is at operand index 1 for most image ops
+                    // (operand 0 = image/sampled-image, operand 1 = coordinate)
+                    let coord_idx = 1;
+                    let Some(Operand::IdRef(coord_id)) = inst.operands.get(coord_idx) else {
+                        continue;
+                    };
+                    let Ok(coord_result_id) = ResultId::try_from(*coord_id) else {
+                        continue;
+                    };
+                    let Some(coord_inst) = ctx.definitions.get(&coord_result_id) else {
+                        continue;
+                    };
+                    let Some(coord_type_id) = coord_inst.result_type else {
+                        continue;
+                    };
+
+                    // Type check: float vs int vs either
+                    let is_float =
+                        resolver.is_float_scalar_or_vector(coord_type_id, ctx.definitions);
+                    let is_int =
+                        resolver.is_int_scalar_or_vector(coord_type_id, ctx.definitions);
+
+                    if requires_float_coords(opcode) && !is_float {
+                        return Err(ValidationError::ImageCoordinateTypeMismatch {
+                            function: function_id,
+                            block: block_id,
+                            opcode,
+                            expected: "float",
+                        }
+                        .into());
+                    }
+                    if requires_int_coords(opcode) && !is_int {
+                        return Err(ValidationError::ImageCoordinateTypeMismatch {
+                            function: function_id,
+                            block: block_id,
+                            opcode,
+                            expected: "integer",
+                        }
+                        .into());
+                    }
+                    if accepts_int_or_float_coords(opcode) && !is_float && !is_int {
+                        return Err(ValidationError::ImageCoordinateTypeMismatch {
+                            function: function_id,
+                            block: block_id,
+                            opcode,
+                            expected: "integer or float",
+                        }
+                        .into());
+                    }
+
+                    // Bit-width check: must be 32-bit
+                    if let Some(bit_width) = resolver.get_bit_width(coord_type_id, ctx.definitions)
+                    {
+                        if bit_width != 32 {
+                            return Err(ValidationError::ImageCoordinateNot32Bit {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }
+                            .into());
+                        }
+                    }
+
+                    // Component count check
+                    if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                        let required = get_min_coord_size(opcode, &info);
+                        let actual = resolver.get_dimension(coord_type_id, ctx.definitions);
+
+                        if actual < required {
+                            return Err(
+                                ValidationError::ImageCoordinateInsufficientComponents {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                    required,
+                                    actual,
+                                }
+                                .into(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Image Fetch Rule
 // ============================================================================
 
@@ -2488,6 +2637,7 @@ pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
         &ImageReadVulkan4ComponentRule,
         &ImageGatherRule,
         &ImageFetchRule,
+        &ImageCoordinateRule,
     ]
 }
 
