@@ -6504,6 +6504,20 @@ pub enum ValidationError {
         entry_point: Option<Id>,
     },
     // Note: InterfaceLocationConflict was consolidated into EntryPointInterfaceLocationConflict
+    /// Interface variable must have a Location decoration.
+    #[error("variable <{variable_id:?}> is an interface variable and must be decorated with a location")]
+    InterfaceVariableMissingLocation {
+        /// The variable ID.
+        variable_id: Id,
+    },
+    /// Block struct member is missing a Location decoration.
+    #[error("member index {member_index} of Block struct <{struct_id:?}> is missing a location assignment")]
+    BlockMemberMissingLocation {
+        /// The struct type ID.
+        struct_id: Id,
+        /// The member index.
+        member_index: u32,
+    },
     /// Index decoration can only be applied to Output storage class variables.
     #[error("Index decoration on variable <{variable_id:?}> must be on Output storage class")]
     IndexDecorationNotOutput {

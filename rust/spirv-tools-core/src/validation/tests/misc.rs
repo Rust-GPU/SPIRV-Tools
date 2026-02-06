@@ -3362,6 +3362,7 @@ OpCapability Shader
 OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %main "main" %out
 OpExecutionMode %main OriginUpperLeft
+OpDecorate %out Location 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
@@ -3452,6 +3453,18 @@ fn glsl_refract_vec3_f32_with_f64_eta_fails() {
         vec![
             Operand::IdRef(10),
             Operand::ExecutionMode(rspirv::spirv::ExecutionMode::OriginUpperLeft),
+        ],
+    ));
+
+    // OpDecorate %15 Location 0
+    module.annotations.push(Instruction::new(
+        Op::Decorate,
+        None,
+        None,
+        vec![
+            Operand::IdRef(15),
+            Operand::Decoration(rspirv::spirv::Decoration::Location),
+            Operand::LiteralBit32(0),
         ],
     ));
 
@@ -6913,4 +6926,175 @@ fn image_operand_minlod_accepts_with_grad() {
     data.module.functions.push(function);
     let ctx = data.as_context();
     ImageOperandTypeRule.validate(&ctx).expect("MinLod with Grad should pass");
+}
+
+// ============================================================================
+// Commit 30: Interface variable location requirements (Vulkan)
+// ============================================================================
+
+#[test]
+fn interface_var_without_location_fails_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("Input var without Location should fail in Vulkan");
+    assert!(
+        matches!(err, ValidationError::InterfaceVariableMissingLocation { .. }),
+        "expected InterfaceVariableMissingLocation, got {err:?}"
+    );
+}
+
+#[test]
+fn interface_var_with_location_passes_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Input var with Location should pass");
+}
+
+#[test]
+fn interface_var_with_builtin_no_location_passes_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %var BuiltIn FragCoord
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%vec4 = OpTypeVector %f32 4
+%ptr = OpTypePointer Input %vec4
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("BuiltIn var without Location should pass");
+}
+
+#[test]
+fn interface_var_without_location_passes_opengl() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%ptr = OpTypePointer Input %f32
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::OpenGl4_5)
+        .expect("Input var without Location should pass in OpenGL");
+}
+
+#[test]
+fn block_member_without_location_fails_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %block Block
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%block = OpTypeStruct %f32 %f32
+%ptr = OpTypePointer Input %block
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("Block var without member Locations should fail in Vulkan");
+    assert!(
+        matches!(err, ValidationError::BlockMemberMissingLocation { .. }),
+        "expected BlockMemberMissingLocation, got {err:?}"
+    );
+}
+
+#[test]
+fn block_with_variable_location_passes_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %block Block
+OpDecorate %var Location 0
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%block = OpTypeStruct %f32 %f32
+%ptr = OpTypePointer Input %block
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Block var with variable-level Location should pass");
+}
+
+#[test]
+fn block_with_member_locations_passes_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %var
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %block Block
+OpMemberDecorate %block 0 Location 0
+OpMemberDecorate %block 1 Location 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%block = OpTypeStruct %f32 %f32
+%ptr = OpTypePointer Input %block
+%var = OpVariable %ptr Input
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("Block var with per-member Locations should pass");
 }

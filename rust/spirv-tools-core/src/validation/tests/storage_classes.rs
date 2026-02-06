@@ -222,7 +222,9 @@ fn buffer_block_cannot_be_used_for_push_constant() {
 }
 
 #[test]
-fn block_cannot_be_used_for_input_storage() {
+fn block_can_be_used_for_input_storage() {
+    // Block decoration is valid on struct types referenced through Input
+    // storage class (interface blocks).
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -241,15 +243,8 @@ fn block_cannot_be_used_for_input_storage() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
-        .expect_err("Block should not apply to input variables");
-    assert_eq!(
-        err,
-        ValidationError::InvalidBlockDecorationStorageClass {
-            decoration: rspirv::spirv::Decoration::Block,
-            storage_class: rspirv::spirv::StorageClass::Input
-        }
-    );
+    assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+        .expect("Block decoration should be valid for Input storage class");
 }
 
 #[test]

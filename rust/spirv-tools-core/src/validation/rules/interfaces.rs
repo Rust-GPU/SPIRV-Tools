@@ -461,6 +461,207 @@ impl ValidationRule for LocationConflictRule {
     }
 }
 
+/// Validates that Vulkan Input/Output interface variables have Location decorations.
+///
+/// For non-Block variables, the variable itself must have a Location.
+/// For Block-decorated variables without a variable-level Location, every
+/// member of the Block struct must have a Location via OpMemberDecorate.
+pub struct InterfaceLocationRequiredRule;
+
+impl ValidationRule for InterfaceLocationRequiredRule {
+    fn name(&self) -> &'static str {
+        "interface-location-required"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        if !ctx.env.is_vulkan() {
+            return Ok(());
+        }
+
+        let module = ctx.module();
+
+        // Collect decorations
+        let mut var_locations: HashSet<u32> = HashSet::new();
+        let mut var_builtins: HashSet<u32> = HashSet::new();
+        let mut block_types: HashSet<u32> = HashSet::new();
+        // member_locations: struct_type_id -> set of member indices that have Location
+        let mut member_locations: HashMap<u32, HashSet<u32>> = HashMap::new();
+
+        for inst in &module.annotations {
+            match inst.class.opcode {
+                Op::Decorate => {
+                    let Some(Operand::IdRef(target_id)) = inst.operands.first() else {
+                        continue;
+                    };
+                    let Some(Operand::Decoration(dec)) = inst.operands.get(1) else {
+                        continue;
+                    };
+                    match dec {
+                        Decoration::Location => {
+                            var_locations.insert(*target_id);
+                        }
+                        Decoration::BuiltIn => {
+                            var_builtins.insert(*target_id);
+                        }
+                        Decoration::Block => {
+                            block_types.insert(*target_id);
+                        }
+                        _ => {}
+                    }
+                }
+                Op::MemberDecorate => {
+                    let Some(Operand::IdRef(struct_id)) = inst.operands.first() else {
+                        continue;
+                    };
+                    let Some(Operand::LiteralBit32(member_idx)) = inst.operands.get(1) else {
+                        continue;
+                    };
+                    let Some(Operand::Decoration(dec)) = inst.operands.get(2) else {
+                        continue;
+                    };
+                    if *dec == Decoration::Location {
+                        member_locations
+                            .entry(*struct_id)
+                            .or_default()
+                            .insert(*member_idx);
+                    }
+                    if *dec == Decoration::BuiltIn {
+                        // Members with BuiltIn don't need Location
+                        var_builtins.insert(*struct_id);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Build map of variable ID -> (storage class, result_type)
+        let mut var_info: HashMap<u32, (StorageClass, Option<u32>)> = HashMap::new();
+        for inst in &module.types_global_values {
+            if inst.class.opcode == Op::Variable || inst.class.opcode == Op::UntypedVariableKHR {
+                if let (Some(var_id), Some(Operand::StorageClass(sc))) =
+                    (inst.result_id, inst.operands.first())
+                {
+                    var_info.insert(var_id, (*sc, inst.result_type));
+                }
+            }
+        }
+
+        // Check entry points
+        for ep in &module.entry_points {
+            if ep.class.opcode != Op::EntryPoint {
+                continue;
+            }
+
+            let execution_model = ep.operands.first().and_then(|op| match op {
+                Operand::ExecutionModel(model) => Some(*model),
+                _ => None,
+            });
+
+            // Only check vertex/tess/geometry/fragment
+            let check_models = [
+                ExecutionModel::Vertex,
+                ExecutionModel::TessellationControl,
+                ExecutionModel::TessellationEvaluation,
+                ExecutionModel::Geometry,
+                ExecutionModel::Fragment,
+            ];
+
+            if !execution_model.is_some_and(|m| check_models.contains(&m)) {
+                continue;
+            }
+
+            let mut seen_vars: HashSet<u32> = HashSet::new();
+
+            for operand in ep.operands.iter().skip(3) {
+                let Operand::IdRef(var_id) = operand else {
+                    continue;
+                };
+
+                if !seen_vars.insert(*var_id) {
+                    continue;
+                }
+
+                if var_builtins.contains(var_id) {
+                    continue;
+                }
+
+                let Some((sc, result_type)) = var_info.get(var_id) else {
+                    continue;
+                };
+
+                if *sc != StorageClass::Input && *sc != StorageClass::Output {
+                    continue;
+                }
+
+                // Get the pointee type from the pointer type
+                let pointee_type_id = result_type
+                    .and_then(|ptr_type| ResultId::try_from(ptr_type).ok())
+                    .and_then(|ptr_id| ctx.definitions.get(&ptr_id))
+                    .and_then(|ptr_inst| {
+                        if ptr_inst.class.opcode == Op::TypePointer {
+                            ptr_inst.operands.get(1)
+                        } else {
+                            None
+                        }
+                    })
+                    .and_then(|op| match op {
+                        Operand::IdRef(id) => Some(*id),
+                        _ => None,
+                    });
+
+                let Some(pointee_id) = pointee_type_id else {
+                    continue;
+                };
+
+                let is_block = block_types.contains(&pointee_id);
+
+                if var_locations.contains(var_id) {
+                    // Has variable-level Location, OK
+                    continue;
+                }
+
+                if !is_block {
+                    // Non-Block variable missing Location
+                    return Err(ValidationError::InterfaceVariableMissingLocation {
+                        variable_id: Id::try_from(*var_id)
+                            .unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                    }
+                    .into());
+                }
+
+                // Block variable without variable-level Location:
+                // every member must have a Location via OpMemberDecorate
+                let member_locs = member_locations.get(&pointee_id);
+                let member_count = ctx
+                    .definitions
+                    .get(&ResultId::try_from(pointee_id).unwrap_or_else(|_| {
+                        ResultId::try_from(1u32).unwrap()
+                    }))
+                    .filter(|inst| inst.class.opcode == Op::TypeStruct)
+                    .map(|inst| inst.operands.len() as u32)
+                    .unwrap_or(0);
+
+                for i in 0..member_count {
+                    let has_member_loc = member_locs
+                        .map(|locs| locs.contains(&i))
+                        .unwrap_or(false);
+
+                    if !has_member_loc {
+                        return Err(ValidationError::BlockMemberMissingLocation {
+                            struct_id: Id::try_from(pointee_id)
+                                .unwrap_or_else(|_| Id::try_from(1u32).unwrap()),
+                            member_index: i,
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Validates that Index decoration is only used on Fragment output variables.
 pub struct IndexDecorationRule;
 
@@ -710,6 +911,7 @@ pub fn all_interface_rules() -> Vec<Box<dyn ValidationRule>> {
         Box::new(PhysicalStorageBufferInterfaceRule),
         // Note: Storage class singleton validation is in entry_points.rs
         Box::new(LocationConflictRule),
+        Box::new(InterfaceLocationRequiredRule),
         Box::new(IndexDecorationRule),
         Box::new(PerVertexKHRRule),
     ]

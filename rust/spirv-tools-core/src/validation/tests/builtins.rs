@@ -8,6 +8,7 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %main "main" %var
 OpExecutionMode %main OriginUpperLeft
 OpDecorate %var Sample
+OpDecorate %var Location 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
@@ -38,6 +39,7 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %main "main" %var
 OpExecutionMode %main OriginUpperLeft
 OpDecorate %var Sample
+OpDecorate %var Location 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
@@ -1852,6 +1854,7 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %main "main" %var
 OpExecutionMode %main OriginUpperLeft
 OpDecorate %var Sample
+OpDecorate %var Location 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32
@@ -1883,6 +1886,7 @@ OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %main "main" %var
 OpExecutionMode %main OriginUpperLeft
 OpDecorate %var Sample
+OpDecorate %var Location 0
 %void = OpTypeVoid
 %fn = OpTypeFunction %void
 %f32 = OpTypeFloat 32

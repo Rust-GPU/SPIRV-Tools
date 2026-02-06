@@ -120,6 +120,8 @@ impl ValidationRule for BlockStorageClassRule {
                                 | StorageClass::StorageBuffer
                                 | StorageClass::PhysicalStorageBuffer
                                 | StorageClass::PushConstant
+                                | StorageClass::Input
+                                | StorageClass::Output
                         ) || (storage_class == StorageClass::Workgroup
                             && workgroup_blocks_allowed)
                     }
