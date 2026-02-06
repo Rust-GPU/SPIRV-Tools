@@ -3020,3 +3020,68 @@ OpFunctionEnd
         "expected BuiltInRequiresExecutionModel, got {err:?}"
     );
 }
+
+#[test]
+fn primitive_triangle_indices_ext_allowed_in_universal_env() {
+    // PrimitiveTriangleIndicesEXT is not restricted to Vulkan — it should be
+    // accepted in any target environment when used with MeshEXT.
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main" %indices
+OpExecutionMode %main LocalSize 1 1 1
+OpExecutionMode %main OutputVertices 3
+OpExecutionMode %main OutputPrimitivesEXT 1
+OpExecutionMode %main OutputTrianglesEXT
+OpDecorate %indices BuiltIn PrimitiveTriangleIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%uint = OpTypeInt 32 0
+%v3uint = OpTypeVector %uint 3
+%uint_1 = OpConstant %uint 1
+%arr = OpTypeArray %v3uint %uint_1
+%ptr = OpTypePointer Output %arr
+%indices = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+        .expect("PrimitiveTriangleIndicesEXT should be allowed in Universal env");
+}
+
+#[test]
+fn primitive_triangle_indices_ext_requires_mesh_ext_execution_model() {
+    // PrimitiveTriangleIndicesEXT is only valid with MeshEXT execution model,
+    // not with other models like GLCompute.
+    let text = r#"
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %indices
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %indices BuiltIn PrimitiveTriangleIndicesEXT
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%uint = OpTypeInt 32 0
+%v3uint = OpTypeVector %uint 3
+%uint_1 = OpConstant %uint 1
+%arr = OpTypeArray %v3uint %uint_1
+%ptr = OpTypePointer Output %arr
+%indices = OpVariable %ptr Output
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_4)
+        .expect_err("PrimitiveTriangleIndicesEXT requires MeshEXT execution model");
+    assert!(
+        matches!(err, ValidationError::BuiltInRequiresExecutionModel { .. }),
+        "expected BuiltInRequiresExecutionModel, got {err:?}"
+    );
+}

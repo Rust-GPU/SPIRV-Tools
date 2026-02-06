@@ -174,18 +174,6 @@ impl ValidationRule for BuiltinStorageClassRule {
             {
                 return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
             }
-            if !env.is_vulkan()
-                && matches!(
-                    builtin,
-                    BuiltIn::PrimitivePointIndicesEXT
-                        | BuiltIn::PrimitiveLineIndicesEXT
-                        | BuiltIn::PrimitiveTriangleIndicesEXT
-                        | BuiltIn::CullPrimitiveEXT
-                )
-            {
-                return Err(ValidationError::BuiltInDisallowedForEnv { builtin, env }.into());
-            }
-
             // Basic storage class check
             let allowed = matches!(storage_class, StorageClass::Input | StorageClass::Output);
             if !allowed {
