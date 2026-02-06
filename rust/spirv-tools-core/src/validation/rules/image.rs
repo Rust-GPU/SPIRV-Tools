@@ -293,18 +293,10 @@ impl ValidationRule for ImageTypeRule {
                 );
             }
 
-            // SubpassData requires Vulkan environment
-            if dim == Dim::DimSubpassData && !ctx.env.is_vulkan() {
-                return Err(ValidationError::ImageTypeSubpassDataRequiresVulkan {
-                    type_id,
-                    env: ctx.env,
-                }
-                .into());
-            }
-
             // SubpassData constraints
             if dim == Dim::DimSubpassData {
-                if arrayed != 0 {
+                // Arrayed must be 0 in Vulkan (VUID-StandaloneSpirv-SubpassData-06214)
+                if ctx.env.is_vulkan() && arrayed != 0 {
                     return Err(
                         ValidationError::ImageTypeSubpassDataMustNotBeArrayed { type_id }.into(),
                     );

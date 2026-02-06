@@ -7272,7 +7272,7 @@ OpFunctionEnd
 }
 
 // ============================================================================
-// SubpassData Vulkan-only restriction
+// SubpassData validation
 // ============================================================================
 
 #[test]
@@ -7297,7 +7297,7 @@ OpFunctionEnd
 }
 
 #[test]
-fn subpass_data_rejected_in_non_vulkan() {
+fn subpass_data_accepted_in_universal() {
     let text = r#"
 OpCapability Shader
 OpCapability InputAttachment
@@ -7313,13 +7313,57 @@ OpExecutionMode %main OriginUpperLeft
 OpReturn
 OpFunctionEnd
 "#;
-    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
-        .expect_err("SubpassData should be rejected in non-Vulkan");
+    assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+        .expect("SubpassData should be accepted in Universal environment");
+}
+
+#[test]
+fn subpass_data_arrayed_rejected_in_vulkan() {
+    // In Vulkan, SubpassData Arrayed must be 0 (VUID-StandaloneSpirv-SubpassData-06214)
+    let text = r#"
+OpCapability Shader
+OpCapability InputAttachment
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img = OpTypeImage %f32 SubpassData 0 1 0 2 Unknown
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect_err("SubpassData with Arrayed=1 should be rejected in Vulkan");
     assert!(
         matches!(
             err,
-            ValidationError::ImageTypeSubpassDataRequiresVulkan { .. }
+            ValidationError::ImageTypeSubpassDataMustNotBeArrayed { .. }
         ),
-        "expected ImageTypeSubpassDataRequiresVulkan, got {err:?}"
+        "expected ImageTypeSubpassDataMustNotBeArrayed, got {err:?}"
     );
+}
+
+#[test]
+fn subpass_data_arrayed_accepted_in_universal() {
+    // Outside Vulkan, arrayed SubpassData is not restricted
+    let text = r#"
+OpCapability Shader
+OpCapability InputAttachment
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img = OpTypeImage %f32 SubpassData 0 1 0 2 Unknown
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Universal1_3)
+        .expect("SubpassData with Arrayed=1 should be accepted in Universal");
 }
