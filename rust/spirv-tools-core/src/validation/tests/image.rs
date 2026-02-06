@@ -145,7 +145,6 @@ fn image_query_format_valid_kernel() {
     let text = [
         "OpCapability Kernel",
         "OpCapability Addresses",
-
         "OpMemoryModel Physical64 OpenCL",
         "OpEntryPoint Kernel %main \"main\"",
         "%void = OpTypeVoid",
@@ -174,7 +173,6 @@ fn image_query_order_valid_kernel() {
     let text = [
         "OpCapability Kernel",
         "OpCapability Addresses",
-
         "OpMemoryModel Physical64 OpenCL",
         "OpEntryPoint Kernel %main \"main\"",
         "%void = OpTypeVoid",
@@ -203,7 +201,6 @@ fn image_query_format_requires_int_scalar_result_kernel() {
     let text = [
         "OpCapability Kernel",
         "OpCapability Addresses",
-
         "OpMemoryModel Physical64 OpenCL",
         "OpEntryPoint Kernel %main \"main\"",
         "%void = OpTypeVoid",
@@ -225,10 +222,7 @@ fn image_query_format_requires_int_scalar_result_kernel() {
     let err = validate_module(&binary, TargetEnv::Universal1_3)
         .expect_err("OpImageQueryFormat with float result should fail");
     assert!(
-        matches!(
-            err,
-            ValidationError::ImageQueryResultTypeInvalid { .. }
-        ),
+        matches!(err, ValidationError::ImageQueryResultTypeInvalid { .. }),
         "Expected ImageQueryResultTypeInvalid, got: {err:?}"
     );
 }

@@ -1,4 +1,3 @@
-
 use super::{disassemble_binary, FRIENDLY_NAME_SAMPLE_BINARY};
 use crate::assembly::{
     assemble_text, assemble_text_with_options, BinaryToTextOptions, TextToBinaryOptions,

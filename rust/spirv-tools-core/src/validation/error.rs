@@ -4230,9 +4230,7 @@ pub enum ValidationError {
         type_id: Option<TypeId>,
     },
     /// OpTypeImage with 64-bit int sampled type requires Int64ImageEXT capability.
-    #[error(
-        "Capability Int64ImageEXT is required when using Sampled Type of 64-bit int"
-    )]
+    #[error("Capability Int64ImageEXT is required when using Sampled Type of 64-bit int")]
     ImageTypeRequiresInt64ImageCapability,
     /// OpTypeImage multisampled storage image requires StorageImageMultisample capability.
     #[error(

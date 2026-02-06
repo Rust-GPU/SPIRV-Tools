@@ -194,9 +194,7 @@ impl ValidationRule for ImageTypeRule {
                         // Int64ImageEXT capability check: 64-bit int sampled type requires it
                         if st_inst.class.opcode == Op::TypeInt {
                             if let Some(Operand::LiteralBit32(width)) = st_inst.operands.first() {
-                                if *width == 64
-                                    && !ctx.has_capability(Capability::Int64ImageEXT)
-                                {
+                                if *width == 64 && !ctx.has_capability(Capability::Int64ImageEXT) {
                                     return Err(
                                         ValidationError::ImageTypeRequiresInt64ImageCapability
                                             .into(),
