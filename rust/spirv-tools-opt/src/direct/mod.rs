@@ -190,21 +190,19 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                 }
 
-                // Detect Branch (for back-edge detection)
-                if inst.class.opcode == Op::Branch {
-                    if let Some(rspirv::dr::Operand::IdRef(target_label)) = inst.operands.first() {
+                // Detect loops via OpLoopMerge (canonical loop marker).
+                // This is more reliable than back-edge detection because it
+                // catches loops with BranchConditional continue blocks.
+                if inst.class.opcode == Op::LoopMerge {
+                    if let Some(rspirv::dr::Operand::IdRef(merge_label)) = inst.operands.first() {
                         let label_map = &func_block_labels[func_idx];
-                        if let Some(&target_idx) = label_map.get(target_label) {
-                            // Back-edge: target is at or before current block
-                            if target_idx <= block_idx {
-                                // This is a loop: target_idx is the header, block_idx is the latch
-                                // Simple loop detection: body is all blocks from header to latch
-                                let body_indices: Vec<usize> = (target_idx..=block_idx).collect();
-                                loop_constructs.push(LoopInfo {
-                                    body_block_indices: body_indices,
-                                    func_idx,
-                                });
-                            }
+                        if let Some(&merge_idx) = label_map.get(merge_label) {
+                            // Loop body spans from header to just before merge block
+                            let body_indices: Vec<usize> = (block_idx..merge_idx).collect();
+                            loop_constructs.push(LoopInfo {
+                                body_block_indices: body_indices,
+                                func_idx,
+                            });
                         }
                     }
                 }
@@ -814,38 +812,25 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             if let Some(term) = parse_extract_result(&result_str) {
                 let mut result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
 
-                // Query ExprType from the egraph to detect type domain changes.
-                // If the extracted term changed type domain (e.g., int→bool via
-                // Gamma simplification), correct the result_type to match.
-                let expr_type_query = format!("(extract (ExprType id{}))", id);
-                if let Ok(type_results) = egraph.parse_and_run_program(None, &expr_type_query) {
-                    if !type_results.is_empty() {
-                        let type_str = format!("{}", type_results[0]);
-                        let current_class = type_classes
-                            .get(&result_type)
-                            .copied()
-                            .unwrap_or(TypeClass::Other);
-                        let egraph_class = if type_str.contains("BoolType") {
-                            TypeClass::Bool
-                        } else if type_str.contains("IntType") {
-                            TypeClass::Int
-                        } else if type_str.contains("FloatType") {
-                            TypeClass::Float
-                        } else {
-                            TypeClass::Other
+                // Infer the correct type domain from the extracted term's head
+                // operator. This is more reliable than querying ExprType from the
+                // egraph because e-class merges can make ExprType stale/wrong.
+                let term_class = infer_type_class_from_term(&term);
+                if term_class != TypeClass::Other {
+                    let current_class = type_classes
+                        .get(&result_type)
+                        .copied()
+                        .unwrap_or(TypeClass::Other);
+                    if current_class != term_class {
+                        let corrected = match term_class {
+                            TypeClass::Bool => bool_type,
+                            TypeClass::Int => int32_type,
+                            TypeClass::Float => float32_type,
+                            TypeClass::Other => None,
                         };
-                        if egraph_class != TypeClass::Other && egraph_class != current_class {
-                            // Type domain changed - select correct SPIR-V type
-                            let corrected = match egraph_class {
-                                TypeClass::Bool => bool_type,
-                                TypeClass::Int => int32_type,
-                                TypeClass::Float => float32_type,
-                                TypeClass::Other => None,
-                            };
-                            if let Some(ct) = corrected {
-                                result_type = ct;
-                                ctx.id_to_type.insert(id, ct);
-                            }
+                        if let Some(ct) = corrected {
+                            result_type = ct;
+                            ctx.id_to_type.insert(id, ct);
                         }
                     }
                 }
@@ -2160,7 +2145,65 @@ fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
             }
         }
     }
+    // Classify vector types by their component type (e.g., vec4<f32> -> Float)
+    for inst in &module.types_global_values {
+        if inst.class.opcode == Op::TypeVector {
+            if let (Some(id), Some(rspirv::dr::Operand::IdRef(component_type))) =
+                (inst.result_id, inst.operands.first())
+            {
+                if let Some(&component_class) = classes.get(component_type) {
+                    classes.insert(id, component_class);
+                }
+            }
+        }
+    }
     classes
+}
+
+/// Infer the type class of an extracted term from its head operator.
+/// This is more reliable than querying ExprType from the egraph because
+/// e-class merges (via `:merge old`) can produce stale type information.
+fn infer_type_class_from_term(term: &str) -> TypeClass {
+    let term = term.trim();
+    // Extract the head operator from the term (first word after opening paren)
+    let head = if let Some(rest) = term.strip_prefix('(') {
+        rest.split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(')')
+    } else {
+        // Bare symbol or constant - no type info
+        return TypeClass::Other;
+    };
+
+    match head {
+        // Integer arithmetic
+        "Add" | "Sub" | "Mul" | "Neg" | "SDiv" | "UDiv" | "SRem" | "SMod" | "UMod" | "Shl"
+        | "ShrS" | "ShrU" | "BitAnd" | "BitOr" | "BitXor" | "BitNot" | "BitReverse"
+        | "BitCount" | "RotL" | "RotR" | "SMin" | "SMax" | "UMin" | "UMax" | "SAbs"
+        | "FindILsb" | "FindSMsb" | "FindUMsb" | "ConvertFToS" | "ConvertFToU" | "Const"
+        | "Const64" | "BitFieldInsert" | "BitFieldSExtract" | "BitFieldUExtract" => TypeClass::Int,
+
+        // Float arithmetic
+        "FAdd" | "FSub" | "FMul" | "FDiv" | "FNeg" | "FRem" | "FMod" | "FMin" | "FMax" | "FAbs"
+        | "FFloor" | "FCeil" | "FRound" | "FTrunc" | "ConvertSToF" | "ConvertUToF" | "Sqrt"
+        | "InverseSqrt" | "Exp" | "Exp2" | "Log" | "Log2" | "Pow" | "Sin" | "Cos" | "Tan"
+        | "Asin" | "Acos" | "Atan" | "Atan2" | "Sinh" | "Cosh" | "Tanh" | "Asinh" | "Acosh"
+        | "Atanh" | "Fma" | "Fract" | "Modf" | "Step" | "FSign" | "Radians" | "Degrees"
+        | "FMix" | "SmoothStep" | "FClamp" | "NMin" | "NMax" | "NClamp" | "Length" | "Distance"
+        | "Normalize" | "Cross" | "Reflect" | "Refract" | "FaceForward" | "FConst" | "DPdx"
+        | "DPdy" | "Fwidth" | "DPdxFine" | "DPdyFine" | "FwidthFine" | "DPdxCoarse"
+        | "DPdyCoarse" | "FwidthCoarse" | "Dot" => TypeClass::Float,
+
+        // Boolean-producing operations
+        "Eq" | "Ne" | "SLt" | "SLe" | "SGt" | "SGe" | "ULt" | "ULe" | "UGt" | "UGe" | "FOrdEq"
+        | "FOrdNe" | "FOrdLt" | "FOrdLe" | "FOrdGt" | "FOrdGe" | "FUnordEq" | "FUnordNe"
+        | "FUnordLt" | "FUnordLe" | "FUnordGt" | "FUnordGe" | "LogNot" | "LogAnd" | "LogOr"
+        | "LogEq" | "LogNe" | "IsNan" | "IsInf" | "BoolConst" => TypeClass::Bool,
+
+        // Type-preserving (Gamma, Select, CopyObject, Sym, etc.) - can't determine from head
+        _ => TypeClass::Other,
+    }
 }
 
 /// What type class does this opcode require for its *result* type?

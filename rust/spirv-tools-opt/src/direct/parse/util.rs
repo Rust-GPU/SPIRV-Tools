@@ -67,6 +67,14 @@ pub fn resolve_term_to_id(term: &str, id_map: &HashMap<String, Word>) -> Option<
             }
         }
     }
+    if let Some(rest) = term.strip_prefix("(BoolConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                let const_key = format!("boolconst_{}", value);
+                return id_map.get(&const_key).copied();
+            }
+        }
+    }
 
     None
 }
