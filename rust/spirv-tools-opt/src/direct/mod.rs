@@ -26,6 +26,7 @@ use parse::{find_inline_constants, parse_extract_result, term_to_instruction};
 pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError> {
     // Step 1: Collect type information
     let type_widths = collect_type_widths(module);
+    let type_classes = collect_type_classes(module);
 
     // Step 2: Collect ALL SSA values (for id_map) and optimizable instructions
     let mut ctx = EgglogContext::new(&type_widths);
@@ -235,10 +236,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Add ALL terms as let bindings (including constants)
     // Constants are bound but not roots - they're only live if referenced by a root
-    // Sort by ID to ensure deterministic binding order (constants typically have lower IDs)
-    let mut sorted_ids: Vec<Word> = ctx.id_to_term.keys().copied().collect();
-    sorted_ids.sort();
-    for id in sorted_ids {
+    // Use topological order: if term A references variable idB, then B must be bound first.
+    // This prevents "unbound symbol" errors from forward references.
+    let binding_order = topological_sort_bindings(&ctx.id_to_term);
+    for id in binding_order {
         if let Some(term) = ctx.id_to_term.get(&id) {
             let binding = format!("(let id{} {})", id, term);
             egraph
@@ -447,8 +448,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
     let mut rvsdg_selections: Vec<RvsdgSelection> = Vec::new();
 
+    // Build a set of (func_idx, block_idx) pairs that are inside loop bodies.
+    // Selection constructs inside loops are skipped to avoid breaking loop structure.
+    let mut loop_block_set: HashSet<(usize, usize)> = HashSet::new();
+    for loop_info in &loop_constructs {
+        for &block_idx in &loop_info.body_block_indices {
+            loop_block_set.insert((loop_info.func_idx, block_idx));
+        }
+    }
+
     // For each selection construct, convert to RVSDG EffGamma
     for (sel_idx, sel) in selection_constructs.iter().enumerate() {
+        // Skip selection constructs inside loop bodies to avoid breaking continue block reachability
+        if loop_block_set.contains(&(sel.func_idx, sel.header_block_idx)) {
+            continue;
+        }
         let func = &module.functions[sel.func_idx];
 
         // Find the header block to get the condition
@@ -715,7 +729,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Track synthesized constants that we need to add to the module
     let mut synthesized_constants: Vec<Instruction> = Vec::new();
     // Track synthesized intermediate instructions (from nested expression materialization)
-    let mut synthesized_instructions: Vec<Instruction> = Vec::new();
+    // Maps root_id -> list of synthesized intermediate instructions that must precede it
+    let mut synthesized_for_root: HashMap<Word, Vec<Instruction>> = HashMap::new();
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
     // Find a suitable integer type for synthesized constants
@@ -871,9 +886,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 } else {
                     let type_width = type_widths.get(&result_type).copied();
                     // Try simple term_to_instruction first
-                    if let Some(inst) =
+                    if let Some(mut inst) =
                         term_to_instruction(&term, id, result_type, &id_map, type_width)
                     {
+                        // Fix result type if the operation changed type domain
+                        let corrected_type = infer_result_type(
+                            &inst,
+                            result_type,
+                            &ctx.id_to_type,
+                            &type_classes,
+                            bool_type,
+                        );
+                        if corrected_type != result_type {
+                            inst.result_type = Some(corrected_type);
+                            ctx.id_to_type.insert(id, corrected_type);
+                        }
                         // Also collect IDs from the generated instruction
                         collect_ids_from_instruction(&inst, &mut used_ids);
                         optimized_instructions.insert(id, inst);
@@ -886,6 +913,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             &mut id_map,
                             &mut next_id,
                             int32_type,
+                            &ctx.id_to_type,
+                            &type_classes,
+                            bool_type,
                         ) {
                             let _ = final_id; // Suppress unused warning
                                               // Add synthesized intermediate instructions
@@ -899,6 +929,18 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     // NOT into synthesized_instructions (to avoid duplication)
                                     let old_id = inst.result_id;
                                     inst.result_id = Some(id);
+                                    // Fix result type if the operation changed type domain
+                                    let corrected_type = infer_result_type(
+                                        &inst,
+                                        result_type,
+                                        &ctx.id_to_type,
+                                        &type_classes,
+                                        bool_type,
+                                    );
+                                    if corrected_type != result_type {
+                                        inst.result_type = Some(corrected_type);
+                                        ctx.id_to_type.insert(id, corrected_type);
+                                    }
                                     collect_ids_from_instruction(&inst, &mut used_ids);
                                     optimized_instructions.insert(id, inst);
                                     // Update id_map if the ID changed
@@ -917,7 +959,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     ) {
                                         synthesized_constants.push(inst.clone());
                                     } else {
-                                        synthesized_instructions.push(inst.clone());
+                                        // Place in same block as the root instruction
+                                        synthesized_for_root
+                                            .entry(id)
+                                            .or_default()
+                                            .push(inst.clone());
                                     }
                                     // Track in optimized_instructions if it's a new ID
                                     optimized_instructions.entry(inst_id).or_insert(inst);
@@ -1231,8 +1277,20 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     });
 
     // Add synthesized constants to the module (these are already used by definition)
+    // Deduplicate: only add if the ID isn't already present in types_global_values
+    let existing_global_ids: HashSet<Word> = output
+        .types_global_values
+        .iter()
+        .filter_map(|inst| inst.result_id)
+        .collect();
     for const_inst in synthesized_constants {
-        output.types_global_values.push(const_inst);
+        if let Some(id) = const_inst.result_id {
+            if !existing_global_ids.contains(&id) {
+                output.types_global_values.push(const_inst);
+            }
+        } else {
+            output.types_global_values.push(const_inst);
+        }
     }
 
     // Build a map of existing constants: (type, value) -> id
@@ -1295,9 +1353,18 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Add folded constants to types_global_values
     // Sort by ID to ensure deterministic output ordering
+    // Deduplicate: skip IDs already present (e.g., from synthesized_constants)
+    let existing_folded_ids: HashSet<Word> = output
+        .types_global_values
+        .iter()
+        .filter_map(|inst| inst.result_id)
+        .collect();
     let mut sorted_folded: Vec<Word> = folded_to_constant.iter().copied().collect();
     sorted_folded.sort();
     for id in sorted_folded {
+        if existing_folded_ids.contains(&id) {
+            continue;
+        }
         if let Some(opt_inst) = optimized_instructions.get(&id) {
             output.types_global_values.push(opt_inst.clone());
         }
@@ -1354,23 +1421,24 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Insert synthesized intermediate instructions into the first block of the first function.
-    // These are created when materializing nested expressions from the e-graph.
-    // Note: We only insert into the first function to avoid duplicate ID definitions.
-    // In practice, shader modules typically have a single entry point function where
-    // all optimizable expressions reside.
-    if !synthesized_instructions.is_empty() {
-        if let Some(func) = output.functions.first_mut() {
-            if let Some(block) = func.blocks.first_mut() {
-                // Find the position before the first non-phi instruction
-                let insert_pos = block
-                    .instructions
-                    .iter()
-                    .position(|inst| !matches!(inst.class.opcode, Op::Phi))
-                    .unwrap_or(0);
-                // Insert synthesized instructions at this position
-                for (i, inst) in synthesized_instructions.iter().enumerate() {
-                    block.instructions.insert(insert_pos + i, inst.clone());
+    // Insert synthesized intermediate instructions into the same block as their root instruction.
+    // This ensures operand references satisfy SPIR-V dominance requirements.
+    if !synthesized_for_root.is_empty() {
+        for func in &mut output.functions {
+            for block in &mut func.blocks {
+                let mut insertions: Vec<(usize, Vec<Instruction>)> = Vec::new();
+                for (pos, inst) in block.instructions.iter().enumerate() {
+                    if let Some(id) = inst.result_id {
+                        if let Some(synth_insts) = synthesized_for_root.get(&id) {
+                            insertions.push((pos, synth_insts.clone()));
+                        }
+                    }
+                }
+                // Insert in reverse order to preserve positions
+                for (pos, insts) in insertions.into_iter().rev() {
+                    for (i, inst) in insts.into_iter().enumerate() {
+                        block.instructions.insert(pos + i, inst);
+                    }
                 }
             }
         }
@@ -1978,6 +2046,293 @@ fn collect_type_widths(module: &Module) -> HashMap<Word, u32> {
         .collect()
 }
 
+/// Type classification for SPIR-V types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeClass {
+    Bool,
+    Int,
+    Float,
+    Other,
+}
+
+/// Collect type classes (Bool/Int/Float/Other) for all types in the module.
+fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
+    let mut classes = HashMap::new();
+    for inst in &module.types_global_values {
+        if let Some(id) = inst.result_id {
+            let class = match inst.class.opcode {
+                Op::TypeBool => TypeClass::Bool,
+                Op::TypeInt => TypeClass::Int,
+                Op::TypeFloat => TypeClass::Float,
+                _ => TypeClass::Other,
+            };
+            if class != TypeClass::Other {
+                classes.insert(id, class);
+            }
+        }
+    }
+    classes
+}
+
+/// What type class does this opcode require for its *result* type?
+fn required_result_type_class(op: Op) -> Option<TypeClass> {
+    match op {
+        // Integer arithmetic requires int result type
+        Op::IAdd
+        | Op::ISub
+        | Op::IMul
+        | Op::SDiv
+        | Op::UDiv
+        | Op::SRem
+        | Op::SMod
+        | Op::UMod
+        | Op::SNegate
+        | Op::ShiftLeftLogical
+        | Op::ShiftRightLogical
+        | Op::ShiftRightArithmetic
+        | Op::BitwiseAnd
+        | Op::BitwiseOr
+        | Op::BitwiseXor
+        | Op::Not
+        | Op::BitReverse
+        | Op::BitCount => Some(TypeClass::Int),
+
+        // Float arithmetic requires float result type
+        Op::FAdd | Op::FSub | Op::FMul | Op::FDiv | Op::FRem | Op::FMod | Op::FNegate => {
+            Some(TypeClass::Float)
+        }
+
+        // Comparisons and logical ops require bool result type
+        Op::IEqual
+        | Op::INotEqual
+        | Op::SLessThan
+        | Op::SLessThanEqual
+        | Op::SGreaterThan
+        | Op::SGreaterThanEqual
+        | Op::ULessThan
+        | Op::ULessThanEqual
+        | Op::UGreaterThan
+        | Op::UGreaterThanEqual
+        | Op::FOrdEqual
+        | Op::FOrdNotEqual
+        | Op::FOrdLessThan
+        | Op::FOrdLessThanEqual
+        | Op::FOrdGreaterThan
+        | Op::FOrdGreaterThanEqual
+        | Op::FUnordEqual
+        | Op::FUnordNotEqual
+        | Op::FUnordLessThan
+        | Op::FUnordLessThanEqual
+        | Op::FUnordGreaterThan
+        | Op::FUnordGreaterThanEqual
+        | Op::LogicalAnd
+        | Op::LogicalOr
+        | Op::LogicalEqual
+        | Op::LogicalNotEqual
+        | Op::LogicalNot => Some(TypeClass::Bool),
+
+        // Select/CopyObject/conversions: result type depends on context
+        _ => None,
+    }
+}
+
+/// What type class does this opcode require for its *operands*?
+fn required_operand_type_class(op: Op) -> Option<TypeClass> {
+    match op {
+        // Integer comparisons need int operands
+        Op::IEqual
+        | Op::INotEqual
+        | Op::SLessThan
+        | Op::SLessThanEqual
+        | Op::SGreaterThan
+        | Op::SGreaterThanEqual
+        | Op::ULessThan
+        | Op::ULessThanEqual
+        | Op::UGreaterThan
+        | Op::UGreaterThanEqual => Some(TypeClass::Int),
+
+        // Float comparisons need float operands
+        Op::FOrdEqual
+        | Op::FOrdNotEqual
+        | Op::FOrdLessThan
+        | Op::FOrdLessThanEqual
+        | Op::FOrdGreaterThan
+        | Op::FOrdGreaterThanEqual
+        | Op::FUnordEqual
+        | Op::FUnordNotEqual
+        | Op::FUnordLessThan
+        | Op::FUnordLessThanEqual
+        | Op::FUnordGreaterThan
+        | Op::FUnordGreaterThanEqual => Some(TypeClass::Float),
+
+        // Logical ops need bool operands
+        Op::LogicalAnd
+        | Op::LogicalOr
+        | Op::LogicalEqual
+        | Op::LogicalNotEqual
+        | Op::LogicalNot => Some(TypeClass::Bool),
+
+        // For arithmetic, operand type = result type (handled by caller)
+        _ => None,
+    }
+}
+
+/// Infer the correct result type for an instruction based on its opcode and operand types.
+/// Returns the corrected result type, or the original if no correction needed.
+fn infer_result_type(
+    inst: &Instruction,
+    original_result_type: Word,
+    id_to_type: &HashMap<Word, Word>,
+    type_classes: &HashMap<Word, TypeClass>,
+    bool_type: Option<Word>,
+) -> Word {
+    let op = inst.class.opcode;
+    let required = match required_result_type_class(op) {
+        Some(req) => req,
+        None => return original_result_type, // no specific requirement
+    };
+
+    // Check if current type already matches
+    let current_class = type_classes
+        .get(&original_result_type)
+        .copied()
+        .unwrap_or(TypeClass::Other);
+    if current_class == required {
+        return original_result_type;
+    }
+
+    // Type mismatch - need to infer the correct type
+    match required {
+        TypeClass::Bool => {
+            // Comparisons and logical ops always return bool
+            if let Some(bt) = bool_type {
+                return bt;
+            }
+        }
+        TypeClass::Int | TypeClass::Float => {
+            // For arithmetic ops, infer type from first operand
+            for operand in &inst.operands {
+                if let Some(operand_id) = operand.id_ref_any() {
+                    if let Some(&operand_type) = id_to_type.get(&operand_id) {
+                        if let Some(&operand_class) = type_classes.get(&operand_type) {
+                            if operand_class == required {
+                                return operand_type;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        TypeClass::Other => {}
+    }
+
+    original_result_type
+}
+
+/// Topological sort of binding IDs based on term dependencies.
+/// If term for idA contains a bare reference to idB (meaning B is also in id_to_term),
+/// then B must be bound before A.
+fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
+    use std::collections::VecDeque;
+
+    // Build dependency graph: for each id, which other ids in id_to_term does its term reference?
+    let id_set: HashSet<Word> = id_to_term.keys().copied().collect();
+    let mut deps: HashMap<Word, Vec<Word>> = HashMap::new();
+    let mut reverse_deps: HashMap<Word, Vec<Word>> = HashMap::new();
+    let mut in_degree: HashMap<Word, usize> = HashMap::new();
+
+    for (&id, term) in id_to_term {
+        let mut my_deps = Vec::new();
+        // Scan for bare "idN" references (not inside Sym)
+        // These are references to other bound variables
+        let bytes = term.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            // Skip (Sym "idN") patterns - these are safe opaque references
+            if i + 5 < bytes.len() && &bytes[i..i + 5] == b"(Sym " {
+                // Skip to closing paren
+                if let Some(close) = term[i..].find(')') {
+                    i += close + 1;
+                    continue;
+                }
+            }
+            // Look for bare "id" followed by digits
+            if bytes[i] == b'i' && i + 2 < bytes.len() && bytes[i + 1] == b'd' {
+                // Check it's not preceded by an alphanumeric (part of a longer token)
+                if i > 0 && (bytes[i - 1] as char).is_alphanumeric() {
+                    i += 1;
+                    continue;
+                }
+                let start = i + 2;
+                let mut end = start;
+                while end < bytes.len() && (bytes[end] as char).is_ascii_digit() {
+                    end += 1;
+                }
+                if end > start {
+                    if let Ok(ref_id) = term[start..end].parse::<Word>() {
+                        if ref_id != id && id_set.contains(&ref_id) {
+                            my_deps.push(ref_id);
+                        }
+                    }
+                }
+                i = end;
+                continue;
+            }
+            i += 1;
+        }
+
+        in_degree.insert(id, my_deps.len());
+        for &dep in &my_deps {
+            reverse_deps.entry(dep).or_default().push(id);
+        }
+        deps.insert(id, my_deps);
+    }
+
+    // Kahn's algorithm
+    let mut queue: VecDeque<Word> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(&id, _)| id)
+        .collect();
+    // Sort initial queue for determinism
+    let mut initial: Vec<Word> = queue.drain(..).collect();
+    initial.sort();
+    queue.extend(initial);
+
+    let mut result = Vec::with_capacity(id_to_term.len());
+    while let Some(id) = queue.pop_front() {
+        result.push(id);
+        if let Some(dependents) = reverse_deps.get(&id) {
+            let mut ready = Vec::new();
+            for &dep_id in dependents {
+                if let Some(deg) = in_degree.get_mut(&dep_id) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        ready.push(dep_id);
+                    }
+                }
+            }
+            // Sort for determinism
+            ready.sort();
+            queue.extend(ready);
+        }
+    }
+
+    // If there are cycles (shouldn't happen in SSA), append remaining in sorted order
+    if result.len() < id_to_term.len() {
+        let in_result: HashSet<Word> = result.iter().copied().collect();
+        let mut remaining: Vec<Word> = id_to_term
+            .keys()
+            .filter(|id| !in_result.contains(id))
+            .copied()
+            .collect();
+        remaining.sort();
+        result.extend(remaining);
+    }
+
+    result
+}
+
 // =============================================================================
 // RVSDG Effect Parsing Helpers
 // =============================================================================
@@ -2102,14 +2457,62 @@ fn resolve_term_to_id_simple(term: &str, id_map: &HashMap<String, Word>) -> Opti
     None
 }
 
+/// Try to infer the type of a term from its Sym references.
+/// Scans the term for `(Sym "idN")` patterns and looks up their types.
+fn infer_term_type(
+    term: &str,
+    id_map: &HashMap<String, Word>,
+    id_to_type: &HashMap<Word, Word>,
+) -> Option<Word> {
+    // Try direct Sym reference
+    if let Some(id) = resolve_term_to_id_simple(term, id_map) {
+        return id_to_type.get(&id).copied();
+    }
+    // Scan for first Sym reference in the term
+    let mut search = term;
+    while let Some(pos) = search.find("(Sym \"") {
+        let rest = &search[pos + 6..];
+        if let Some(end) = rest.find("\")") {
+            let sym_name = &rest[..end];
+            if let Some(&id) = id_map.get(sym_name) {
+                if let Some(&ty) = id_to_type.get(&id) {
+                    return Some(ty);
+                }
+            }
+        }
+        search = &search[pos + 6..];
+    }
+    // Scan for bare id references
+    let mut search = term;
+    while let Some(pos) = search.find("id") {
+        let rest = &search[pos..];
+        // Find the end of the id token
+        let end = rest
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .unwrap_or(rest.len());
+        let id_token = &rest[..end];
+        if let Some(&id) = id_map.get(id_token) {
+            if let Some(&ty) = id_to_type.get(&id) {
+                return Some(ty);
+            }
+        }
+        search = &search[pos + end.max(1)..];
+    }
+    None
+}
+
 /// Recursively materialize a term, creating intermediate instructions for nested expressions.
 /// Returns the ID of the final result and a list of synthesized instructions.
+#[allow(clippy::too_many_arguments)]
 fn materialize_term(
     term: &str,
     result_type: Word,
     id_map: &mut HashMap<String, Word>,
     next_id: &mut Word,
     int32_type: Option<Word>,
+    id_to_type: &HashMap<Word, Word>,
+    type_classes: &HashMap<Word, TypeClass>,
+    bool_type: Option<Word>,
 ) -> Option<(Word, Vec<Instruction>)> {
     let term = term.trim();
     let mut synthesized: Vec<Instruction> = Vec::new();
@@ -2235,13 +2638,61 @@ fn materialize_term(
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 2 {
-                    // Recursively materialize operands
-                    let (lhs_id, mut lhs_synth) =
-                        materialize_term(&terms[0], result_type, id_map, next_id, int32_type)?;
+                    // Determine the correct result type for this operation
+                    let op_result_type = match required_result_type_class(*opcode) {
+                        Some(TypeClass::Bool) => bool_type.unwrap_or(result_type),
+                        Some(req_class) => {
+                            // For arithmetic, check if current result_type matches
+                            let cur_class = type_classes
+                                .get(&result_type)
+                                .copied()
+                                .unwrap_or(TypeClass::Other);
+                            if cur_class == req_class {
+                                result_type
+                            } else {
+                                // Infer from operand sub-terms
+                                infer_term_type(&terms[0], id_map, id_to_type)
+                                    .or_else(|| infer_term_type(&terms[1], id_map, id_to_type))
+                                    .unwrap_or(result_type)
+                            }
+                        }
+                        None => result_type,
+                    };
+
+                    // For comparisons, operands need a different type than the result
+                    let operand_type = match required_operand_type_class(*opcode) {
+                        Some(_) => {
+                            // Infer operand type from sub-term content
+                            infer_term_type(&terms[0], id_map, id_to_type)
+                                .or_else(|| infer_term_type(&terms[1], id_map, id_to_type))
+                                .unwrap_or(result_type)
+                        }
+                        None => op_result_type, // same-type ops: operand type = result type
+                    };
+
+                    // Recursively materialize operands with the correct type
+                    let (lhs_id, mut lhs_synth) = materialize_term(
+                        &terms[0],
+                        operand_type,
+                        id_map,
+                        next_id,
+                        int32_type,
+                        id_to_type,
+                        type_classes,
+                        bool_type,
+                    )?;
                     synthesized.append(&mut lhs_synth);
 
-                    let (rhs_id, mut rhs_synth) =
-                        materialize_term(&terms[1], result_type, id_map, next_id, int32_type)?;
+                    let (rhs_id, mut rhs_synth) = materialize_term(
+                        &terms[1],
+                        operand_type,
+                        id_map,
+                        next_id,
+                        int32_type,
+                        id_to_type,
+                        type_classes,
+                        bool_type,
+                    )?;
                     synthesized.append(&mut rhs_synth);
 
                     // Create the binary instruction
@@ -2249,7 +2700,7 @@ fn materialize_term(
                     *next_id += 1;
                     let inst = Instruction::new(
                         *opcode,
-                        Some(result_type),
+                        Some(op_result_type),
                         Some(inst_id),
                         vec![
                             rspirv::dr::Operand::IdRef(lhs_id),
@@ -2284,12 +2735,33 @@ fn materialize_term(
         let prefix = format!("({} ", name);
         if let Some(rest) = term.strip_prefix(&prefix) {
             if let Some(operand_term) = rest.strip_suffix(')') {
+                // Determine correct result type
+                let op_result_type = match required_result_type_class(*opcode) {
+                    Some(TypeClass::Bool) => bool_type.unwrap_or(result_type),
+                    Some(req_class) => {
+                        let cur_class = type_classes
+                            .get(&result_type)
+                            .copied()
+                            .unwrap_or(TypeClass::Other);
+                        if cur_class == req_class {
+                            result_type
+                        } else {
+                            infer_term_type(operand_term.trim(), id_map, id_to_type)
+                                .unwrap_or(result_type)
+                        }
+                    }
+                    None => result_type,
+                };
+
                 let (operand_id, mut operand_synth) = materialize_term(
                     operand_term.trim(),
-                    result_type,
+                    op_result_type,
                     id_map,
                     next_id,
                     int32_type,
+                    id_to_type,
+                    type_classes,
+                    bool_type,
                 )?;
                 synthesized.append(&mut operand_synth);
 
@@ -2297,7 +2769,7 @@ fn materialize_term(
                 *next_id += 1;
                 let inst = Instruction::new(
                     *opcode,
-                    Some(result_type),
+                    Some(op_result_type),
                     Some(inst_id),
                     vec![rspirv::dr::Operand::IdRef(operand_id)],
                 );
@@ -2308,38 +2780,71 @@ fn materialize_term(
         }
     }
 
-    // Select
-    if let Some(rest) = term.strip_prefix("(Select ") {
-        if let Some(rest) = rest.strip_suffix(')') {
-            let terms = split_terms_simple(rest);
-            if terms.len() >= 3 {
-                let (cond_id, mut cond_synth) =
-                    materialize_term(&terms[0], result_type, id_map, next_id, int32_type)?;
-                synthesized.append(&mut cond_synth);
+    // Select / Gamma
+    for select_prefix in &["(Select ", "(Gamma "] {
+        if let Some(rest) = term.strip_prefix(select_prefix) {
+            if let Some(rest) = rest.strip_suffix(')') {
+                let terms = split_terms_simple(rest);
+                if terms.len() >= 3 {
+                    // Infer Select result type from true/false branch operand types
+                    let select_type = infer_term_type(&terms[1], id_map, id_to_type)
+                        .or_else(|| infer_term_type(&terms[2], id_map, id_to_type))
+                        .unwrap_or(result_type);
 
-                let (then_id, mut then_synth) =
-                    materialize_term(&terms[1], result_type, id_map, next_id, int32_type)?;
-                synthesized.append(&mut then_synth);
+                    // Condition is always bool
+                    let cond_type = bool_type.unwrap_or(result_type);
+                    let (cond_id, mut cond_synth) = materialize_term(
+                        &terms[0],
+                        cond_type,
+                        id_map,
+                        next_id,
+                        int32_type,
+                        id_to_type,
+                        type_classes,
+                        bool_type,
+                    )?;
+                    synthesized.append(&mut cond_synth);
 
-                let (else_id, mut else_synth) =
-                    materialize_term(&terms[2], result_type, id_map, next_id, int32_type)?;
-                synthesized.append(&mut else_synth);
+                    let (then_id, mut then_synth) = materialize_term(
+                        &terms[1],
+                        select_type,
+                        id_map,
+                        next_id,
+                        int32_type,
+                        id_to_type,
+                        type_classes,
+                        bool_type,
+                    )?;
+                    synthesized.append(&mut then_synth);
 
-                let inst_id = *next_id;
-                *next_id += 1;
-                let inst = Instruction::new(
-                    Op::Select,
-                    Some(result_type),
-                    Some(inst_id),
-                    vec![
-                        rspirv::dr::Operand::IdRef(cond_id),
-                        rspirv::dr::Operand::IdRef(then_id),
-                        rspirv::dr::Operand::IdRef(else_id),
-                    ],
-                );
-                synthesized.push(inst);
-                id_map.insert(format!("id{}", inst_id), inst_id);
-                return Some((inst_id, synthesized));
+                    let (else_id, mut else_synth) = materialize_term(
+                        &terms[2],
+                        select_type,
+                        id_map,
+                        next_id,
+                        int32_type,
+                        id_to_type,
+                        type_classes,
+                        bool_type,
+                    )?;
+                    synthesized.append(&mut else_synth);
+
+                    let inst_id = *next_id;
+                    *next_id += 1;
+                    let inst = Instruction::new(
+                        Op::Select,
+                        Some(select_type),
+                        Some(inst_id),
+                        vec![
+                            rspirv::dr::Operand::IdRef(cond_id),
+                            rspirv::dr::Operand::IdRef(then_id),
+                            rspirv::dr::Operand::IdRef(else_id),
+                        ],
+                    );
+                    synthesized.push(inst);
+                    id_map.insert(format!("id{}", inst_id), inst_id);
+                    return Some((inst_id, synthesized));
+                }
             }
         }
     }
@@ -2570,5 +3075,117 @@ mod tests {
         let mut loader = rspirv::dr::Loader::new();
         rspirv::binary::parse_words(&words, &mut loader)
             .expect("optimized module should have no duplicate IDs");
+    }
+
+    #[test]
+    fn topological_sort_handles_forward_references() {
+        let mut id_to_term: HashMap<Word, String> = HashMap::new();
+        // id10 references id20 as a bare variable (both in id_to_term)
+        id_to_term.insert(10, "(Add id20 (Const 1))".to_string());
+        id_to_term.insert(20, "(Sym \"id5\")".to_string());
+        // id5 references nothing in id_to_term
+        id_to_term.insert(5, "(Const 42)".to_string());
+
+        let order = topological_sort_bindings(&id_to_term);
+        let pos_5 = order.iter().position(|&id| id == 5).unwrap();
+        let pos_10 = order.iter().position(|&id| id == 10).unwrap();
+        let pos_20 = order.iter().position(|&id| id == 20).unwrap();
+
+        // id20 must come before id10 (id10 references id20)
+        assert!(
+            pos_20 < pos_10,
+            "id20 (pos {pos_20}) must be bound before id10 (pos {pos_10})"
+        );
+        // id5 has no dependencies from id_to_term references
+        let _ = pos_5; // just needs to be present
+    }
+
+    #[test]
+    fn infer_result_type_corrects_int_op_with_bool_type() {
+        let mut id_to_type = HashMap::new();
+        let mut type_classes = HashMap::new();
+
+        let bool_type_id: Word = 1;
+        let int_type_id: Word = 2;
+        let operand_id: Word = 10;
+
+        type_classes.insert(bool_type_id, TypeClass::Bool);
+        type_classes.insert(int_type_id, TypeClass::Int);
+        id_to_type.insert(operand_id, int_type_id);
+
+        // IAdd instruction with bool result type (wrong) and int operands
+        let inst = Instruction::new(
+            Op::IAdd,
+            Some(bool_type_id),
+            Some(100),
+            vec![
+                rspirv::dr::Operand::IdRef(operand_id),
+                rspirv::dr::Operand::IdRef(operand_id),
+            ],
+        );
+
+        let corrected = infer_result_type(
+            &inst,
+            bool_type_id,
+            &id_to_type,
+            &type_classes,
+            Some(bool_type_id),
+        );
+        assert_eq!(
+            corrected, int_type_id,
+            "IAdd with bool type should be corrected to int type"
+        );
+    }
+
+    #[test]
+    fn infer_result_type_corrects_comparison_to_bool() {
+        let mut id_to_type = HashMap::new();
+        let mut type_classes = HashMap::new();
+
+        let bool_type_id: Word = 1;
+        let int_type_id: Word = 2;
+        let operand_id: Word = 10;
+
+        type_classes.insert(bool_type_id, TypeClass::Bool);
+        type_classes.insert(int_type_id, TypeClass::Int);
+        id_to_type.insert(operand_id, int_type_id);
+
+        // IEqual instruction with int result type (wrong) - should be bool
+        let inst = Instruction::new(
+            Op::IEqual,
+            Some(int_type_id),
+            Some(100),
+            vec![
+                rspirv::dr::Operand::IdRef(operand_id),
+                rspirv::dr::Operand::IdRef(operand_id),
+            ],
+        );
+
+        let corrected = infer_result_type(
+            &inst,
+            int_type_id,
+            &id_to_type,
+            &type_classes,
+            Some(bool_type_id),
+        );
+        assert_eq!(
+            corrected, bool_type_id,
+            "IEqual with int type should be corrected to bool type"
+        );
+    }
+
+    #[test]
+    fn required_result_type_class_categorizes_ops() {
+        assert_eq!(required_result_type_class(Op::IAdd), Some(TypeClass::Int));
+        assert_eq!(required_result_type_class(Op::FMul), Some(TypeClass::Float));
+        assert_eq!(
+            required_result_type_class(Op::FOrdLessThan),
+            Some(TypeClass::Bool)
+        );
+        assert_eq!(
+            required_result_type_class(Op::LogicalAnd),
+            Some(TypeClass::Bool)
+        );
+        assert_eq!(required_result_type_class(Op::Select), None);
     }
 }
