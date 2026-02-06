@@ -4339,6 +4339,210 @@ pub enum ValidationError {
         /// The opcode of the image operation.
         opcode: rspirv::spirv::Op,
     },
+    /// Image Operand Bias must be a 32-bit float scalar.
+    #[error(
+        "Expected Image Operand Bias to be a 32-bit float scalar in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandBiasNotFloat32Scalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Bias requires Dim 1D, 2D, 3D, or Cube.
+    #[error(
+        "Image Operand Bias requires Dim 1D, 2D, 3D, or Cube in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandBiasInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Lod must be a 32-bit float scalar for ExplicitLod.
+    #[error(
+        "Expected Image Operand Lod to be a 32-bit float scalar when used with ExplicitLod in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandLodNotFloat32ScalarForExplicit {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Lod must be a 32-bit int scalar for OpImageFetch.
+    #[error(
+        "Expected Image Operand Lod to be a 32-bit int scalar when used with OpImageFetch in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandLodNotInt32ScalarForFetch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Lod requires Dim 1D, 2D, 3D, or Cube.
+    #[error(
+        "Image Operand Lod requires Dim 1D, 2D, 3D, or Cube in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandLodInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Lod requires MS parameter to be 0.
+    #[error(
+        "Image Operand Lod requires MS parameter to be 0 in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandLodRequiresMsZero {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Grad dx/dy must be 32-bit float scalar or vector.
+    #[error(
+        "Expected Image Operand Grad to be 32-bit float scalars or vectors in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandGradNotFloat32 {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Grad has wrong component count.
+    #[error(
+        "Expected Image Operand Grad to have {expected} components, but given {actual} in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandGradComponentCountMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// Expected component count.
+        expected: u32,
+        /// Actual component count.
+        actual: u32,
+    },
+    /// Image Operand ConstOffset/Offset must be 32-bit int scalar or vector.
+    #[error(
+        "Expected Image Operand {operand_name} to be a 32-bit int scalar or vector in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandOffsetNotInt32 {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// Name of the operand (ConstOffset or Offset).
+        operand_name: &'static str,
+    },
+    /// Image Operand ConstOffset/Offset has wrong component count.
+    #[error(
+        "Expected Image Operand {operand_name} to have {expected} components, but given {actual} in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandOffsetComponentCountMismatch {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+        /// Name of the operand (ConstOffset or Offset).
+        operand_name: &'static str,
+        /// Expected component count.
+        expected: u32,
+        /// Actual component count.
+        actual: u32,
+    },
+    /// Image Operand ConstOffset must be a constant.
+    #[error(
+        "Expected Image Operand ConstOffset to be a const object in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandConstOffsetNotConstant {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand Sample must be a 32-bit int scalar.
+    #[error(
+        "Expected Image Operand Sample to be a 32-bit int scalar in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandSampleNotInt32Scalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand MinLod must be a 32-bit float scalar.
+    #[error(
+        "Expected Image Operand MinLod to be a 32-bit float scalar in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandMinLodNotFloat32Scalar {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand MinLod requires ImplicitLod or Grad.
+    #[error(
+        "Image Operand MinLod can only be used with ImplicitLod opcodes or together with Grad in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandMinLodRequiresImplicitOrGrad {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand MinLod requires Dim 1D, 2D, 3D, or Cube.
+    #[error(
+        "Image Operand MinLod requires Dim 1D, 2D, 3D, or Cube in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandMinLodInvalidDim {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
+    /// Image Operand MinLod requires MS parameter to be 0.
+    #[error(
+        "Image Operand MinLod requires MS parameter to be 0 in {opcode:?} in block {block:?} of function {function:?}"
+    )]
+    ImageOperandMinLodRequiresMsZero {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode of the image operation.
+        opcode: rspirv::spirv::Op,
+    },
     /// Implicit LOD requires Fragment execution model.
     #[error(
         "instruction {opcode:?} in block {block:?} of function {function:?} uses implicit LOD which requires Fragment execution model"

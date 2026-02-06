@@ -6537,3 +6537,380 @@ fn make_texel_visible_with_non_private_on_read_passes() {
     let ctx = data.as_context();
     ImageOperandRule.validate(&ctx).expect("MakeTexelVisible + NonPrivateTexel on read should pass");
 }
+
+// ============================================================================
+// ImageOperandTypeRule tests
+// ============================================================================
+
+/// Helper to create a TestContextData with type definitions needed for image operand type tests.
+fn image_operand_type_test_data() -> crate::validation::TestContextData {
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::{Dim, ImageFormat, Op};
+    use crate::validation::types::ResultId;
+
+    let mut data = crate::validation::TestContextData::default();
+    let rid = |id: u32| ResultId::try_from(id).unwrap();
+
+    // OpTypeFloat %10 32
+    data.definitions.insert(rid(10), Instruction::new(
+        Op::TypeFloat, None, Some(10), vec![Operand::LiteralBit32(32)],
+    ));
+
+    // OpTypeInt %11 32 0
+    data.definitions.insert(rid(11), Instruction::new(
+        Op::TypeInt, None, Some(11), vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+
+    // OpTypeImage %13 %10 2D 0 0 0 1 Unknown
+    data.definitions.insert(rid(13), Instruction::new(
+        Op::TypeImage, None, Some(13), vec![
+            Operand::IdRef(10), Operand::Dim(Dim::Dim2D),
+            Operand::LiteralBit32(0), Operand::LiteralBit32(0),
+            Operand::LiteralBit32(0), Operand::LiteralBit32(1),
+            Operand::ImageFormat(ImageFormat::Unknown),
+        ],
+    ));
+
+    // OpTypeSampledImage %12 %13
+    data.definitions.insert(rid(12), Instruction::new(
+        Op::TypeSampledImage, None, Some(12), vec![Operand::IdRef(13)],
+    ));
+
+    // float constant: ID 20, type=float32
+    data.definitions.insert(rid(20), Instruction::new(
+        Op::Constant, Some(10), Some(20), vec![Operand::LiteralBit32(0x3f800000)],
+    ));
+
+    // int constant: ID 21, type=int32
+    data.definitions.insert(rid(21), Instruction::new(
+        Op::Constant, Some(11), Some(21), vec![Operand::LiteralBit32(0)],
+    ));
+
+    // int constant: ID 22, type=int32
+    data.definitions.insert(rid(22), Instruction::new(
+        Op::Constant, Some(11), Some(22), vec![Operand::LiteralBit32(1)],
+    ));
+
+    // OpTypeVector %14 %10 2  (vec2<f32>)
+    data.definitions.insert(rid(14), Instruction::new(
+        Op::TypeVector, None, Some(14), vec![Operand::IdRef(10), Operand::LiteralBit32(2)],
+    ));
+
+    // OpTypeVector %15 %11 2  (ivec2)
+    data.definitions.insert(rid(15), Instruction::new(
+        Op::TypeVector, None, Some(15), vec![Operand::IdRef(11), Operand::LiteralBit32(2)],
+    ));
+
+    // vec2 float constant: ID 23, type=vec2<f32>
+    data.definitions.insert(rid(23), Instruction::new(
+        Op::ConstantComposite, Some(14), Some(23), vec![Operand::IdRef(20), Operand::IdRef(20)],
+    ));
+
+    // ivec2 constant: ID 24, type=ivec2
+    data.definitions.insert(rid(24), Instruction::new(
+        Op::ConstantComposite, Some(15), Some(24), vec![Operand::IdRef(21), Operand::IdRef(21)],
+    ));
+
+    // sampled image: ID 30, type=sampled_image
+    data.definitions.insert(rid(30), Instruction::new(
+        Op::SampledImage, Some(12), Some(30), vec![Operand::IdRef(40), Operand::IdRef(41)],
+    ));
+
+    data
+}
+
+#[test]
+fn image_operand_bias_rejects_int_type() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleImplicitLod with Bias operand that is an int (should fail)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleImplicitLod,
+        Some(10), // result type = float32
+        Some(100),
+        vec![
+            Operand::IdRef(30), // sampled image
+            Operand::IdRef(20), // coordinate
+            Operand::ImageOperands(ImageOperands::BIAS),
+            Operand::IdRef(21), // bias value = int32 (should be float32)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandTypeRule.validate(&ctx);
+    assert!(result.is_err(), "Bias with int type should fail");
+    assert!(
+        matches!(
+            result.unwrap_err().error,
+            ValidationError::ImageOperandBiasNotFloat32Scalar { .. }
+        ),
+    );
+}
+
+#[test]
+fn image_operand_bias_accepts_float32() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleImplicitLod with Bias operand that is float32 (should pass)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleImplicitLod,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(30), // sampled image
+            Operand::IdRef(20), // coordinate
+            Operand::ImageOperands(ImageOperands::BIAS),
+            Operand::IdRef(20), // bias value = float32 (correct)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandTypeRule.validate(&ctx).expect("Bias with float32 should pass");
+}
+
+#[test]
+fn image_operand_lod_rejects_float_for_fetch() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageFetch with Lod that is float (should fail, Fetch requires int)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageFetch,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(13), // image (not sampled image for Fetch)
+            Operand::IdRef(20), // coordinate
+            Operand::ImageOperands(ImageOperands::LOD),
+            Operand::IdRef(20), // lod = float32 (should be int32)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandTypeRule.validate(&ctx);
+    assert!(result.is_err(), "Lod with float type on Fetch should fail");
+    assert!(
+        matches!(
+            result.unwrap_err().error,
+            ValidationError::ImageOperandLodNotInt32ScalarForFetch { .. }
+        ),
+    );
+}
+
+#[test]
+fn image_operand_lod_accepts_int32_for_fetch() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageFetch with Lod that is int32 (should pass)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageFetch,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(13),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::LOD),
+            Operand::IdRef(21), // lod = int32 (correct for Fetch)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandTypeRule.validate(&ctx).expect("Lod with int32 on Fetch should pass");
+}
+
+#[test]
+fn image_operand_sample_rejects_float_type() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageFetch with Sample that is float (should fail)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageFetch,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(13),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::SAMPLE),
+            Operand::IdRef(20), // sample = float32 (should be int32)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandTypeRule.validate(&ctx);
+    assert!(result.is_err(), "Sample with float type should fail");
+    assert!(
+        matches!(
+            result.unwrap_err().error,
+            ValidationError::ImageOperandSampleNotInt32Scalar { .. }
+        ),
+    );
+}
+
+#[test]
+fn image_operand_const_offset_rejects_non_constant() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleExplicitLod with ConstOffset that is NOT a constant
+    // ID 21 is an OpConstant so it IS a constant. Use ID 100 which is not in definitions
+    // Actually let's add a non-constant instruction for this.
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleExplicitLod,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(30),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::LOD | ImageOperands::CONST_OFFSET),
+            Operand::IdRef(20), // lod = float32
+            Operand::IdRef(50), // const_offset = non-constant (ID 50 is an IAdd result)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+
+    // Add a non-constant ivec2 value: ID 50 = OpIAdd %ivec2 %24 %24
+    let non_const = Instruction::new(
+        rspirv::spirv::Op::IAdd,
+        Some(15), // ivec2 type
+        Some(50),
+        vec![Operand::IdRef(24), Operand::IdRef(24)],
+    );
+    data.definitions.insert(crate::validation::types::ResultId::try_from(50).unwrap(), non_const);
+
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandTypeRule.validate(&ctx);
+    assert!(result.is_err(), "ConstOffset with non-constant should fail");
+    assert!(
+        matches!(
+            result.unwrap_err().error,
+            ValidationError::ImageOperandConstOffsetNotConstant { .. }
+        ),
+    );
+}
+
+#[test]
+fn image_operand_const_offset_accepts_constant_int32() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleExplicitLod with ConstOffset that IS a constant ivec2
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleExplicitLod,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(30),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::LOD | ImageOperands::CONST_OFFSET),
+            Operand::IdRef(20), // lod = float32
+            Operand::IdRef(24), // const_offset = OpConstantComposite ivec2 (correct)
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandTypeRule.validate(&ctx).expect("ConstOffset with constant ivec2 should pass");
+}
+
+#[test]
+fn image_operand_minlod_rejects_without_implicit_or_grad() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleExplicitLod with MinLod but no Grad (should fail)
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleExplicitLod,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(30),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::LOD | ImageOperands::MIN_LOD),
+            Operand::IdRef(20), // lod = float32
+            Operand::IdRef(20), // min_lod = float32
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    let result = ImageOperandTypeRule.validate(&ctx);
+    assert!(result.is_err(), "MinLod without ImplicitLod or Grad should fail");
+    assert!(
+        matches!(
+            result.unwrap_err().error,
+            ValidationError::ImageOperandMinLodRequiresImplicitOrGrad { .. }
+        ),
+    );
+}
+
+#[test]
+fn image_operand_minlod_accepts_with_grad() {
+    use crate::validation::rules::image::ImageOperandTypeRule;
+    use crate::validation::ValidationRule;
+    use rspirv::dr::{Instruction, Operand};
+    use rspirv::spirv::ImageOperands;
+
+    // OpImageSampleExplicitLod with Grad + MinLod (should pass)
+    // Grad dx/dy need to be vec2<f32> for 2D image
+    let inst = Instruction::new(
+        rspirv::spirv::Op::ImageSampleExplicitLod,
+        Some(10),
+        Some(100),
+        vec![
+            Operand::IdRef(30),
+            Operand::IdRef(20),
+            Operand::ImageOperands(ImageOperands::GRAD | ImageOperands::MIN_LOD),
+            Operand::IdRef(23), // grad dx = vec2<f32>
+            Operand::IdRef(23), // grad dy = vec2<f32>
+            Operand::IdRef(20), // min_lod = float32 scalar
+        ],
+    );
+    let mut data = image_operand_type_test_data();
+    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
+    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    data.module.functions.push(function);
+    let ctx = data.as_context();
+    ImageOperandTypeRule.validate(&ctx).expect("MinLod with Grad should pass");
+}

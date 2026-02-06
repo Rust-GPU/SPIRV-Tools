@@ -529,6 +529,417 @@ impl ValidationRule for ImageOperandRule {
 }
 
 // ============================================================================
+// Image Operand Type Rule
+// ============================================================================
+
+/// Gets the type instruction for a value operand ID.
+/// Given an ID, looks up its defining instruction, gets its result_type,
+/// and returns the type instruction.
+fn get_value_type_id(
+    operand_id: u32,
+    definitions: &HashMap<ResultId, Instruction>,
+) -> Option<u32> {
+    let rid = ResultId::try_from(operand_id).ok()?;
+    let inst = definitions.get(&rid)?;
+    inst.result_type
+}
+
+/// Returns true if the defining instruction for an ID is a constant opcode.
+fn is_constant_id(id: u32, definitions: &HashMap<ResultId, Instruction>) -> bool {
+    let Some(rid) = ResultId::try_from(id).ok() else {
+        return false;
+    };
+    let Some(inst) = definitions.get(&rid) else {
+        return false;
+    };
+    matches!(
+        inst.class.opcode,
+        Op::Constant
+            | Op::ConstantComposite
+            | Op::ConstantNull
+            | Op::ConstantTrue
+            | Op::ConstantFalse
+            | Op::SpecConstant
+            | Op::SpecConstantComposite
+            | Op::SpecConstantTrue
+            | Op::SpecConstantFalse
+            | Op::SpecConstantOp
+    )
+}
+
+/// Validates the types of image operand values (Bias, Lod, Grad, etc.).
+pub struct ImageOperandTypeRule;
+
+impl ValidationRule for ImageOperandTypeRule {
+    fn name(&self) -> &'static str {
+        "image-operand-type"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let resolver = DefaultTypeResolver;
+
+        for function in &ctx.module.functions {
+            let function_id = function
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .and_then(|id| Id::try_from(id).ok());
+
+            for block in &function.blocks {
+                let block_id = block
+                    .label
+                    .as_ref()
+                    .and_then(|l| l.result_id)
+                    .and_then(|id| Id::try_from(id).ok());
+
+                for inst in &block.instructions {
+                    if !inst.class.opcode.is_image_op() || inst.class.opcode.is_image_query() {
+                        continue;
+                    }
+
+                    let image_type_info = get_image_type_from_instruction(inst, ctx);
+
+                    let Some((mask, operand_start_idx)) = find_image_operand_mask(inst) else {
+                        continue;
+                    };
+
+                    if mask.is_empty() {
+                        continue;
+                    }
+
+                    let opcode = inst.class.opcode;
+                    let mut word_idx = operand_start_idx;
+
+                    // Walk through flags in bit order and type-check each dependent operand.
+
+                    // Bias (bit 0)
+                    if mask.contains(ImageOperands::BIAS) {
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            word_idx += 1;
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                if !resolver.is_float_scalar(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(
+                                        ValidationError::ImageOperandBiasNotFloat32Scalar {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            }
+                        } else {
+                            word_idx += 1;
+                        }
+
+                        if let Some(ref info) = image_type_info {
+                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                                return Err(ValidationError::ImageOperandBiasInvalidDim {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
+                            }
+                        }
+                    }
+
+                    // Lod (bit 1)
+                    if mask.contains(ImageOperands::LOD) {
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            word_idx += 1;
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                let is_explicit = opcode.is_explicit_lod();
+                                let is_gather_lod_bias_amd = opcode.is_gather()
+                                    && ctx.has_capability(Capability::ImageGatherBiasLodAMD);
+
+                                if is_explicit || is_gather_lod_bias_amd {
+                                    // Must be 32-bit float scalar
+                                    if !resolver.is_float_scalar(type_id, &ctx.definitions)
+                                        || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                    {
+                                        return Err(
+                                            ValidationError::ImageOperandLodNotFloat32ScalarForExplicit {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                } else {
+                                    // Must be 32-bit int scalar (for Fetch)
+                                    if !resolver.is_int_scalar(type_id, &ctx.definitions)
+                                        || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                    {
+                                        return Err(
+                                            ValidationError::ImageOperandLodNotInt32ScalarForFetch {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            word_idx += 1;
+                        }
+
+                        if let Some(ref info) = image_type_info {
+                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                                return Err(ValidationError::ImageOperandLodInvalidDim {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
+                            }
+                            if info.multisampled != 0 {
+                                return Err(ValidationError::ImageOperandLodRequiresMsZero {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
+                            }
+                        }
+                    }
+
+                    // Grad (bit 2) - consumes TWO operands (dx, dy)
+                    if mask.contains(ImageOperands::GRAD) {
+                        let dx_id = inst.operands.get(word_idx).and_then(|o| o.id_ref_any());
+                        word_idx += 1;
+                        let dy_id = inst.operands.get(word_idx).and_then(|o| o.id_ref_any());
+                        word_idx += 1;
+
+                        if let (Some(dx_id), Some(dy_id)) = (dx_id, dy_id) {
+                            let dx_type = get_value_type_id(dx_id, &ctx.definitions);
+                            let dy_type = get_value_type_id(dy_id, &ctx.definitions);
+
+                            // Both must be 32-bit float scalar or vector
+                            for type_id in [dx_type, dy_type].into_iter().flatten() {
+                                if !resolver.is_float_scalar_or_vector(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(ValidationError::ImageOperandGradNotFloat32 {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                    }
+                                    .into());
+                                }
+                            }
+
+                            // Component count must match plane coord size
+                            if let Some(ref info) = image_type_info {
+                                let plane_size = get_plane_coord_size(info);
+                                for type_id in [dx_type, dy_type].into_iter().flatten() {
+                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    if plane_size != dim {
+                                        return Err(
+                                            ValidationError::ImageOperandGradComponentCountMismatch {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                                expected: plane_size,
+                                                actual: dim,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ConstOffset (bit 3)
+                    if mask.contains(ImageOperands::CONST_OFFSET) {
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            word_idx += 1;
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(ValidationError::ImageOperandOffsetNotInt32 {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                        operand_name: "ConstOffset",
+                                    }
+                                    .into());
+                                }
+
+                                if let Some(ref info) = image_type_info {
+                                    let plane_size = get_plane_coord_size(info);
+                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    if plane_size != dim {
+                                        return Err(
+                                            ValidationError::ImageOperandOffsetComponentCountMismatch {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                                operand_name: "ConstOffset",
+                                                expected: plane_size,
+                                                actual: dim,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+
+                            // Must be a constant
+                            if !is_constant_id(operand_id, &ctx.definitions) {
+                                return Err(
+                                    ValidationError::ImageOperandConstOffsetNotConstant {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                    }
+                                    .into(),
+                                );
+                            }
+                        } else {
+                            word_idx += 1;
+                        }
+                    }
+
+                    // Offset (bit 4)
+                    if mask.contains(ImageOperands::OFFSET) {
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            word_idx += 1;
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(ValidationError::ImageOperandOffsetNotInt32 {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                        operand_name: "Offset",
+                                    }
+                                    .into());
+                                }
+
+                                if let Some(ref info) = image_type_info {
+                                    let plane_size = get_plane_coord_size(info);
+                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    if plane_size != dim {
+                                        return Err(
+                                            ValidationError::ImageOperandOffsetComponentCountMismatch {
+                                                function: function_id,
+                                                block: block_id,
+                                                opcode,
+                                                operand_name: "Offset",
+                                                expected: plane_size,
+                                                actual: dim,
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            word_idx += 1;
+                        }
+                    }
+
+                    // ConstOffsets (bit 5) - skip detailed validation for now, just advance
+                    if mask.contains(ImageOperands::CONST_OFFSETS) {
+                        word_idx += 1;
+                    }
+
+                    // Sample (bit 6)
+                    if mask.contains(ImageOperands::SAMPLE) {
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            word_idx += 1;
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                if !resolver.is_int_scalar(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(
+                                        ValidationError::ImageOperandSampleNotInt32Scalar {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            }
+                        } else {
+                            word_idx += 1;
+                        }
+                    }
+
+                    // MinLod (bit 7)
+                    if mask.contains(ImageOperands::MIN_LOD) {
+                        // MinLod only valid with ImplicitLod or Grad
+                        if !opcode.is_implicit_lod()
+                            && !mask.contains(ImageOperands::GRAD)
+                        {
+                            return Err(
+                                ValidationError::ImageOperandMinLodRequiresImplicitOrGrad {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into(),
+                            );
+                        }
+
+                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                            let _ = word_idx; // last operand we check
+                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                                if !resolver.is_float_scalar(type_id, &ctx.definitions)
+                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                {
+                                    return Err(
+                                        ValidationError::ImageOperandMinLodNotFloat32Scalar {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            }
+                        }
+
+                        if let Some(ref info) = image_type_info {
+                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                                return Err(ValidationError::ImageOperandMinLodInvalidDim {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
+                            }
+                            if info.multisampled != 0 {
+                                return Err(
+                                    ValidationError::ImageOperandMinLodRequiresMsZero {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                    }
+                                    .into(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Image Sample Execution Model Rule
 // ============================================================================
 
@@ -2952,6 +3363,7 @@ pub fn all_image_rules() -> Vec<&'static dyn ValidationRule> {
         &ImageFetchRule,
         &ImageCoordinateRule,
         &ImageSampleResultTypeRule,
+        &ImageOperandTypeRule,
     ]
 }
 
