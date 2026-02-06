@@ -7126,10 +7126,7 @@ fn test_boolconst_ne_produces_boolconst() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "Ne(3, 7) should fold to BoolConst(1)"
-    );
+    assert!(check.is_ok(), "Ne(3, 7) should fold to BoolConst(1)");
 }
 
 #[test]
@@ -7152,10 +7149,7 @@ fn test_boolconst_reflexive_eq() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "Eq(x, x) should fold to BoolConst(1)"
-    );
+    assert!(check.is_ok(), "Eq(x, x) should fold to BoolConst(1)");
 }
 
 #[test]
@@ -7178,10 +7172,7 @@ fn test_boolconst_reflexive_ne() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "Ne(x, x) should fold to BoolConst(0)"
-    );
+    assert!(check.is_ok(), "Ne(x, x) should fold to BoolConst(0)");
 }
 
 #[test]
@@ -7361,10 +7352,7 @@ fn test_boolconst_logical_complement() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "LogAnd(x, LogNot(x)) should be BoolConst(0)"
-    );
+    assert!(check.is_ok(), "LogAnd(x, LogNot(x)) should be BoolConst(0)");
 }
 
 #[test]
@@ -7387,10 +7375,7 @@ fn test_boolconst_logical_tautology() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "LogOr(x, LogNot(x)) should be BoolConst(1)"
-    );
+    assert!(check.is_ok(), "LogOr(x, LogNot(x)) should be BoolConst(1)");
 }
 
 #[test]
@@ -7413,10 +7398,7 @@ fn test_boolconst_float_comparison_reflexive() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(
-        check.is_ok(),
-        "FOrdEq(x, x) should fold to BoolConst(1)"
-    );
+    assert!(check.is_ok(), "FOrdEq(x, x) should fold to BoolConst(1)");
 }
 
 #[test]
