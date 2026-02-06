@@ -249,9 +249,9 @@ impl ControlFlowGraph {
         let exit_blocks: Vec<Id> = blocks
             .iter()
             .filter(|b| {
-                successors.get(b).is_none_or(|s| {
-                    s.is_empty() || s.iter().all(|t| !blocks.contains(t))
-                })
+                successors
+                    .get(b)
+                    .is_none_or(|s| s.is_empty() || s.iter().all(|t| !blocks.contains(t)))
             })
             .copied()
             .collect();
