@@ -598,7 +598,73 @@ fn compare_operands_must_match_each_other() {
 }
 
 #[test]
-fn compare_operands_cannot_mix_signed_and_unsigned_ints() {
+fn iequal_allows_mixed_signedness() {
+    // SPIR-V spec: IEqual/INotEqual only require matching component width,
+    // not identical types. Signed and unsigned operands of the same width are allowed.
+    use rspirv::{binary::Assemble, dr::Builder};
+    let mut b = Builder::new();
+    b.set_version(1, 6);
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.capability(rspirv::spirv::Capability::Matrix);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::GLSL450,
+    );
+    let void = b.type_void();
+    let bool_ty = b.type_bool();
+    let int = b.type_int(32, 1);
+    let uint = b.type_int(32, 0);
+    let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+    b.begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+        .unwrap();
+    b.begin_block(None).unwrap();
+    let lhs = b.constant_bit32(int, 1);
+    let rhs = b.constant_bit32(uint, 1);
+    b.i_equal(bool_ty, None, lhs, rhs).unwrap();
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    let words = b.module().assemble();
+    words
+        .as_slice()
+        .validate(TargetEnv::Universal1_6)
+        .expect("IEqual should accept operands with different signedness but same width");
+}
+
+#[test]
+fn inotequal_allows_mixed_signedness() {
+    // SPIR-V spec: INotEqual only requires matching component width.
+    use rspirv::{binary::Assemble, dr::Builder};
+    let mut b = Builder::new();
+    b.set_version(1, 6);
+    b.capability(rspirv::spirv::Capability::Shader);
+    b.capability(rspirv::spirv::Capability::Matrix);
+    b.memory_model(
+        rspirv::spirv::AddressingModel::Logical,
+        rspirv::spirv::MemoryModel::GLSL450,
+    );
+    let void = b.type_void();
+    let bool_ty = b.type_bool();
+    let int = b.type_int(32, 1);
+    let uint = b.type_int(32, 0);
+    let fn_ty = b.type_function(void, std::iter::empty::<u32>());
+    b.begin_function(void, None, rspirv::spirv::FunctionControl::NONE, fn_ty)
+        .unwrap();
+    b.begin_block(None).unwrap();
+    let lhs = b.constant_bit32(int, 1);
+    let rhs = b.constant_bit32(uint, 1);
+    b.i_not_equal(bool_ty, None, lhs, rhs).unwrap();
+    b.ret().unwrap();
+    b.end_function().unwrap();
+    let words = b.module().assemble();
+    words
+        .as_slice()
+        .validate(TargetEnv::Universal1_6)
+        .expect("INotEqual should accept operands with different signedness but same width");
+}
+
+#[test]
+fn ugreater_than_rejects_mixed_signedness() {
+    // UGreaterThan requires identical operand types (signedness matters).
     use rspirv::{binary::Assemble, dr::Builder};
     let mut b = Builder::new();
     b.set_version(1, 6);
@@ -619,20 +685,20 @@ fn compare_operands_cannot_mix_signed_and_unsigned_ints() {
     let header = b.begin_block(None).unwrap();
     let lhs = b.constant_bit32(int, 1);
     let rhs = b.constant_bit32(uint, 1);
-    b.i_equal(bool_ty, None, lhs, rhs).unwrap();
+    b.u_greater_than(bool_ty, None, lhs, rhs).unwrap();
     b.ret().unwrap();
     b.end_function().unwrap();
     let words = b.module().assemble();
     let err = words
         .as_slice()
         .validate(TargetEnv::Universal1_6)
-        .expect_err("compare operands must have identical types, not just width");
+        .expect_err("UGreaterThan requires identical operand types");
     assert_eq!(
         err,
         ValidationError::LogicalOperandTypeMismatch {
             function: Id::try_from(main).unwrap(),
             block: Id::try_from(header).unwrap(),
-            opcode: rspirv::spirv::Op::IEqual,
+            opcode: rspirv::spirv::Op::UGreaterThan,
             result_type: TypeId::try_from(bool_ty).unwrap(),
         }
     );

@@ -68,9 +68,10 @@ impl ValidationRule for FloatArithmeticRule {
                         continue;
                     };
 
-                    // Result type must be float scalar, vector, or cooperative matrix
+                    // Result type must be float scalar, vector, cooperative matrix, or cooperative vector NV
                     if !resolver.is_float_scalar_or_vector(result_type_id, ctx.definitions)
                         && !resolver.is_float_cooperative_matrix(result_type_id, ctx.definitions)
+                        && !resolver.is_float_cooperative_vector_nv(result_type_id, ctx.definitions)
                     {
                         if let (Some(func), Some(block), Some(result_type)) = (
                             function_id,
@@ -199,6 +200,12 @@ impl ValidationRule for IntArithmeticRule {
                     if is_unsigned {
                         if !resolver
                             .is_unsigned_int_scalar_or_vector(result_type_id, ctx.definitions)
+                            && !resolver
+                                .is_unsigned_int_cooperative_matrix(result_type_id, ctx.definitions)
+                            && !resolver.is_unsigned_int_cooperative_vector_nv(
+                                result_type_id,
+                                ctx.definitions,
+                            )
                         {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
@@ -215,7 +222,12 @@ impl ValidationRule for IntArithmeticRule {
                                 .into());
                             }
                         }
-                    } else if !resolver.is_int_scalar_or_vector(result_type_id, ctx.definitions) {
+                    } else if !resolver.is_int_scalar_or_vector(result_type_id, ctx.definitions)
+                        && !resolver.is_int_cooperative_matrix(result_type_id, ctx.definitions)
+                        && !resolver
+                            .is_unsigned_int_cooperative_matrix(result_type_id, ctx.definitions)
+                        && !resolver.is_int_cooperative_vector_nv(result_type_id, ctx.definitions)
+                    {
                         if let (Some(func), Some(block), Some(result_type)) = (
                             function_id,
                             block_id,

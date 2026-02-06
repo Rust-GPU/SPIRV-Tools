@@ -348,7 +348,10 @@ impl ValidationRule for FloatComparisonRule {
                     let right_type = get_operand_type(1);
 
                     if let Some(left_tid) = left_type {
-                        if !resolver.is_float_scalar_or_vector(left_tid, ctx.definitions) {
+                        if !resolver.is_float_scalar_or_vector(left_tid, ctx.definitions)
+                            && !resolver.is_float_cooperative_matrix(left_tid, ctx.definitions)
+                            && !resolver.is_float_cooperative_vector_nv(left_tid, ctx.definitions)
+                        {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
@@ -368,8 +371,12 @@ impl ValidationRule for FloatComparisonRule {
                         let left_dim = resolver.get_dimension(left_tid, ctx.definitions);
 
                         // Result must match operand dimension (scalar operand -> scalar result,
-                        // vector operand -> vector result)
-                        if left_dim != result_dim {
+                        // vector operand -> vector result). Skip dimension check for cooperative
+                        // matrix/vector types (they don't have a simple dimension).
+                        let is_cooperative = resolver
+                            .is_cooperative_matrix(left_tid, ctx.definitions)
+                            || resolver.is_cooperative_vector_nv(left_tid, ctx.definitions);
+                        if !is_cooperative && left_dim != result_dim {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
@@ -614,8 +621,11 @@ impl ValidationRule for IntComparisonRule {
                     let right_type = get_operand_type(1);
 
                     if let (Some(left_tid), Some(right_tid)) = (left_type, right_type) {
-                        // Left must be int
-                        if !resolver.is_int_scalar_or_vector(left_tid, ctx.definitions) {
+                        // Left must be int (scalar, vector, cooperative matrix, or cooperative vector NV)
+                        if !resolver.is_int_scalar_or_vector(left_tid, ctx.definitions)
+                            && !resolver.is_int_cooperative_matrix(left_tid, ctx.definitions)
+                            && !resolver.is_int_cooperative_vector_nv(left_tid, ctx.definitions)
+                        {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
@@ -632,8 +642,11 @@ impl ValidationRule for IntComparisonRule {
                             }
                         }
 
-                        // Right must be int
-                        if !resolver.is_int_scalar_or_vector(right_tid, ctx.definitions) {
+                        // Right must be int (scalar, vector, cooperative matrix, or cooperative vector NV)
+                        if !resolver.is_int_scalar_or_vector(right_tid, ctx.definitions)
+                            && !resolver.is_int_cooperative_matrix(right_tid, ctx.definitions)
+                            && !resolver.is_int_cooperative_vector_nv(right_tid, ctx.definitions)
+                        {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
@@ -670,7 +683,7 @@ impl ValidationRule for IntComparisonRule {
                             }
                         }
 
-                        // Check bit widths first (more specific error)
+                        // Check bit widths match
                         let left_width = resolver.get_bit_width(left_tid, ctx.definitions);
                         let right_width = resolver.get_bit_width(right_tid, ctx.definitions);
 
@@ -690,8 +703,15 @@ impl ValidationRule for IntComparisonRule {
                             }
                         }
 
-                        // Operand types must be identical (signedness matters even if width matches)
-                        if left_tid != right_tid {
+                        // For IEqual/INotEqual, the SPIR-V spec only requires
+                        // matching component width and component count (signedness
+                        // may differ). For all other integer comparisons
+                        // (UGreaterThan, SLessThan, etc.), operand types must be
+                        // identical.
+                        let is_equality_op =
+                            matches!(inst.class.opcode, Op::IEqual | Op::INotEqual);
+
+                        if !is_equality_op && left_tid != right_tid {
                             if let (Some(func), Some(block), Some(result_type)) = (
                                 function_id,
                                 block_id,
