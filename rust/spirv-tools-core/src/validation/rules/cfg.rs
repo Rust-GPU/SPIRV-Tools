@@ -1737,6 +1737,62 @@ impl ValidationRule for SwitchCaseUniquenessRule {
     }
 }
 
+// ============================================================================
+// Switch Selector Type Rule
+// ============================================================================
+
+/// Validates that OpSwitch selector operand is an integer type.
+pub struct SwitchSelectorTypeRule;
+
+impl ValidationRule for SwitchSelectorTypeRule {
+    fn name(&self) -> &'static str {
+        "switch-selector-type"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        for function in &ctx.module.functions {
+            for block in &function.blocks {
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::Switch {
+                        continue;
+                    }
+                    // OpSwitch operands[0] = selector id
+                    let Some(Operand::IdRef(selector_id)) = inst.operands.first() else {
+                        continue;
+                    };
+                    let selector_rid = match ResultId::try_from(*selector_id) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+                    // Look up the instruction that defines the selector
+                    let Some(selector_def) = ctx.definitions.get(&selector_rid) else {
+                        continue;
+                    };
+                    // Get the selector's result type
+                    let Some(type_id) = selector_def.result_type else {
+                        continue;
+                    };
+                    let type_rid = match ResultId::try_from(type_id) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+                    let Some(type_inst) = ctx.definitions.get(&type_rid) else {
+                        continue;
+                    };
+                    if type_inst.class.opcode != Op::TypeInt {
+                        return Err(ValidationError::SwitchSelectorNotInteger {
+                            selector_id: to_id(*selector_id),
+                            found_opcode: type_inst.class.opcode,
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Static rule instances
 static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
 static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
@@ -1752,6 +1808,7 @@ static MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE: MaximalReconvergencePredecessors
     MaximalReconvergencePredecessorsRule;
 static LIFETIME_RULE: LifetimeRule = LifetimeRule;
 static SWITCH_CASE_UNIQUENESS_RULE: SwitchCaseUniquenessRule = SwitchCaseUniquenessRule;
+static SWITCH_SELECTOR_TYPE_RULE: SwitchSelectorTypeRule = SwitchSelectorTypeRule;
 
 /// Returns all CFG validation rules.
 pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
@@ -1769,5 +1826,6 @@ pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
         &MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE,
         &LIFETIME_RULE,
         &SWITCH_CASE_UNIQUENESS_RULE,
+        &SWITCH_SELECTOR_TYPE_RULE,
     ]
 }

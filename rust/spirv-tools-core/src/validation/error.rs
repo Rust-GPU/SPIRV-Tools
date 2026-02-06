@@ -2813,6 +2813,14 @@ pub enum ValidationError {
         /// The duplicate literal value.
         literal: u64,
     },
+    /// OpSwitch selector must be an integer type.
+    #[error("OpSwitch selector {selector_id} must be OpTypeInt, found {found_opcode:?}")]
+    SwitchSelectorNotInteger {
+        /// The selector operand ID.
+        selector_id: Id,
+        /// The opcode of the selector's type.
+        found_opcode: rspirv::spirv::Op,
+    },
     /// A basic block is missing its required `OpLabel`.
     #[error("function {function:?} contains a block without OpLabel at index {block_index}")]
     MissingBlockLabel {
