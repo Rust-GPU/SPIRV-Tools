@@ -7206,7 +7206,7 @@ fn test_boolconst_gamma_logand_type_safety() {
 
 #[test]
 fn test_boolconst_gamma_logand_allowed() {
-    // BoolConst(0) in false branch: SHOULD convert to LogAnd
+    // BoolConst(0) in false branch: SHOULD convert to LogAnd when x is bool-typed
     let mut egraph = create_spirv_egraph().unwrap();
 
     egraph
@@ -7215,6 +7215,7 @@ fn test_boolconst_gamma_logand_allowed() {
             r#"
         (let c (Sym "cond"))
         (let x (Sym "x"))
+        (set (ExprType x) (BoolType))
         (let root (Gamma c x (BoolConst 0)))
     "#,
         )
@@ -7226,7 +7227,7 @@ fn test_boolconst_gamma_logand_allowed() {
     let check = egraph.parse_and_run_program(None, "(check (= root (LogAnd c x)))");
     assert!(
         check.is_ok(),
-        "Gamma(c, x, BoolConst(0)) should simplify to LogAnd(c, x)"
+        "Gamma(c, x, BoolConst(0)) should simplify to LogAnd(c, x) when x is BoolType"
     );
 }
 
@@ -7267,6 +7268,7 @@ fn test_boolconst_gamma_logor_allowed() {
             r#"
         (let c (Sym "cond"))
         (let x (Sym "x"))
+        (set (ExprType x) (BoolType))
         (let root (Gamma c (BoolConst 1) x))
     "#,
         )

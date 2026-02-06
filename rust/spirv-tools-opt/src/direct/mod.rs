@@ -44,13 +44,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Collect ALL SSA value IDs that can be referenced
+    // Collect ALL IDs in the module (not just SSA values) so next_id doesn't collide.
+    // This includes block labels, function defs, types, etc.
     let mut all_ssa_ids: HashSet<Word> = HashSet::new();
 
     // Track which block each value is defined in
     let mut id_to_block: HashMap<Word, Word> = HashMap::new();
 
-    // Add module-level constants first
+    // Add module-level constants and types first
     for inst in &module.types_global_values {
         if let Some(id) = inst.result_id {
             all_ssa_ids.insert(id);
@@ -106,6 +107,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
 
     for (func_idx, func) in module.functions.iter().enumerate() {
+        // Function def/end IDs
+        if let Some(id) = func.def.as_ref().and_then(|d| d.result_id) {
+            all_ssa_ids.insert(id);
+        }
+
         // Function parameters
         for param in &func.parameters {
             if let Some(id) = param.result_id {
@@ -114,6 +120,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
 
         for (block_idx, block) in func.blocks.iter().enumerate() {
+            // Block label IDs are part of the ID space
+            if let Some(label_id) = block.label.as_ref().and_then(|l| l.result_id) {
+                all_ssa_ids.insert(label_id);
+            }
+
             // Get block label for id_to_block tracking
             let block_label = block.label.as_ref().and_then(|l| l.result_id);
 
@@ -245,6 +256,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             egraph
                 .parse_and_run_program(None, &binding)
                 .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
+        }
+    }
+
+    // Seed ExprType for all known IDs so type-guarded rules work correctly.
+    // This sets the type domain (BoolType/IntType/FloatType) for each expression
+    // based on its SPIR-V result type, enabling type-aware rewrite guards.
+    for (&id, &type_id) in &ctx.id_to_type {
+        if ctx.id_to_term.contains_key(&id) {
+            let type_str = match type_classes.get(&type_id) {
+                Some(TypeClass::Bool) => "(BoolType)",
+                Some(TypeClass::Int) => "(IntType)",
+                Some(TypeClass::Float) => "(FloatType)",
+                _ => continue,
+            };
+            let cmd = format!("(set (ExprType id{}) {})", id, type_str);
+            let _ = egraph.parse_and_run_program(None, &cmd);
         }
     }
 
@@ -747,6 +774,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         .iter()
         .find(|inst| inst.class.opcode == Op::TypeBool)
         .and_then(|inst| inst.result_id);
+    let float32_type = module
+        .types_global_values
+        .iter()
+        .find(|inst| {
+            inst.class.opcode == Op::TypeFloat
+                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
+        })
+        .and_then(|inst| inst.result_id);
 
     // Only extract from IDs that are both:
     // 1. True roots (operands of side effects) - these are the outputs we need
@@ -777,7 +812,43 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         if !results.is_empty() {
             let result_str = format!("{}", results[0]);
             if let Some(term) = parse_extract_result(&result_str) {
-                let result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
+                let mut result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
+
+                // Query ExprType from the egraph to detect type domain changes.
+                // If the extracted term changed type domain (e.g., int→bool via
+                // Gamma simplification), correct the result_type to match.
+                let expr_type_query = format!("(extract (ExprType id{}))", id);
+                if let Ok(type_results) = egraph.parse_and_run_program(None, &expr_type_query) {
+                    if !type_results.is_empty() {
+                        let type_str = format!("{}", type_results[0]);
+                        let current_class = type_classes
+                            .get(&result_type)
+                            .copied()
+                            .unwrap_or(TypeClass::Other);
+                        let egraph_class = if type_str.contains("BoolType") {
+                            TypeClass::Bool
+                        } else if type_str.contains("IntType") {
+                            TypeClass::Int
+                        } else if type_str.contains("FloatType") {
+                            TypeClass::Float
+                        } else {
+                            TypeClass::Other
+                        };
+                        if egraph_class != TypeClass::Other && egraph_class != current_class {
+                            // Type domain changed - select correct SPIR-V type
+                            let corrected = match egraph_class {
+                                TypeClass::Bool => bool_type,
+                                TypeClass::Int => int32_type,
+                                TypeClass::Float => float32_type,
+                                TypeClass::Other => None,
+                            };
+                            if let Some(ct) = corrected {
+                                result_type = ct;
+                                ctx.id_to_type.insert(id, ct);
+                            }
+                        }
+                    }
+                }
 
                 // Before parsing, ensure all inline constants in the term have IDs
                 // If the ENTIRE term is just a constant (e.g., "(Const 84)"), use the
@@ -896,14 +967,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             &ctx.id_to_type,
                             &type_classes,
                             bool_type,
+                            int32_type,
+                            float32_type,
                         );
                         if corrected_type != result_type {
                             inst.result_type = Some(corrected_type);
                             ctx.id_to_type.insert(id, corrected_type);
                         }
-                        // Also collect IDs from the generated instruction
-                        collect_ids_from_instruction(&inst, &mut used_ids);
-                        optimized_instructions.insert(id, inst);
+                        // Safety: if the instruction still has invalid types, skip optimization
+                        if !instruction_has_valid_types(&inst, &ctx.id_to_type, &type_classes) {
+                            // Fall back to original instruction
+                        } else {
+                            // Also collect IDs from the generated instruction
+                            collect_ids_from_instruction(&inst, &mut used_ids);
+                            optimized_instructions.insert(id, inst);
+                        }
                     } else {
                         // If simple parsing fails, try to materialize nested expressions
                         // This handles cases like (Mul (Const 4) (Add (Sym "id5") (Sym "id6")))
@@ -936,13 +1014,24 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                         &ctx.id_to_type,
                                         &type_classes,
                                         bool_type,
+                                        int32_type,
+                                        float32_type,
                                     );
                                     if corrected_type != result_type {
                                         inst.result_type = Some(corrected_type);
                                         ctx.id_to_type.insert(id, corrected_type);
                                     }
-                                    collect_ids_from_instruction(&inst, &mut used_ids);
-                                    optimized_instructions.insert(id, inst);
+                                    // Safety: if the instruction still has invalid types, skip
+                                    if !instruction_has_valid_types(
+                                        &inst,
+                                        &ctx.id_to_type,
+                                        &type_classes,
+                                    ) {
+                                        // Fall through - don't apply this optimization
+                                    } else {
+                                        collect_ids_from_instruction(&inst, &mut used_ids);
+                                        optimized_instructions.insert(id, inst);
+                                    }
                                     // Update id_map if the ID changed
                                     if let Some(old) = old_id {
                                         if old != id {
@@ -2185,6 +2274,8 @@ fn infer_result_type(
     id_to_type: &HashMap<Word, Word>,
     type_classes: &HashMap<Word, TypeClass>,
     bool_type: Option<Word>,
+    int32_type: Option<Word>,
+    float32_type: Option<Word>,
 ) -> Word {
     let op = inst.class.opcode;
     let required = match required_result_type_class(op) {
@@ -2209,24 +2300,83 @@ fn infer_result_type(
                 return bt;
             }
         }
-        TypeClass::Int | TypeClass::Float => {
-            // For arithmetic ops, infer type from first operand
+        TypeClass::Int => {
+            // Try to infer from operands first
             for operand in &inst.operands {
                 if let Some(operand_id) = operand.id_ref_any() {
                     if let Some(&operand_type) = id_to_type.get(&operand_id) {
-                        if let Some(&operand_class) = type_classes.get(&operand_type) {
-                            if operand_class == required {
-                                return operand_type;
-                            }
+                        if type_classes.get(&operand_type) == Some(&TypeClass::Int) {
+                            return operand_type;
                         }
                     }
                 }
+            }
+            // Fall back to module's int32 type
+            if let Some(it) = int32_type {
+                return it;
+            }
+        }
+        TypeClass::Float => {
+            // Try to infer from operands first
+            for operand in &inst.operands {
+                if let Some(operand_id) = operand.id_ref_any() {
+                    if let Some(&operand_type) = id_to_type.get(&operand_id) {
+                        if type_classes.get(&operand_type) == Some(&TypeClass::Float) {
+                            return operand_type;
+                        }
+                    }
+                }
+            }
+            // Fall back to module's float32 type
+            if let Some(ft) = float32_type {
+                return ft;
             }
         }
         TypeClass::Other => {}
     }
 
     original_result_type
+}
+
+/// Check if an instruction has valid types for its opcode.
+/// Returns true if types are compatible, false if there's a mismatch.
+fn instruction_has_valid_types(
+    inst: &Instruction,
+    id_to_type: &HashMap<Word, Word>,
+    type_classes: &HashMap<Word, TypeClass>,
+) -> bool {
+    let op = inst.class.opcode;
+
+    // Check result type
+    if let (Some(required), Some(result_type)) = (required_result_type_class(op), inst.result_type)
+    {
+        let actual = type_classes
+            .get(&result_type)
+            .copied()
+            .unwrap_or(TypeClass::Other);
+        if actual != required && actual != TypeClass::Other {
+            return false;
+        }
+    }
+
+    // Check operand types for comparisons
+    if let Some(required_op_class) = required_operand_type_class(op) {
+        for operand in &inst.operands {
+            if let Some(operand_id) = operand.id_ref_any() {
+                if let Some(&operand_type) = id_to_type.get(&operand_id) {
+                    let actual = type_classes
+                        .get(&operand_type)
+                        .copied()
+                        .unwrap_or(TypeClass::Other);
+                    if actual != required_op_class && actual != TypeClass::Other {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    true
 }
 
 /// Topological sort of binding IDs based on term dependencies.
@@ -3130,10 +3280,49 @@ mod tests {
             &id_to_type,
             &type_classes,
             Some(bool_type_id),
+            Some(int_type_id),
+            None,
         );
         assert_eq!(
             corrected, int_type_id,
             "IAdd with bool type should be corrected to int type"
+        );
+    }
+
+    #[test]
+    fn infer_result_type_falls_back_to_int32_type() {
+        let mut type_classes = HashMap::new();
+        let id_to_type = HashMap::new(); // empty - no operand types
+
+        let bool_type_id: Word = 1;
+        let int_type_id: Word = 2;
+
+        type_classes.insert(bool_type_id, TypeClass::Bool);
+        type_classes.insert(int_type_id, TypeClass::Int);
+
+        // IAdd instruction with bool result type and NO operand type info
+        let inst = Instruction::new(
+            Op::IAdd,
+            Some(bool_type_id),
+            Some(100),
+            vec![
+                rspirv::dr::Operand::IdRef(10),
+                rspirv::dr::Operand::IdRef(11),
+            ],
+        );
+
+        let corrected = infer_result_type(
+            &inst,
+            bool_type_id,
+            &id_to_type,
+            &type_classes,
+            Some(bool_type_id),
+            Some(int_type_id),
+            None,
+        );
+        assert_eq!(
+            corrected, int_type_id,
+            "IAdd should fall back to int32_type when operands have no type info"
         );
     }
 
@@ -3167,6 +3356,8 @@ mod tests {
             &id_to_type,
             &type_classes,
             Some(bool_type_id),
+            Some(int_type_id),
+            None,
         );
         assert_eq!(
             corrected, bool_type_id,
