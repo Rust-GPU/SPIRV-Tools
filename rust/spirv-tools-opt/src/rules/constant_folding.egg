@@ -33,52 +33,52 @@
 ; Comparison Constant Folding
 ; =============================================================================
 
-; Equality comparisons
+; Equality comparisons - produce BoolConst since comparisons return boolean
 (rule ((= e (Eq (Const a) (Const b))) (= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (Eq (Const a) (Const b))) (!= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (Ne (Const a) (Const b))) (!= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (Ne (Const a) (Const b))) (= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; Signed comparisons (using signed i64 semantics)
 (rule ((= e (SLt (Const a) (Const b))) (< a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SLt (Const a) (Const b))) (>= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (SLe (Const a) (Const b))) (<= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SLe (Const a) (Const b))) (> a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (SGt (Const a) (Const b))) (> a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SGt (Const a) (Const b))) (<= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (SGe (Const a) (Const b))) (>= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SGe (Const a) (Const b))) (< a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; Unsigned comparisons (treat as unsigned - need primitives for proper handling)
 ; For now, use signed comparisons (works for positive values)
 (rule ((= e (ULt (Const a) (Const b))) (< a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULt (Const a) (Const b))) (>= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (ULe (Const a) (Const b))) (<= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe (Const a) (Const b))) (> a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (UGt (Const a) (Const b))) (> a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (UGt (Const a) (Const b))) (<= a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (UGe (Const a) (Const b))) (>= a b))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (UGe (Const a) (Const b))) (< a b))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Rotation Constant Folding
@@ -118,37 +118,52 @@
 ; Logical Operation Constant Folding
 ; =============================================================================
 
-; Logical NOT of constant (0 -> 1, non-zero -> 0)
+; Logical NOT of constant (0 -> 1, non-zero -> 0) - uses BoolConst
+(rule ((= e (LogNot (BoolConst 0))))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogNot (BoolConst a))) (!= a 0))
+      ((union e (BoolConst 0))))
+; Also match Const for when conditions come from integer constant folding chains
 (rule ((= e (LogNot (Const 0))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogNot (Const a))) (!= a 0))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
-; Logical AND of constants
-(rule ((= e (LogAnd (Const 0) (Const b))))
-      ((union e (Const 0))))
-(rule ((= e (LogAnd (Const a) (Const 0))))
-      ((union e (Const 0))))
-(rule ((= e (LogAnd (Const a) (Const b))) (!= a 0) (!= b 0))
-      ((union e (Const 1))))
+; Logical AND of boolean constants
+(rule ((= e (LogAnd (BoolConst 0) x)))
+      ((union e (BoolConst 0))))
+(rule ((= e (LogAnd x (BoolConst 0))))
+      ((union e (BoolConst 0))))
+(rule ((= e (LogAnd (BoolConst a) (BoolConst b))) (!= a 0) (!= b 0))
+      ((union e (BoolConst 1))))
+; Also match Const for interop
+(rule ((= e (LogAnd (Const 0) x)))
+      ((union e (BoolConst 0))))
+(rule ((= e (LogAnd x (Const 0))))
+      ((union e (BoolConst 0))))
 
-; Logical OR of constants
-(rule ((= e (LogOr (Const a) (Const b))) (!= a 0))
-      ((union e (Const 1))))
-(rule ((= e (LogOr (Const a) (Const b))) (!= b 0))
-      ((union e (Const 1))))
-(rule ((= e (LogOr (Const 0) (Const 0))))
-      ((union e (Const 0))))
+; Logical OR of boolean constants
+(rule ((= e (LogOr (BoolConst a) x)) (!= a 0))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogOr x (BoolConst a))) (!= a 0))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogOr (BoolConst 0) (BoolConst 0))))
+      ((union e (BoolConst 0))))
+; Also match Const for interop
+(rule ((= e (LogOr (Const a) x)) (!= a 0))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogOr x (Const a))) (!= a 0))
+      ((union e (BoolConst 1))))
 
-; Logical equality of constants
-(rule ((= e (LogEq (Const a) (Const b))) (= a b))
-      ((union e (Const 1))))
-(rule ((= e (LogEq (Const a) (Const b))) (!= a b))
-      ((union e (Const 0))))
-(rule ((= e (LogNe (Const a) (Const b))) (!= a b))
-      ((union e (Const 1))))
-(rule ((= e (LogNe (Const a) (Const b))) (= a b))
-      ((union e (Const 0))))
+; Logical equality of boolean constants
+(rule ((= e (LogEq (BoolConst a) (BoolConst b))) (= a b))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogEq (BoolConst a) (BoolConst b))) (!= a b))
+      ((union e (BoolConst 0))))
+(rule ((= e (LogNe (BoolConst a) (BoolConst b))) (!= a b))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogNe (BoolConst a) (BoolConst b))) (= a b))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Division and Modulo Constant Folding

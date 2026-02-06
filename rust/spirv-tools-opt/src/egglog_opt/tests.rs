@@ -5294,7 +5294,8 @@ fn test_subst_bitwise() {
 
 #[test]
 fn test_subst_comparison() {
-    // Subst(SLt(Arg(0), Const(10)), 0, Const(5)) = SLt(Const(5), Const(10)) = Const(1) (true)
+    // Subst(SLt(Arg(0), Const(10)), 0, Const(5)) = SLt(Const(5), Const(10)) = BoolConst(1) (true)
+    // Comparisons produce BoolConst (not Const) to prevent type confusion
     let mut egraph = create_spirv_egraph().unwrap();
 
     egraph
@@ -5304,7 +5305,7 @@ fn test_subst_comparison() {
         (let body (SLt (Arg 0) (Const 10)))
         (let val (Const 5))
         (let root (Subst body 0 val))
-        (let expected (Const 1))
+        (let expected (BoolConst 1))
     "#,
         )
         .unwrap();
@@ -7073,5 +7074,372 @@ fn test_licm_vec_times_scalar() {
     assert!(
         check.is_ok(),
         "VecTimesScalar with LoopInvariant args should be LoopInvariant"
+    );
+}
+
+// =============================================================================
+// BoolConst Type Safety Tests
+// =============================================================================
+// These tests verify that boolean constants (BoolConst) are kept separate from
+// integer constants (Const) to prevent type confusion in the optimizer.
+
+#[test]
+fn test_boolconst_comparison_produces_boolconst() {
+    // Comparisons should produce BoolConst, not Const
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let root (Eq (Const 5) (Const 5)))
+        (let expected (BoolConst 1))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "Eq(5, 5) should fold to BoolConst(1), not Const(1)"
+    );
+}
+
+#[test]
+fn test_boolconst_ne_produces_boolconst() {
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let root (Ne (Const 3) (Const 7)))
+        (let expected (BoolConst 1))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "Ne(3, 7) should fold to BoolConst(1)"
+    );
+}
+
+#[test]
+fn test_boolconst_reflexive_eq() {
+    // x == x should produce BoolConst(1)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let root (Eq x x))
+        (let expected (BoolConst 1))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "Eq(x, x) should fold to BoolConst(1)"
+    );
+}
+
+#[test]
+fn test_boolconst_reflexive_ne() {
+    // x != x should produce BoolConst(0)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let root (Ne x x))
+        (let expected (BoolConst 0))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "Ne(x, x) should fold to BoolConst(0)"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_logand_type_safety() {
+    // The critical bug fix: Gamma(c, x, Const(0)) should NOT become LogAnd(c, x)
+    // Only Gamma(c, x, BoolConst(0)) should become LogAnd(c, x)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    // Integer zero in false branch: should NOT convert to LogAnd
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let x (Sym "x"))
+        (let root (Gamma c x (Const 0)))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    // root should NOT be unified with LogAnd(c, x)
+    let check = egraph.parse_and_run_program(None, "(check (= root (LogAnd c x)))");
+    assert!(
+        check.is_err(),
+        "Gamma(c, x, Const(0)) must NOT simplify to LogAnd - would cause type confusion"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_logand_allowed() {
+    // BoolConst(0) in false branch: SHOULD convert to LogAnd
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let x (Sym "x"))
+        (let root (Gamma c x (BoolConst 0)))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root (LogAnd c x)))");
+    assert!(
+        check.is_ok(),
+        "Gamma(c, x, BoolConst(0)) should simplify to LogAnd(c, x)"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_logor_type_safety() {
+    // Integer one in true branch: should NOT convert to LogOr
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let x (Sym "x"))
+        (let root (Gamma c (Const 1) x))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root (LogOr c x)))");
+    assert!(
+        check.is_err(),
+        "Gamma(c, Const(1), x) must NOT simplify to LogOr - would cause type confusion"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_logor_allowed() {
+    // BoolConst(1) in true branch: SHOULD convert to LogOr
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let x (Sym "x"))
+        (let root (Gamma c (BoolConst 1) x))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root (LogOr c x)))");
+    assert!(
+        check.is_ok(),
+        "Gamma(c, BoolConst(1), x) should simplify to LogOr(c, x)"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_bool_identity() {
+    // Gamma(c, BoolConst(1), BoolConst(0)) = c
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let root (Gamma c (BoolConst 1) (BoolConst 0)))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root c))");
+    assert!(
+        check.is_ok(),
+        "Gamma(c, BoolConst(1), BoolConst(0)) should simplify to c"
+    );
+}
+
+#[test]
+fn test_boolconst_gamma_bool_negation() {
+    // Gamma(c, BoolConst(0), BoolConst(1)) = LogNot(c)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let c (Sym "cond"))
+        (let root (Gamma c (BoolConst 0) (BoolConst 1)))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root (LogNot c)))");
+    assert!(
+        check.is_ok(),
+        "Gamma(c, BoolConst(0), BoolConst(1)) should simplify to LogNot(c)"
+    );
+}
+
+#[test]
+fn test_boolconst_logical_complement() {
+    // LogAnd(x, LogNot(x)) should produce BoolConst(0)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let root (LogAnd x (LogNot x)))
+        (let expected (BoolConst 0))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "LogAnd(x, LogNot(x)) should be BoolConst(0)"
+    );
+}
+
+#[test]
+fn test_boolconst_logical_tautology() {
+    // LogOr(x, LogNot(x)) should produce BoolConst(1)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let root (LogOr x (LogNot x)))
+        (let expected (BoolConst 1))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "LogOr(x, LogNot(x)) should be BoolConst(1)"
+    );
+}
+
+#[test]
+fn test_boolconst_float_comparison_reflexive() {
+    // FOrdEq(x, x) should produce BoolConst(1)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "f"))
+        (let root (FOrdEq x x))
+        (let expected (BoolConst 1))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
+    assert!(
+        check.is_ok(),
+        "FOrdEq(x, x) should fold to BoolConst(1)"
+    );
+}
+
+#[test]
+fn test_boolconst_const_not_unified_with_boolconst() {
+    // Const(0) and BoolConst(0) should NOT be in the same e-class
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let int_zero (Const 0))
+        (let bool_false (BoolConst 0))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= int_zero bool_false))");
+    assert!(
+        check.is_err(),
+        "Const(0) and BoolConst(0) must be in different e-classes"
     );
 }

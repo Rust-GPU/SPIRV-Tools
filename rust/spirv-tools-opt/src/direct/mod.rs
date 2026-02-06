@@ -702,10 +702,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     }
                 }
                 Op::ConstantTrue => {
-                    id_map.entry("const_1".to_string()).or_insert(id);
+                    id_map.entry("boolconst_1".to_string()).or_insert(id);
                 }
                 Op::ConstantFalse => {
-                    id_map.entry("const_0".to_string()).or_insert(id);
+                    id_map.entry("boolconst_0".to_string()).or_insert(id);
                 }
                 _ => {}
             }
@@ -726,6 +726,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             inst.class.opcode == Op::TypeInt
                 && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
         })
+        .and_then(|inst| inst.result_id);
+    let bool_type = module
+        .types_global_values
+        .iter()
+        .find(|inst| inst.class.opcode == Op::TypeBool)
         .and_then(|inst| inst.result_id);
 
     // Only extract from IDs that are both:
@@ -763,14 +768,16 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 // If the ENTIRE term is just a constant (e.g., "(Const 84)"), use the
                 // current instruction's ID for that constant instead of synthesizing.
                 // This enables proper DCE - the instruction becomes the constant.
-                let is_root_const =
-                    term.trim().starts_with("(Const ") || term.trim().starts_with("(Const64 ");
+                use parse::InlineConstKind;
+                let is_root_const = term.trim().starts_with("(Const ")
+                    || term.trim().starts_with("(Const64 ")
+                    || term.trim().starts_with("(BoolConst ");
 
-                for (is_64, value) in find_inline_constants(&term) {
-                    let key = if is_64 {
-                        format!("const64_{}", value)
-                    } else {
-                        format!("const_{}", value)
+                for (kind, value) in find_inline_constants(&term) {
+                    let key = match kind {
+                        InlineConstKind::Int64 => format!("const64_{}", value),
+                        InlineConstKind::Int32 => format!("const_{}", value),
+                        InlineConstKind::Bool => format!("boolconst_{}", value),
                     };
                     if !id_map.contains_key(&key) {
                         // If this root folds to a constant, use its ID for the constant
@@ -778,9 +785,28 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         if is_root_const {
                             id_map.insert(key, id);
                             // Don't synthesize - will be added via folded_to_constant later
+                        } else if kind == InlineConstKind::Bool {
+                            // Synthesize a boolean constant
+                            if let Some(ty) = bool_type {
+                                let const_id = next_id;
+                                next_id += 1;
+                                let opcode = if value == 0 {
+                                    Op::ConstantFalse
+                                } else {
+                                    Op::ConstantTrue
+                                };
+                                synthesized_constants.push(Instruction::new(
+                                    opcode,
+                                    Some(ty),
+                                    Some(const_id),
+                                    vec![],
+                                ));
+                                id_map.insert(key, const_id);
+                                id_map.insert(format!("id{}", const_id), const_id);
+                            }
                         } else {
-                            // Create a new constant for use as an operand
-                            let const_type = if is_64 {
+                            // Create a new integer constant for use as an operand
+                            let const_type = if kind == InlineConstKind::Int64 {
                                 // Try to find 64-bit int type
                                 module
                                     .types_global_values
@@ -798,7 +824,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             if let Some(ty) = const_type {
                                 let const_id = next_id;
                                 next_id += 1;
-                                let operand = if is_64 {
+                                let operand = if kind == InlineConstKind::Int64 {
                                     rspirv::dr::Operand::LiteralBit64(value as u64)
                                 } else {
                                     rspirv::dr::Operand::LiteralBit32(value as u32)

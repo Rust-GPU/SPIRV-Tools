@@ -23,9 +23,15 @@
 ; =============================================================================
 
 ; Gamma with constant condition - ONE-DIRECTIONAL
+; Accept both Const and BoolConst since conditions are always boolean
+; but may be represented as either through constant folding
 (rule ((= e (Gamma (Const 0) t f)))
       ((union e f)))
 (rule ((= e (Gamma (Const 1) t f)))
+      ((union e t)))
+(rule ((= e (Gamma (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (Gamma (BoolConst 1) t f)))
       ((union e t)))
 
 ; Gamma with same true/false values - ONE-DIRECTIONAL
@@ -43,6 +49,12 @@
 (rule ((= e (Gamma c d (Gamma c a b))))
       ((union e (Gamma c d b))))
 
+; Gamma with BoolConst condition and negated condition
+(rule ((= e (Gamma (LogNot (BoolConst 0)) t f)))
+      ((union e t)))
+(rule ((= e (Gamma (LogNot (BoolConst 1)) t f)))
+      ((union e f)))
+
 ; =============================================================================
 ; Additional Phi/Gamma Redundancy Patterns (C++ RedundantPhi)
 ; =============================================================================
@@ -50,7 +62,8 @@
 
 ; Gamma where condition appears as one branch (boolean patterns)
 ; select(c, c, false) = c (identity for boolean c)
-(rule ((= e (Gamma c c (Const 0))))
+; IMPORTANT: Use BoolConst to ensure this only matches boolean contexts
+(rule ((= e (Gamma c c (BoolConst 0))))
       ((union e c)))
 ; select(c, true, c) = c | true = true when c is boolean
 ; But this is the same as select(c, 1, c) = c ? 1 : c which is just 1 when c is true, c when false
@@ -196,9 +209,14 @@
       ((union result (Unreachable))))
 
 ; Effect Gamma with constant condition - ONE-DIRECTIONAL to prevent explosion
+; Accept both Const and BoolConst since conditions may be either
 (rule ((= e (EffGamma (Const 0) t f)))
       ((union e f)))
 (rule ((= e (EffGamma (Const 1) t f)))
+      ((union e t)))
+(rule ((= e (EffGamma (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (EffGamma (BoolConst 1) t f)))
       ((union e t)))
 
 ; Effect Gamma with same branches - ONE-DIRECTIONAL to prevent explosion
@@ -234,29 +252,29 @@
 ; Additional Gamma Simplifications (C++ Parity)
 ; =============================================================================
 
-; Gamma with one branch being the condition itself
-; select(c, c, x) = c (when c is boolean, selecting true gives c=true)
-; ONE-DIRECTIONAL to prevent explosion
-(rule ((= e (Gamma c c x)))
-      ((union e c)))
-; select(c, x, c) where c is false gives false
-; More precisely: select(c, x, 0) when result is 0/1
+; NOTE: The rule (Gamma c c x) → c was REMOVED because it assumes boolean
+; context. In integer context, select(c, c, x) where c is 0/1 would give wrong
+; results if c is not boolean. The BoolConst rules above handle the boolean case.
+; select(c, x, false) = LogAnd(c, x) - ONLY for boolean contexts
+; IMPORTANT: Use BoolConst (not Const) to prevent type confusion.
+; Integer (Const 0) must NOT be converted to LogAnd since LogAnd requires boolean operands.
 ; ONE-DIRECTIONAL: Convert Gamma to LogAnd/LogOr, never reverse (prevents explosion)
-(rule ((= e (Gamma c x (Const 0))))
+(rule ((= e (Gamma c x (BoolConst 0))))
       ((union e (LogAnd c x))))
-(rule ((= e (Gamma c (Const 1) x)))
+(rule ((= e (Gamma c (BoolConst 1) x)))
       ((union e (LogOr c x))))
-(rule ((= e (Gamma c (Const 0) x)))
+(rule ((= e (Gamma c (BoolConst 0) x)))
       ((union e (LogAnd (LogNot c) x))))
-(rule ((= e (Gamma c x (Const 1))))
+(rule ((= e (Gamma c x (BoolConst 1))))
       ((union e (LogOr (LogNot c) x))))
 
-; Gamma with constants 0/1 and variable
-; select(c, 0, 1) = !c
-; select(c, 1, 0) = c - ONE-DIRECTIONAL to prevent explosion
-(rule ((= e (Gamma c (Const 0) (Const 1))))
+; Gamma with boolean constants 0/1 and variable
+; select(c, false, true) = !c
+; select(c, true, false) = c - ONE-DIRECTIONAL to prevent explosion
+; IMPORTANT: Use BoolConst to ensure this only matches boolean contexts
+(rule ((= e (Gamma c (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot c))))
-(rule ((= e (Gamma c (Const 1) (Const 0))))
+(rule ((= e (Gamma c (BoolConst 1) (BoolConst 0))))
       ((union e c)))
 
 ; Chained Gamma with opposite conditions - ONE-DIRECTIONAL
@@ -312,6 +330,8 @@
 
 ; Theta with false condition never executes - return initial value
 (rule ((= e (Theta (Const 0) body init)))
+      ((union e init)))
+(rule ((= e (Theta (BoolConst 0) body init)))
       ((union e init)))
 
 ; Theta with constant true condition would loop forever
@@ -600,6 +620,8 @@
 ; =============================================================================
 
 ; select(c, c && x, false) = c && x (boolean contexts)
+(rule ((= e (Gamma c (LogAnd c x) (BoolConst 0))))
+      ((union e (LogAnd c x))))
 (rule ((= e (Gamma c (LogAnd c x) (Const 0))))
       ((union e (LogAnd c x))))
 

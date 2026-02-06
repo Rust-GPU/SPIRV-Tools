@@ -103,8 +103,8 @@ impl EgglogContext {
                     format!("(Const {})", value)
                 }
             }
-            Op::ConstantTrue => "(Const 1)".to_string(),
-            Op::ConstantFalse => "(Const 0)".to_string(),
+            Op::ConstantTrue => "(BoolConst 1)".to_string(),
+            Op::ConstantFalse => "(BoolConst 0)".to_string(),
 
             Op::IAdd => self.binary_op("Add", inst)?,
             Op::ISub => self.binary_op("Sub", inst)?,

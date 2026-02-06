@@ -9,38 +9,54 @@
       ((union e x)))
 (rule ((= e (LogOr x x)))
       ((union e x)))
-(rule ((= e (LogAnd x (Const 0))))
-      ((union e (Const 0))))
-(rule ((= e (LogAnd (Const 0) x)))
-      ((union e (Const 0))))
+; LogAnd with false: already in constant_folding.egg (both BoolConst and Const variants)
+; LogOr with false (identity) - BoolConst and Const variants
+(rule ((= e (LogOr x (BoolConst 0))))
+      ((union e x)))
+(rule ((= e (LogOr (BoolConst 0) x)))
+      ((union e x)))
 (rule ((= e (LogOr x (Const 0))))
       ((union e x)))
 (rule ((= e (LogOr (Const 0) x)))
+      ((union e x)))
+; LogAnd with true (identity) - BoolConst and Const variants
+(rule ((= e (LogAnd x (BoolConst 1))))
+      ((union e x)))
+(rule ((= e (LogAnd (BoolConst 1) x)))
       ((union e x)))
 (rule ((= e (LogAnd x (Const 1))))
       ((union e x)))
 (rule ((= e (LogAnd (Const 1) x)))
       ((union e x)))
+; LogOr with true - BoolConst and Const variants
+(rule ((= e (LogOr x (BoolConst 1))))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogOr (BoolConst 1) x)))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr x (Const 1))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (Const 1) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; Logical complement
 (rule ((= e (LogAnd x (LogNot x))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (LogNot x) x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogOr x (LogNot x))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (LogNot x) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Select/If Rewrite Rules
 ; =============================================================================
 
 ; Select rules - ONE-DIRECTIONAL where RHS is simpler
+(rule ((= e (Select (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (Select (BoolConst 1) t f)))
+      ((union e t)))
 (rule ((= e (Select (Const 0) t f)))
       ((union e f)))
 (rule ((= e (Select (Const 1) t f)))
@@ -57,6 +73,10 @@
       ((union e (Select c d b))))
 
 ; If rules - ONE-DIRECTIONAL where RHS is simpler
+(rule ((= e (If (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (If (BoolConst 1) t f)))
+      ((union e t)))
 (rule ((= e (If (Const 0) t f)))
       ((union e f)))
 (rule ((= e (If (Const 1) t f)))
@@ -153,17 +173,25 @@
 ; XOR Logical Properties
 ; =============================================================================
 
-; a XOR a = false (represented as 0)
+; a XOR a = false (represented as BoolConst 0)
 (rule ((= e (LogNe a a)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
-; a XOR 0 = a - ONE-DIRECTIONAL
+; a XOR 0 = a - ONE-DIRECTIONAL (BoolConst and Const variants)
+(rule ((= e (LogNe a (BoolConst 0))))
+      ((union e a)))
+(rule ((= e (LogNe (BoolConst 0) a)))
+      ((union e a)))
 (rule ((= e (LogNe a (Const 0))))
       ((union e a)))
 (rule ((= e (LogNe (Const 0) a)))
       ((union e a)))
 
-; a XOR 1 = !a - ONE-DIRECTIONAL
+; a XOR 1 = !a - ONE-DIRECTIONAL (BoolConst and Const variants)
+(rule ((= e (LogNe a (BoolConst 1))))
+      ((union e (LogNot a))))
+(rule ((= e (LogNe (BoolConst 1) a)))
+      ((union e (LogNot a))))
 (rule ((= e (LogNe a (Const 1))))
       ((union e (LogNot a))))
 (rule ((= e (LogNe (Const 1) a)))
@@ -221,10 +249,14 @@
 ; select(false, a, b) = b - already in rules
 
 ; select(c, true, false) = c (boolean to boolean) - ONE-DIRECTIONAL
+(rule ((= e (Select c (BoolConst 1) (BoolConst 0))))
+      ((union e c)))
 (rule ((= e (Select c (Const 1) (Const 0))))
       ((union e c)))
 
 ; select(c, false, true) = !c - ONE-DIRECTIONAL
+(rule ((= e (Select c (BoolConst 0) (BoolConst 1))))
+      ((union e (LogNot c))))
 (rule ((= e (Select c (Const 0) (Const 1))))
       ((union e (LogNot c))))
 
@@ -289,71 +321,71 @@
 
 ; (a < b) && (b < a) = false (contradiction)
 (rule ((= e (LogAnd (SLt a b) (SLt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (ULt a b) (ULt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdLt a b) (FOrdLt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (a < b) && (b <= a) = false (contradiction)
 (rule ((= e (LogAnd (SLt a b) (SLe b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (SLe b a) (SLt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (ULt a b) (ULe b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (ULe b a) (ULt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdLt a b) (FOrdLe b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdLe b a) (FOrdLt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (a > b) && (b > a) = false (contradiction)
 (rule ((= e (LogAnd (SGt a b) (SGt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (UGt a b) (UGt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdGt a b) (FOrdGt b a))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (a == b) && (a != b) = false (contradiction)
 (rule ((= e (LogAnd (Eq a b) (Ne a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (Ne a b) (Eq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdEq a b) (FOrdNe a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdNe a b) (FOrdEq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (a == b) && (a < b) = false (contradiction)
 (rule ((= e (LogAnd (Eq a b) (SLt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (SLt a b) (Eq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (Eq a b) (ULt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (ULt a b) (Eq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdEq a b) (FOrdLt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdLt a b) (FOrdEq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (a == b) && (a > b) = false (contradiction)
 (rule ((= e (LogAnd (Eq a b) (SGt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (SGt a b) (Eq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (Eq a b) (UGt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (UGt a b) (Eq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdEq a b) (FOrdGt a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (FOrdGt a b) (FOrdEq a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Comparison Tautologies (always true) - extends comparison.egg
@@ -362,29 +394,29 @@
 
 ; (a <= b) || (b < a) = true (one must be true)
 (rule ((= e (LogOr (SLe a b) (SLt b a))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (SLt b a) (SLe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (ULe a b) (ULt b a))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (ULt b a) (ULe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; (a <= b) || (a > b) = true
 (rule ((= e (LogOr (SLe a b) (SGt a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (SGt a b) (SLe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (ULe a b) (UGt a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (UGt a b) (ULe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; (a == b) || (a != b) = true
 (rule ((= e (LogOr (Eq a b) (Ne a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (Ne a b) (Eq a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Comparison Redundancy Elimination
@@ -452,17 +484,17 @@
 
 ; Floating-point reflexive comparisons
 (rule ((= e (FOrdLt a a)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (FOrdGt a a)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (FOrdLe a a)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FOrdGe a a)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FOrdEq a a)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FOrdNe a a)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Comparison Transitivity (C++ Parity)
@@ -471,27 +503,27 @@
 
 ; (a < b) && (b < c) => also (a < c)
 (rule ((= e (LogAnd (SLt a b) (SLt b c))))
-      ((union (SLt a c) (Const 1))))
+      ((union (SLt a c) (BoolConst 1))))
 (rule ((= e (LogAnd (ULt a b) (ULt b c))))
-      ((union (ULt a c) (Const 1))))
+      ((union (ULt a c) (BoolConst 1))))
 
 ; (a <= b) && (b <= c) => also (a <= c)
 (rule ((= e (LogAnd (SLe a b) (SLe b c))))
-      ((union (SLe a c) (Const 1))))
+      ((union (SLe a c) (BoolConst 1))))
 (rule ((= e (LogAnd (ULe a b) (ULe b c))))
-      ((union (ULe a c) (Const 1))))
+      ((union (ULe a c) (BoolConst 1))))
 
 ; (a < b) && (b <= c) => also (a < c)
 (rule ((= e (LogAnd (SLt a b) (SLe b c))))
-      ((union (SLt a c) (Const 1))))
+      ((union (SLt a c) (BoolConst 1))))
 (rule ((= e (LogAnd (ULt a b) (ULe b c))))
-      ((union (ULt a c) (Const 1))))
+      ((union (ULt a c) (BoolConst 1))))
 
 ; (a <= b) && (b < c) => also (a < c)
 (rule ((= e (LogAnd (SLe a b) (SLt b c))))
-      ((union (SLt a c) (Const 1))))
+      ((union (SLt a c) (BoolConst 1))))
 (rule ((= e (LogAnd (ULe a b) (ULt b c))))
-      ((union (ULt a c) (Const 1))))
+      ((union (ULt a c) (BoolConst 1))))
 
 ; =============================================================================
 ; LogAnd/LogOr with Gamma Identity Patterns
@@ -529,16 +561,22 @@
 ; select(c, c && a, x) = c && select(c, a, false) when short-circuiting (c true means use a)
 ; Simplified: select(c, c && a, x) -> c && select(c, a, x) doesn't quite work
 ; But: select(c, c && a, false) = c && a (proved by truth table)
+(rule ((= e (Gamma c (LogAnd c a) (BoolConst 0))))
+      ((union e (LogAnd c a))))
 (rule ((= e (Gamma c (LogAnd c a) (Const 0))))
       ((union e (LogAnd c a))))
 
 ; select(c, c || a, true) = true (c true means c||a=true; c false means result is true)
+(rule ((= e (Gamma c (LogOr c a) (BoolConst 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (Gamma c (LogOr c a) (Const 1))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; select(c, !c, x) = select(c, false, x) = !c && x via existing rules
 ; But also: select(c, !c, true) = !c || c = true? No wait: c?!c:true = c?false:true = !c
 ; Actually if c is true, !c is false; if c is false, we get true. So = !c
+(rule ((= e (Gamma c (LogNot c) (BoolConst 1))))
+      ((union e (LogNot c))))
 (rule ((= e (Gamma c (LogNot c) (Const 1))))
       ((union e (LogNot c))))
 
@@ -586,13 +624,13 @@
 ; Comparing bit-extracted values
 ; (x & 0xFF) < 256 is always true (byte comparison)
 (rule ((= e (ULt (BitAnd x (Const 255)) (Const 256))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe (BitAnd x (Const 255)) (Const 255))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULt (BitAnd x (Const 65535)) (Const 65536))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe (BitAnd x (Const 65535)) (Const 65535))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; (x & mask) >= 0 is always true for unsigned (handled by UGe x 0 rule)
 
@@ -602,11 +640,11 @@
 
 ; (x & 1) == 0 || (x & 1) == 1 is always true (covers all cases)
 (rule ((= e (LogOr (Eq (BitAnd x (Const 1)) (Const 0)) (Eq (BitAnd x (Const 1)) (Const 1)))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; (x & 1) == 0 && (x & 1) == 1 is always false (contradiction)
 (rule ((= e (LogAnd (Eq (BitAnd x (Const 1)) (Const 0)) (Eq (BitAnd x (Const 1)) (Const 1)))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; (x & 1) != 0 is same as (x & 1) == 1 for single bit
 (rule ((= e (Ne (BitAnd x (Const 1)) (Const 0))))

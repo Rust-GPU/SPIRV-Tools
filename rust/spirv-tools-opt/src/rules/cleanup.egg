@@ -66,10 +66,18 @@
 ; Select(false, a, b) = b
 ; Select(c, a, a) = a
 
-; Select of booleans
+; Select of booleans (BoolConst and Const variants for interop)
+(rule ((= e (Select cond (BoolConst 1) (BoolConst 0))))
+      ((union e cond)))
+(rule ((= e (Select cond (BoolConst 0) (BoolConst 1))))
+      ((union e (LogNot cond))))
 (rule ((= e (Select cond (Const 1) (Const 0))))
       ((union e cond)))
 (rule ((= e (Select cond (Const 0) (Const 1))))
+      ((union e (LogNot cond))))
+(rule ((= e (Gamma cond (BoolConst 1) (BoolConst 0))))
+      ((union e cond)))
+(rule ((= e (Gamma cond (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot cond))))
 (rule ((= e (Gamma cond (Const 1) (Const 0))))
       ((union e cond)))
@@ -99,26 +107,42 @@
 ; !(x == y) = (x != y) - already covered
 ; !(x != y) = (x == y) - already covered
 
-; Comparison with boolean result and boolean constant
+; Comparison with boolean result and boolean constant (BoolConst and Const variants)
 ; LogEq(x, true) = x
+(rule ((= e (LogEq x (BoolConst 1))))
+      ((union e x)))
 (rule ((= e (LogEq x (Const 1))))
       ((union e x)))
 ; LogEq(x, false) = !x
+(rule ((= e (LogEq x (BoolConst 0))))
+      ((union e (LogNot x))))
 (rule ((= e (LogEq x (Const 0))))
       ((union e (LogNot x))))
 ; LogNe(x, false) = x
+(rule ((= e (LogNe x (BoolConst 0))))
+      ((union e x)))
 (rule ((= e (LogNe x (Const 0))))
       ((union e x)))
 ; LogNe(x, true) = !x
+(rule ((= e (LogNe x (BoolConst 1))))
+      ((union e (LogNot x))))
 (rule ((= e (LogNe x (Const 1))))
       ((union e (LogNot x))))
 ; Commuted versions
+(rule ((= e (LogEq (BoolConst 1) x)))
+      ((union e x)))
 (rule ((= e (LogEq (Const 1) x)))
       ((union e x)))
+(rule ((= e (LogEq (BoolConst 0) x)))
+      ((union e (LogNot x))))
 (rule ((= e (LogEq (Const 0) x)))
       ((union e (LogNot x))))
+(rule ((= e (LogNe (BoolConst 0) x)))
+      ((union e x)))
 (rule ((= e (LogNe (Const 0) x)))
       ((union e x)))
+(rule ((= e (LogNe (BoolConst 1) x)))
+      ((union e (LogNot x))))
 (rule ((= e (LogNe (Const 1) x)))
       ((union e (LogNot x))))
 
@@ -131,9 +155,9 @@
 
 ; Additional pattern: condition computed from constants
 (rule ((= cond (Eq (Const a) (Const b))) (= a b))
-      ((union cond (Const 1))))
+      ((union cond (BoolConst 1))))
 (rule ((= cond (Eq (Const a) (Const b))) (!= a b))
-      ((union cond (Const 0))))
+      ((union cond (BoolConst 0))))
 
 ; =============================================================================
 ; Normalization for Extraction

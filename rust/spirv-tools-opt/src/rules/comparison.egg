@@ -2,27 +2,27 @@
 ; Comparison Rewrite Rules
 ; =============================================================================
 
-; Reflexive comparisons
+; Reflexive comparisons - produce BoolConst since comparisons return boolean
 (rule ((= e (Eq x x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (Ne x x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (SLe x x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SGe x x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe x x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (UGe x x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (SLt x x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (SGt x x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (ULt x x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (UGt x x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; Comparison with negation - ONE-DIRECTIONAL
 (rule ((= e (Eq x (Neg x))))
@@ -127,59 +127,59 @@
 ; ULt: x < UINT32_MAX is always true unless x == UINT32_MAX
 ; UINT32_MAX < x is always false - ONE-DIRECTIONAL
 (rule ((= e (ULt (Const 4294967295) x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; x < 0 for unsigned is always false - ONE-DIRECTIONAL
 (rule ((= e (ULt x (Const 0))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; SLt: INT32_MAX < x is always false - ONE-DIRECTIONAL
 (rule ((= e (SLt (Const 2147483647) x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; x < INT32_MIN is always false - ONE-DIRECTIONAL
 (rule ((= e (SLt x (Const -2147483648))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; UGt: 0 > x for unsigned is always false - ONE-DIRECTIONAL
 (rule ((= e (UGt (Const 0) x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; x > UINT32_MAX is always false - ONE-DIRECTIONAL
 (rule ((= e (UGt x (Const 4294967295))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; SGt: INT32_MIN > x is always false - ONE-DIRECTIONAL
 (rule ((= e (SGt (Const -2147483648) x)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; x > INT32_MAX is always false - ONE-DIRECTIONAL
 (rule ((= e (SGt x (Const 2147483647))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; ULe: 0 <= x for unsigned is always true - ONE-DIRECTIONAL
 (rule ((= e (ULe (Const 0) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; x <= UINT32_MAX is always true - ONE-DIRECTIONAL
 (rule ((= e (ULe x (Const 4294967295))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; SLe: INT32_MIN <= x is always true - ONE-DIRECTIONAL
 (rule ((= e (SLe (Const -2147483648) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; x <= INT32_MAX is always true - ONE-DIRECTIONAL
 (rule ((= e (SLe x (Const 2147483647))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; UGe: x >= 0 for unsigned is always true - ONE-DIRECTIONAL
 (rule ((= e (UGe x (Const 0))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; UINT32_MAX >= x is always true - ONE-DIRECTIONAL
 (rule ((= e (UGe (Const 4294967295) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; SGe: x >= INT32_MIN is always true - ONE-DIRECTIONAL
 (rule ((= e (SGe x (Const -2147483648))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; INT32_MAX >= x is always true - ONE-DIRECTIONAL
 (rule ((= e (SGe (Const 2147483647) x)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Comparison Chaining (C++ Parity)
@@ -199,15 +199,15 @@
 
 ; (a < b) || (a >= b) is always true
 (rule ((= e (LogOr (SLt a b) (SGe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (ULt a b) (UGe a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; (a < b) && (a >= b) is always false
 (rule ((= e (LogAnd (SLt a b) (SGe a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (ULt a b) (UGe a b))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Min/Max and Comparison Relationships
@@ -218,15 +218,15 @@
 
 ; a <= SMax(a, b) is always true
 (rule ((= e (SLe a (SMax a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe a (UMax a b))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; SMin(a, b) <= a is always true
 (rule ((= e (SLe (SMin a b) a)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (ULe (UMin a b) a)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Comparison with Add/Sub

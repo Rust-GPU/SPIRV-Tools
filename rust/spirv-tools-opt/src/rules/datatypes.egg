@@ -240,6 +240,12 @@
     (Const i64)
     (Const64 i64)
 
+    ; Boolean constants - separate from integer constants to prevent type confusion
+    ; BoolConst(1) = true, BoolConst(0) = false
+    ; This prevents rules like (Gamma c x (Const 0)) -> (LogAnd c x) from
+    ; incorrectly matching integer contexts where (Const 0) is integer zero
+    (BoolConst i64)
+
     ; Symbols (variables / function arguments)
     (Sym String)
 
@@ -973,17 +979,25 @@
       ((union e (Const -1))))
 
 ; Logical operations that can determine result:
-; false && x = false
+; false && x = false (BoolConst and Const variants for interop)
+(rule ((= e (LogAnd (BoolConst 0) (Undef))))
+      ((union e (BoolConst 0))))
+(rule ((= e (LogAnd (Undef) (BoolConst 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (Const 0) (Undef))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (Undef) (Const 0))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
-; true || x = true
+; true || x = true (BoolConst and Const variants for interop)
+(rule ((= e (LogOr (BoolConst 1) (Undef))))
+      ((union e (BoolConst 1))))
+(rule ((= e (LogOr (Undef) (BoolConst 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (Const 1) (Undef))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (LogOr (Undef) (Const 1))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; CopyObject of Undef is Undef
 (rule ((= e (CopyObject (Undef))))
@@ -1109,6 +1123,10 @@
 ; Constants have known truth values
 (rule ((= e (Const 0))) ((CanBeFalse e)))
 (rule ((= e (Const c)) (!= c 0)) ((CanBeTrue e)))
+
+; Boolean constants have known truth values
+(rule ((= e (BoolConst 0))) ((CanBeFalse e)))
+(rule ((= e (BoolConst c)) (!= c 0)) ((CanBeTrue e)))
 
 ; By default, any non-constant expression can be either true or false
 ; (conservative: assume both branches are possible)
@@ -1507,6 +1525,9 @@
 
 ; SpecConst is a leaf
 (rule ((Live e) (= e (SpecConst _ _))) ())
+
+; BoolConst is a leaf
+(rule ((Live e) (= e (BoolConst _))) ())
 
 ; Spec constant operations
 (rule ((Live e) (= e (SpecAdd a b))) ((Live a) (Live b)))

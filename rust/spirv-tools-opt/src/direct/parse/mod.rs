@@ -30,7 +30,7 @@ use rspirv::spirv::Word;
 use std::collections::HashMap;
 
 // Re-export public items
-pub use constants::find_inline_constants;
+pub use constants::{find_inline_constants, InlineConstKind};
 pub use extract::parse_extract_result;
 
 /// Convert egglog term back to instruction.

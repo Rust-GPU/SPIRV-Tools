@@ -64,6 +64,29 @@ pub fn try_parse_constant(
         }
     }
 
+    // Parse (BoolConst N) - boolean constants
+    if let Some(rest) = term.strip_prefix("(BoolConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                if value == 0 {
+                    return Some(Instruction::new(
+                        Op::ConstantFalse,
+                        Some(result_type),
+                        Some(result_id),
+                        vec![],
+                    ));
+                } else {
+                    return Some(Instruction::new(
+                        Op::ConstantTrue,
+                        Some(result_type),
+                        Some(result_id),
+                        vec![],
+                    ));
+                }
+            }
+        }
+    }
+
     // Parse (Sym "idN")
     if let Some(rest) = term.strip_prefix("(Sym \"") {
         if let Some(sym_name) = rest.strip_suffix("\")") {
@@ -81,15 +104,64 @@ pub fn try_parse_constant(
     None
 }
 
-/// Find all (Const N) and (Const64 N) subterms in an extracted term.
-/// Returns a list of (is_64bit, value) tuples.
-pub fn find_inline_constants(term: &str) -> Vec<(bool, i64)> {
+/// Inline constant kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineConstKind {
+    /// 32-bit integer constant
+    Int32,
+    /// 64-bit integer constant
+    Int64,
+    /// Boolean constant
+    Bool,
+}
+
+/// Find all (Const N), (Const64 N), and (BoolConst N) subterms in an extracted term.
+/// Returns a list of (kind, value) tuples.
+pub fn find_inline_constants(term: &str) -> Vec<(InlineConstKind, i64)> {
     let mut constants = Vec::new();
     let mut i = 0;
     let chars: Vec<char> = term.chars().collect();
 
     while i < chars.len() {
-        // Look for "(Const " or "(Const64 "
+        // Look for "(BoolConst " (must check before "(Const " since it's longer)
+        if i + 11 <= chars.len() {
+            let slice: String = chars[i..i + 11].iter().collect();
+            if slice == "(BoolConst " {
+                let start = i + 11;
+                let mut end = start;
+                while end < chars.len() && chars[end] != ')' {
+                    end += 1;
+                }
+                if end < chars.len() {
+                    let num_str: String = chars[start..end].iter().collect();
+                    if let Ok(value) = num_str.trim().parse::<i64>() {
+                        constants.push((InlineConstKind::Bool, value));
+                    }
+                }
+                i = end;
+                continue;
+            }
+        }
+        // Look for "(Const64 " (must check before "(Const " since it's longer)
+        if i + 9 <= chars.len() {
+            let slice: String = chars[i..i + 9].iter().collect();
+            if slice == "(Const64 " {
+                let start = i + 9;
+                let mut end = start;
+                while end < chars.len() && chars[end] != ')' {
+                    end += 1;
+                }
+                if end < chars.len() {
+                    let num_str: String = chars[start..end].iter().collect();
+                    if let Ok(value) = num_str.trim().parse::<i64>() {
+                        constants.push((InlineConstKind::Int64, value));
+                    }
+                }
+                i = end;
+                continue;
+            }
+        }
+        // Look for "(Const "
         if i + 7 <= chars.len() {
             let slice: String = chars[i..i + 7].iter().collect();
             if slice == "(Const " {
@@ -102,25 +174,7 @@ pub fn find_inline_constants(term: &str) -> Vec<(bool, i64)> {
                 if end < chars.len() {
                     let num_str: String = chars[start..end].iter().collect();
                     if let Ok(value) = num_str.trim().parse::<i64>() {
-                        constants.push((false, value));
-                    }
-                }
-                i = end;
-                continue;
-            }
-        }
-        if i + 9 <= chars.len() {
-            let slice: String = chars[i..i + 9].iter().collect();
-            if slice == "(Const64 " {
-                let start = i + 9;
-                let mut end = start;
-                while end < chars.len() && chars[end] != ')' {
-                    end += 1;
-                }
-                if end < chars.len() {
-                    let num_str: String = chars[start..end].iter().collect();
-                    if let Ok(value) = num_str.trim().parse::<i64>() {
-                        constants.push((true, value));
+                        constants.push((InlineConstKind::Int32, value));
                     }
                 }
                 i = end;
