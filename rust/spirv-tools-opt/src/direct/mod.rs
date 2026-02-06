@@ -2390,14 +2390,15 @@ fn instruction_has_valid_types(
 ) -> bool {
     let op = inst.class.opcode;
 
-    // Check result type
+    // Check result type: if the opcode requires a specific type class,
+    // the result type MUST match (no TypeClass::Other escape).
     if let (Some(required), Some(result_type)) = (required_result_type_class(op), inst.result_type)
     {
         let actual = type_classes
             .get(&result_type)
             .copied()
             .unwrap_or(TypeClass::Other);
-        if actual != required && actual != TypeClass::Other {
+        if actual != required {
             return false;
         }
     }
@@ -2411,7 +2412,7 @@ fn instruction_has_valid_types(
                         .get(&operand_type)
                         .copied()
                         .unwrap_or(TypeClass::Other);
-                    if actual != required_op_class && actual != TypeClass::Other {
+                    if actual != required_op_class {
                         return false;
                     }
                 }
