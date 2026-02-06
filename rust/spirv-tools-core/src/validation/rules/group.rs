@@ -51,10 +51,10 @@ fn get_operand_type_inst<'a>(
 }
 
 /// Gets the type instruction for a result type ID.
-fn get_type_inst<'a>(
+fn get_type_inst(
     type_id: u32,
-    definitions: &'a HashMap<ResultId, Instruction>,
-) -> Option<&'a Instruction> {
+    definitions: &HashMap<ResultId, Instruction>,
+) -> Option<&Instruction> {
     let type_rid = ResultId::try_from(type_id).ok()?;
     definitions.get(&type_rid)
 }

@@ -157,6 +157,7 @@ pub struct ImageOperandsOperand<'a> {
 }
 
 impl<'a> ImageOperandsOperand<'a> {
+    /// Creates a new image operands operand from a mask and dependent ids.
     pub const fn new(mask: spirv::ImageOperands, dependent_ids: Vec<IdRef<'a>>) -> Self {
         Self {
             mask,
@@ -164,10 +165,12 @@ impl<'a> ImageOperandsOperand<'a> {
         }
     }
 
+    /// Returns the image operands mask.
     pub const fn mask(&self) -> spirv::ImageOperands {
         self.mask
     }
 
+    /// Returns the dependent id operands following the mask.
     pub fn dependent_ids(&self) -> &[IdRef<'a>] {
         &self.dependent_ids
     }

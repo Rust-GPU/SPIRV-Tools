@@ -172,7 +172,7 @@ impl ValidationRule for ImageTypeRule {
             }
 
             // Extract Sampled Type (operand 0)
-            let sampled_type_id = match &inst.operands.get(0) {
+            let sampled_type_id = match &inst.operands.first() {
                 Some(Operand::IdRef(id)) => Some(*id),
                 _ => None,
             };
@@ -645,9 +645,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             word_idx += 1;
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
-                                if !resolver.is_float_scalar(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
+                                if !resolver.is_float_scalar(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(
                                         ValidationError::ImageOperandBiasNotFloat32Scalar {
@@ -684,15 +684,15 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             word_idx += 1;
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
                                 let is_explicit = opcode.is_explicit_lod();
                                 let is_gather_lod_bias_amd = opcode.is_gather()
                                     && ctx.has_capability(Capability::ImageGatherBiasLodAMD);
 
                                 if is_explicit || is_gather_lod_bias_amd {
                                     // Must be 32-bit float scalar
-                                    if !resolver.is_float_scalar(type_id, &ctx.definitions)
-                                        || resolver.get_bit_width(type_id, &ctx.definitions)
+                                    if !resolver.is_float_scalar(type_id, ctx.definitions)
+                                        || resolver.get_bit_width(type_id, ctx.definitions)
                                             != Some(32)
                                     {
                                         return Err(
@@ -706,8 +706,8 @@ impl ValidationRule for ImageOperandTypeRule {
                                     }
                                 } else {
                                     // Must be 32-bit int scalar (for Fetch)
-                                    if !resolver.is_int_scalar(type_id, &ctx.definitions)
-                                        || resolver.get_bit_width(type_id, &ctx.definitions)
+                                    if !resolver.is_int_scalar(type_id, ctx.definitions)
+                                        || resolver.get_bit_width(type_id, ctx.definitions)
                                             != Some(32)
                                     {
                                         return Err(
@@ -756,13 +756,13 @@ impl ValidationRule for ImageOperandTypeRule {
                         word_idx += 1;
 
                         if let (Some(dx_id), Some(dy_id)) = (dx_id, dy_id) {
-                            let dx_type = get_value_type_id(dx_id, &ctx.definitions);
-                            let dy_type = get_value_type_id(dy_id, &ctx.definitions);
+                            let dx_type = get_value_type_id(dx_id, ctx.definitions);
+                            let dy_type = get_value_type_id(dy_id, ctx.definitions);
 
                             // Both must be 32-bit float scalar or vector
                             for type_id in [dx_type, dy_type].into_iter().flatten() {
-                                if !resolver.is_float_scalar_or_vector(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                if !resolver.is_float_scalar_or_vector(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(ValidationError::ImageOperandGradNotFloat32 {
                                         function: function_id,
@@ -777,7 +777,7 @@ impl ValidationRule for ImageOperandTypeRule {
                             if let Some(ref info) = image_type_info {
                                 let plane_size = get_plane_coord_size(info);
                                 for type_id in [dx_type, dy_type].into_iter().flatten() {
-                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    let dim = resolver.get_dimension(type_id, ctx.definitions);
                                     if plane_size != dim {
                                         return Err(
                                             ValidationError::ImageOperandGradComponentCountMismatch {
@@ -801,9 +801,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             word_idx += 1;
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
-                                if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
+                                if !resolver.is_int_scalar_or_vector(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(ValidationError::ImageOperandOffsetNotInt32 {
                                         function: function_id,
@@ -816,7 +816,7 @@ impl ValidationRule for ImageOperandTypeRule {
 
                                 if let Some(ref info) = image_type_info {
                                     let plane_size = get_plane_coord_size(info);
-                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    let dim = resolver.get_dimension(type_id, ctx.definitions);
                                     if plane_size != dim {
                                         return Err(
                                             ValidationError::ImageOperandOffsetComponentCountMismatch {
@@ -834,7 +834,7 @@ impl ValidationRule for ImageOperandTypeRule {
                             }
 
                             // Must be a constant
-                            if !is_constant_id(operand_id, &ctx.definitions) {
+                            if !is_constant_id(operand_id, ctx.definitions) {
                                 return Err(ValidationError::ImageOperandConstOffsetNotConstant {
                                     function: function_id,
                                     block: block_id,
@@ -853,9 +853,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             word_idx += 1;
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
-                                if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
+                                if !resolver.is_int_scalar_or_vector(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(ValidationError::ImageOperandOffsetNotInt32 {
                                         function: function_id,
@@ -868,7 +868,7 @@ impl ValidationRule for ImageOperandTypeRule {
 
                                 if let Some(ref info) = image_type_info {
                                     let plane_size = get_plane_coord_size(info);
-                                    let dim = resolver.get_dimension(type_id, &ctx.definitions);
+                                    let dim = resolver.get_dimension(type_id, ctx.definitions);
                                     if plane_size != dim {
                                         return Err(
                                             ValidationError::ImageOperandOffsetComponentCountMismatch {
@@ -900,9 +900,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             word_idx += 1;
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
-                                if !resolver.is_int_scalar(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
+                                if !resolver.is_int_scalar(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(
                                         ValidationError::ImageOperandSampleNotInt32Scalar {
@@ -937,9 +937,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
                         {
                             let _ = word_idx; // last operand we check
-                            if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
-                                if !resolver.is_float_scalar(type_id, &ctx.definitions)
-                                    || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                            if let Some(type_id) = get_value_type_id(operand_id, ctx.definitions) {
+                                if !resolver.is_float_scalar(type_id, ctx.definitions)
+                                    || resolver.get_bit_width(type_id, ctx.definitions) != Some(32)
                                 {
                                     return Err(
                                         ValidationError::ImageOperandMinLodNotFloat32Scalar {
