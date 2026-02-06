@@ -765,7 +765,7 @@ fn image_operands_make_texel_visible_requires_vulkan_memory_model_capability() {
     let int_0 = builder.constant_bit32(int, 0);
     let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
     let coord = builder.constant_composite(v2int, [int_0, int_0]);
-    let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+    let _texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
     let img = builder.variable(
         ptr,
         None,
@@ -845,7 +845,7 @@ fn image_operands_make_texel_visible_allows_vulkan_memory_model_capability() {
     let int_0 = builder.constant_bit32(int, 0);
     let float_0 = builder.constant_bit32(float, 0.0f32.to_bits());
     let coord = builder.constant_composite(v2int, [int_0, int_0]);
-    let texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
+    let _texel = builder.constant_composite(v4float, [float_0, float_0, float_0, float_0]);
     let img = builder.variable(
         ptr,
         None,

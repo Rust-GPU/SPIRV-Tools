@@ -1828,7 +1828,9 @@ fn constant_negative_float_text_for_float32_encodes_correctly() {
         "%float = OpTypeFloat 32",
         "%c = OpConstant %float -3.14",
     ]);
-    assert_eq!(operand, dr::Operand::LiteralBit32((-3.14_f32).to_bits()));
+    #[allow(clippy::approx_constant)]
+    let expected_bits = (-3.14_f32).to_bits();
+    assert_eq!(operand, dr::Operand::LiteralBit32(expected_bits));
 }
 
 #[test]
@@ -2110,7 +2112,8 @@ fn translator_emits_type_image_with_all_dims() {
             .map(|line| parse_instruction(line).expect("parse"))
             .collect();
         let refs: Vec<_> = parsed.iter().collect();
-        let module = assemble_instructions(&refs).expect(&format!("assemble with Dim {dim_str}"));
+        let module =
+            assemble_instructions(&refs).unwrap_or_else(|_| panic!("assemble with Dim {dim_str}"));
         let img_inst = module
             .types_global_values
             .iter()
