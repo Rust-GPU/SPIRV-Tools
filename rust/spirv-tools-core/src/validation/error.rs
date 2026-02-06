@@ -4229,6 +4229,16 @@ pub enum ValidationError {
         /// The image type ID.
         type_id: Option<TypeId>,
     },
+    /// OpTypeImage with 64-bit int sampled type requires Int64ImageEXT capability.
+    #[error(
+        "Capability Int64ImageEXT is required when using Sampled Type of 64-bit int"
+    )]
+    ImageTypeRequiresInt64ImageCapability,
+    /// OpTypeImage multisampled storage image requires StorageImageMultisample capability.
+    #[error(
+        "Capability StorageImageMultisample is required when using multisampled storage image"
+    )]
+    ImageTypeRequiresStorageImageMultisampleCapability,
     /// OpTypeImage with SubpassData dimension must have Format = Unknown.
     #[error("OpTypeImage {type_id:?} with SubpassData dimension must have Format = Unknown")]
     ImageTypeSubpassDataFormatMustBeUnknown {
@@ -4626,6 +4636,30 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
         /// Expected type description.
         expected: &'static str,
+    },
+    /// OpImageQueryFormat/OpImageQueryOrder operand is not OpTypeImage.
+    #[error(
+        "{opcode:?} in block {block:?} of function {function:?}: expected operand to be of type OpTypeImage"
+    )]
+    ImageQueryFormatOrderNotImage {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
+    },
+    /// OpImageQueryFormat/OpImageQueryOrder cannot use TileImageDataEXT dim.
+    #[error(
+        "{opcode:?} in block {block:?} of function {function:?}: Image Dim cannot be TileImageDataEXT"
+    )]
+    ImageQueryFormatOrderTileImageDataEXT {
+        /// The function containing the instruction.
+        function: Option<Id>,
+        /// The block containing the instruction.
+        block: Option<Id>,
+        /// The opcode.
+        opcode: rspirv::spirv::Op,
     },
     /// OpImageQuerySizeLod used with invalid dimension.
     #[error(

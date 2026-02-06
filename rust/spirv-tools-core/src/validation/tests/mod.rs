@@ -25,6 +25,7 @@ mod composites;
 mod decorations;
 mod entry_points;
 mod functions;
+mod image;
 mod layout_ordering;
 mod misc;
 mod module_basics;

@@ -190,6 +190,20 @@ impl ValidationRule for ImageTypeRule {
                                 ValidationError::ImageTypeInvalidSampledType { type_id }.into()
                             );
                         }
+
+                        // Int64ImageEXT capability check: 64-bit int sampled type requires it
+                        if st_inst.class.opcode == Op::TypeInt {
+                            if let Some(Operand::LiteralBit32(width)) = st_inst.operands.first() {
+                                if *width == 64
+                                    && !ctx.has_capability(Capability::Int64ImageEXT)
+                                {
+                                    return Err(
+                                        ValidationError::ImageTypeRequiresInt64ImageCapability
+                                            .into(),
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -260,6 +274,18 @@ impl ValidationRule for ImageTypeRule {
                     value: sampled,
                 }
                 .into());
+            }
+
+            // StorageImageMultisample: multisampled storage images require the capability
+            // (except for TileImageDataEXT dimension)
+            if dim != Dim::DimTileImageDataEXT
+                && ms != 0
+                && sampled == 2
+                && !ctx.has_capability(Capability::StorageImageMultisample)
+            {
+                return Err(
+                    ValidationError::ImageTypeRequiresStorageImageMultisampleCapability.into(),
+                );
             }
 
             // Vulkan: Sampled must be 1 or 2 (cannot be 0)
@@ -1346,6 +1372,44 @@ impl ValidationRule for ImageQueryRule {
                                         .into(),
                                     );
                                 }
+                            }
+                        }
+
+                        Op::ImageQueryFormat | Op::ImageQueryOrder => {
+                            // Result must be int scalar
+                            if let Some(result_type) = inst.result_type {
+                                if !resolver.is_int_scalar(result_type, ctx.definitions) {
+                                    return Err(ValidationError::ImageQueryResultTypeInvalid {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                        expected: "integer scalar",
+                                    }
+                                    .into());
+                                }
+                            }
+
+                            // Operand must be OpTypeImage (not sampled image)
+                            if let Some(info) = get_image_type_from_instruction(inst, ctx) {
+                                // Dim cannot be TileImageDataEXT
+                                if info.dim == Dim::DimTileImageDataEXT {
+                                    return Err(
+                                        ValidationError::ImageQueryFormatOrderTileImageDataEXT {
+                                            function: function_id,
+                                            block: block_id,
+                                            opcode,
+                                        }
+                                        .into(),
+                                    );
+                                }
+                            } else {
+                                // Could not extract image type - operand is not an image
+                                return Err(ValidationError::ImageQueryFormatOrderNotImage {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
                             }
                         }
 
