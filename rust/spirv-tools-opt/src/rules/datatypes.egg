@@ -776,6 +776,234 @@
 )
 
 ; =============================================================================
+; ExprType: Type Class Tracking
+; =============================================================================
+; Tracks the SPIR-V type domain for each expression in the e-graph.
+; :merge old preserves the first-set type when e-classes merge across domains.
+; This enables type-aware rewrite guards and correct type inference during extraction.
+; Sym nodes are seeded from Rust code; constructors get types from rules below.
+
+(datatype TypeDomain (BoolType) (IntType) (FloatType))
+
+(function ExprType (Expr) TypeDomain :merge old)
+
+; --- Boolean-producing operations ---
+; Integer comparisons
+(rule ((= e (Eq a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (Ne a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (SLt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (SLe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (SGt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (SGe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (ULt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (ULe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (UGt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (UGe a b))) ((set (ExprType e) (BoolType))))
+; Float comparisons (ordered)
+(rule ((= e (FOrdEq a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FOrdNe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FOrdLt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FOrdLe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FOrdGt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FOrdGe a b))) ((set (ExprType e) (BoolType))))
+; Float comparisons (unordered)
+(rule ((= e (FUnordEq a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FUnordNe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FUnordLt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FUnordLe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FUnordGt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FUnordGe a b))) ((set (ExprType e) (BoolType))))
+; Additional float comparisons
+(rule ((= e (FEq a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FNe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FLt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FLe a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FGt a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (FGe a b))) ((set (ExprType e) (BoolType))))
+; Logical operations
+(rule ((= e (LogNot a))) ((set (ExprType e) (BoolType))))
+(rule ((= e (LogAnd a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (LogOr a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (LogEq a b))) ((set (ExprType e) (BoolType))))
+(rule ((= e (LogNe a b))) ((set (ExprType e) (BoolType))))
+; FP predicates
+(rule ((= e (IsNan a))) ((set (ExprType e) (BoolType))))
+(rule ((= e (IsInf a))) ((set (ExprType e) (BoolType))))
+; Boolean constant
+(rule ((= e (BoolConst v))) ((set (ExprType e) (BoolType))))
+; Subgroup boolean operations
+(rule ((= e (GroupElect))) ((set (ExprType e) (BoolType))))
+(rule ((= e (GroupAll a))) ((set (ExprType e) (BoolType))))
+(rule ((= e (GroupAny a))) ((set (ExprType e) (BoolType))))
+(rule ((= e (GroupAllEqual a))) ((set (ExprType e) (BoolType))))
+; Vector boolean predicates
+(rule ((= e (Any a))) ((set (ExprType e) (BoolType))))
+(rule ((= e (All a))) ((set (ExprType e) (BoolType))))
+
+; --- Integer-producing operations ---
+; Arithmetic
+(rule ((= e (Add a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (Sub a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (Mul a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (Neg a))) ((set (ExprType e) (IntType))))
+(rule ((= e (SDiv a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (UDiv a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (SRem a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (SMod a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (UMod a b))) ((set (ExprType e) (IntType))))
+; Bitwise
+(rule ((= e (Shl a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (ShrS a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (ShrU a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitAnd a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitOr a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitXor a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitNot a))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitReverse a))) ((set (ExprType e) (IntType))))
+(rule ((= e (BitCount a))) ((set (ExprType e) (IntType))))
+(rule ((= e (RotL a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (RotR a b))) ((set (ExprType e) (IntType))))
+; Integer min/max
+(rule ((= e (SMin a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (SMax a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (UMin a b))) ((set (ExprType e) (IntType))))
+(rule ((= e (UMax a b))) ((set (ExprType e) (IntType))))
+; Integer GLSL operations
+(rule ((= e (SAbs a))) ((set (ExprType e) (IntType))))
+(rule ((= e (Sign a))) ((set (ExprType e) (IntType))))
+(rule ((= e (FindILsb a))) ((set (ExprType e) (IntType))))
+(rule ((= e (FindSMsb a))) ((set (ExprType e) (IntType))))
+(rule ((= e (FindUMsb a))) ((set (ExprType e) (IntType))))
+; Float-to-int conversions
+(rule ((= e (ConvertFToS a))) ((set (ExprType e) (IntType))))
+(rule ((= e (ConvertFToU a))) ((set (ExprType e) (IntType))))
+; Integer width conversions
+(rule ((= e (SConvert a))) ((set (ExprType e) (IntType))))
+(rule ((= e (UConvert a))) ((set (ExprType e) (IntType))))
+; Integer constants
+(rule ((= e (Const v))) ((set (ExprType e) (IntType))))
+(rule ((= e (Const64 v))) ((set (ExprType e) (IntType))))
+; Packing (int result)
+(rule ((= e (PackSnorm4x8 a))) ((set (ExprType e) (IntType))))
+(rule ((= e (PackUnorm4x8 a))) ((set (ExprType e) (IntType))))
+(rule ((= e (PackSnorm2x16 a))) ((set (ExprType e) (IntType))))
+(rule ((= e (PackUnorm2x16 a))) ((set (ExprType e) (IntType))))
+(rule ((= e (PackHalf2x16 a))) ((set (ExprType e) (IntType))))
+(rule ((= e (PackDouble2x32 a))) ((set (ExprType e) (IntType))))
+; Subgroup integer reductions
+(rule ((= e (GroupIAdd a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupIMul a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupSMin a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupUMin a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupSMax a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupUMax a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupBitAnd a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupBitOr a))) ((set (ExprType e) (IntType))))
+(rule ((= e (GroupBitXor a))) ((set (ExprType e) (IntType))))
+
+; --- Float-producing operations ---
+; Arithmetic
+(rule ((= e (FAdd a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FSub a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FMul a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FDiv a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FNeg a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FRem a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FMod a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FMin a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FMax a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FAbs a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FFloor a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FCeil a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FRound a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FTrunc a))) ((set (ExprType e) (FloatType))))
+; Int-to-float conversions
+(rule ((= e (ConvertSToF a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (ConvertUToF a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FConvert a))) ((set (ExprType e) (FloatType))))
+; Trigonometric
+(rule ((= e (Sin a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Cos a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Tan a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Asin a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Acos a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Atan a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Atan2 a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Sinh a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Cosh a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Tanh a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Asinh a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Acosh a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Atanh a))) ((set (ExprType e) (FloatType))))
+; Exponential / logarithmic
+(rule ((= e (Sqrt a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (InverseSqrt a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Exp a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Exp2 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Log a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Log2 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Pow a b))) ((set (ExprType e) (FloatType))))
+; GLSL math
+(rule ((= e (Fma a b c))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Fract a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Modf a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Ldexp a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Frexp a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Step a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FSign a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Radians a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Degrees a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FMix a b c))) ((set (ExprType e) (FloatType))))
+(rule ((= e (SmoothStep a b c))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FClamp a b c))) ((set (ExprType e) (FloatType))))
+(rule ((= e (NMin a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (NMax a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (NClamp a b c))) ((set (ExprType e) (FloatType))))
+; Geometry
+(rule ((= e (Length a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Distance a b))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Dot a b))) ((set (ExprType e) (FloatType))))
+; Derivatives
+(rule ((= e (DPdx a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (DPdy a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (Fwidth a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (DPdxFine a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (DPdyFine a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FwidthFine a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (DPdxCoarse a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (DPdyCoarse a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (FwidthCoarse a))) ((set (ExprType e) (FloatType))))
+; Unpacking (float result)
+(rule ((= e (UnpackSnorm2x16 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (UnpackUnorm2x16 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (UnpackHalf2x16 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (UnpackSnorm4x8 a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (UnpackUnorm4x8 a))) ((set (ExprType e) (FloatType))))
+; Float constant
+(rule ((= e (FConst v))) ((set (ExprType e) (FloatType))))
+; Subgroup float reductions
+(rule ((= e (GroupFAdd a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (GroupFMul a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (GroupFMin a))) ((set (ExprType e) (FloatType))))
+(rule ((= e (GroupFMax a))) ((set (ExprType e) (FloatType))))
+; Quantization
+(rule ((= e (QuantizeToF16 a))) ((set (ExprType e) (FloatType))))
+
+; --- Type-preserving operations (inherit ExprType from operands) ---
+; Gamma/Select/If inherit from branches
+(rule ((= e (Gamma c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
+(rule ((= e (Gamma c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
+(rule ((= e (Select c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
+(rule ((= e (Select c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
+(rule ((= e (If c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
+(rule ((= e (If c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
+; CopyObject inherits from operand
+(rule ((= e (CopyObject x)) (= ty (ExprType x))) ((set (ExprType e) ty)))
+; Loop constructs inherit from body/init
+(rule ((= e (LoopInvariant x)) (= ty (ExprType x))) ((set (ExprType e) ty)))
+(rule ((= e (Theta c body init)) (= ty (ExprType init))) ((set (ExprType e) ty)))
+
+; =============================================================================
 ; RVSDG Region Types
 ; =============================================================================
 

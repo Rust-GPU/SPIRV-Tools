@@ -563,13 +563,15 @@
 ; But: select(c, c && a, false) = c && a (proved by truth table)
 (rule ((= e (Gamma c (LogAnd c a) (BoolConst 0))))
       ((union e (LogAnd c a))))
-(rule ((= e (Gamma c (LogAnd c a) (Const 0))))
+; Guard Const variant with ExprType to prevent int→bool domain crossing
+(rule ((= e (Gamma c (LogAnd c a) (Const 0))) (= (ExprType e) (BoolType)))
       ((union e (LogAnd c a))))
 
 ; select(c, c || a, true) = true (c true means c||a=true; c false means result is true)
 (rule ((= e (Gamma c (LogOr c a) (BoolConst 1))))
       ((union e (BoolConst 1))))
-(rule ((= e (Gamma c (LogOr c a) (Const 1))))
+; Guard Const variant with ExprType to prevent int→bool domain crossing
+(rule ((= e (Gamma c (LogOr c a) (Const 1))) (= (ExprType e) (BoolType)))
       ((union e (BoolConst 1))))
 
 ; select(c, !c, x) = select(c, false, x) = !c && x via existing rules
@@ -577,7 +579,8 @@
 ; Actually if c is true, !c is false; if c is false, we get true. So = !c
 (rule ((= e (Gamma c (LogNot c) (BoolConst 1))))
       ((union e (LogNot c))))
-(rule ((= e (Gamma c (LogNot c) (Const 1))))
+; Guard Const variant with ExprType to prevent int→bool domain crossing
+(rule ((= e (Gamma c (LogNot c) (Const 1))) (= (ExprType e) (BoolType)))
       ((union e (LogNot c))))
 
 ; select(c, true, c) = true (c?true:c = if c then true else c, but c is false so false = c)

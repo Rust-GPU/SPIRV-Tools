@@ -71,17 +71,18 @@
       ((union e cond)))
 (rule ((= e (Select cond (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot cond))))
-(rule ((= e (Select cond (Const 1) (Const 0))))
+; Guard Const variants with ExprType to prevent int→bool domain crossing
+(rule ((= e (Select cond (Const 1) (Const 0))) (= (ExprType e) (BoolType)))
       ((union e cond)))
-(rule ((= e (Select cond (Const 0) (Const 1))))
+(rule ((= e (Select cond (Const 0) (Const 1))) (= (ExprType e) (BoolType)))
       ((union e (LogNot cond))))
 (rule ((= e (Gamma cond (BoolConst 1) (BoolConst 0))))
       ((union e cond)))
 (rule ((= e (Gamma cond (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot cond))))
-(rule ((= e (Gamma cond (Const 1) (Const 0))))
+(rule ((= e (Gamma cond (Const 1) (Const 0))) (= (ExprType e) (BoolType)))
       ((union e cond)))
-(rule ((= e (Gamma cond (Const 0) (Const 1))))
+(rule ((= e (Gamma cond (Const 0) (Const 1))) (= (ExprType e) (BoolType)))
       ((union e (LogNot cond))))
 
 ; =============================================================================

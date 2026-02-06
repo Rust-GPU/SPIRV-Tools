@@ -259,13 +259,14 @@
 ; IMPORTANT: Use BoolConst (not Const) to prevent type confusion.
 ; Integer (Const 0) must NOT be converted to LogAnd since LogAnd requires boolean operands.
 ; ONE-DIRECTIONAL: Convert Gamma to LogAnd/LogOr, never reverse (prevents explosion)
-(rule ((= e (Gamma c x (BoolConst 0))))
+; Guard with ExprType to prevent converting non-bool x into LogAnd/LogOr operand
+(rule ((= e (Gamma c x (BoolConst 0))) (= (ExprType x) (BoolType)))
       ((union e (LogAnd c x))))
-(rule ((= e (Gamma c (BoolConst 1) x)))
+(rule ((= e (Gamma c (BoolConst 1) x)) (= (ExprType x) (BoolType)))
       ((union e (LogOr c x))))
-(rule ((= e (Gamma c (BoolConst 0) x)))
+(rule ((= e (Gamma c (BoolConst 0) x)) (= (ExprType x) (BoolType)))
       ((union e (LogAnd (LogNot c) x))))
-(rule ((= e (Gamma c x (BoolConst 1))))
+(rule ((= e (Gamma c x (BoolConst 1))) (= (ExprType x) (BoolType)))
       ((union e (LogOr (LogNot c) x))))
 
 ; Gamma with boolean constants 0/1 and variable
@@ -620,9 +621,10 @@
 ; =============================================================================
 
 ; select(c, c && x, false) = c && x (boolean contexts)
+; Guard Const variant with ExprType to prevent int→bool domain crossing
 (rule ((= e (Gamma c (LogAnd c x) (BoolConst 0))))
       ((union e (LogAnd c x))))
-(rule ((= e (Gamma c (LogAnd c x) (Const 0))))
+(rule ((= e (Gamma c (LogAnd c x) (Const 0))) (= (ExprType e) (BoolType)))
       ((union e (LogAnd c x))))
 
 ; select(c, c || x, true) = true (when c is true, c||x is true; when false, true)
