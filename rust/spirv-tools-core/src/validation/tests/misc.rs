@@ -7098,3 +7098,53 @@ OpFunctionEnd
     assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
         .expect("Block var with per-member Locations should pass");
 }
+
+// ============================================================================
+// SubpassData Vulkan-only restriction
+// ============================================================================
+
+#[test]
+fn subpass_data_accepted_in_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpCapability InputAttachment
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img = OpTypeImage %f32 SubpassData 0 0 0 2 Unknown
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
+        .expect("SubpassData should be accepted in Vulkan");
+}
+
+#[test]
+fn subpass_data_rejected_in_non_vulkan() {
+    let text = r#"
+OpCapability Shader
+OpCapability InputAttachment
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img = OpTypeImage %f32 SubpassData 0 0 0 2 Unknown
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
+        .expect_err("SubpassData should be rejected in non-Vulkan");
+    assert!(
+        matches!(err, ValidationError::ImageTypeSubpassDataRequiresVulkan { .. }),
+        "expected ImageTypeSubpassDataRequiresVulkan, got {err:?}"
+    );
+}

@@ -4143,6 +4143,14 @@ pub enum ValidationError {
         /// Actual operand count.
         actual: usize,
     },
+    /// OpTypeImage with SubpassData dimension requires Vulkan environment.
+    #[error("OpTypeImage {type_id:?} with SubpassData dimension is only allowed in Vulkan, current environment is {env:?}")]
+    ImageTypeSubpassDataRequiresVulkan {
+        /// The image type ID.
+        type_id: Option<TypeId>,
+        /// The current target environment.
+        env: crate::target_env::TargetEnv,
+    },
     /// OpTypeImage with SubpassData dimension must not be arrayed.
     #[error("OpTypeImage {type_id:?} with SubpassData dimension must not be arrayed")]
     ImageTypeSubpassDataMustNotBeArrayed {
