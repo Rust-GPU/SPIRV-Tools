@@ -18,9 +18,7 @@ pub use types::{
     ArrayTypeInfo, CompositeTypeInfo, MatrixTypeInfo, MemberLayout, StructTypeInfo, VectorTypeInfo,
 };
 
-use translator::{
-    assemble_text_with_translator, assemble_text_with_translator_for_spans,
-};
+use translator::{assemble_text_with_translator, assemble_text_with_translator_for_spans};
 
 /// Error emitted when the assembler produces diagnostics instead of a finished module.
 #[derive(Debug, Error)]

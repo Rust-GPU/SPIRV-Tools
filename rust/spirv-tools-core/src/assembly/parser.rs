@@ -543,13 +543,8 @@ impl<'a> Parser<'a> {
         //   Bias(1), Lod(2), Grad(4)→2 IdRefs, ConstOffset(8), Offset(16),
         //   ConstOffsets(32), Sample(64), MinLod(128),
         //   MakeTexelAvailable(256)→scope, MakeTexelVisible(512)→scope
-        let flags_with_one_id = [
-            spirv::ImageOperands::BIAS,
-            spirv::ImageOperands::LOD,
-        ];
-        let flags_with_two_ids = [
-            spirv::ImageOperands::GRAD,
-        ];
+        let flags_with_one_id = [spirv::ImageOperands::BIAS, spirv::ImageOperands::LOD];
+        let flags_with_two_ids = [spirv::ImageOperands::GRAD];
         let flags_with_one_id_after_grad = [
             spirv::ImageOperands::CONST_OFFSET,
             spirv::ImageOperands::OFFSET,
@@ -691,7 +686,9 @@ fn parse_identifier<'a>(
 }
 
 fn parse_hex_unsigned(text: &str) -> Option<u64> {
-    let hex = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))?;
+    let hex = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))?;
     u64::from_str_radix(hex, 16).ok()
 }
 
@@ -815,9 +812,7 @@ fn image_operands_flag(name: &str) -> Option<spirv::ImageOperands> {
         "MakeTexelVisible" | "MakeTexelVisibleKHR" => {
             Some(spirv::ImageOperands::MAKE_TEXEL_VISIBLE)
         }
-        "NonPrivateTexel" | "NonPrivateTexelKHR" => {
-            Some(spirv::ImageOperands::NON_PRIVATE_TEXEL)
-        }
+        "NonPrivateTexel" | "NonPrivateTexelKHR" => Some(spirv::ImageOperands::NON_PRIVATE_TEXEL),
         "VolatileTexel" | "VolatileTexelKHR" => Some(spirv::ImageOperands::VOLATILE_TEXEL),
         "SignExtend" => Some(spirv::ImageOperands::SIGN_EXTEND),
         "ZeroExtend" => Some(spirv::ImageOperands::ZERO_EXTEND),
@@ -898,7 +893,11 @@ mod tests {
                 assert!(img_ops.mask().contains(spirv::ImageOperands::LOD));
                 assert_eq!(img_ops.dependent_ids().len(), 1);
                 assert_eq!(
-                    img_ops.dependent_ids()[0].as_spirv_id().as_named().unwrap().name(),
+                    img_ops.dependent_ids()[0]
+                        .as_spirv_id()
+                        .as_named()
+                        .unwrap()
+                        .name(),
                     "lod_val"
                 );
             }
@@ -918,11 +917,19 @@ mod tests {
                 assert!(img_ops.mask().contains(spirv::ImageOperands::GRAD));
                 assert_eq!(img_ops.dependent_ids().len(), 2);
                 assert_eq!(
-                    img_ops.dependent_ids()[0].as_spirv_id().as_named().unwrap().name(),
+                    img_ops.dependent_ids()[0]
+                        .as_spirv_id()
+                        .as_named()
+                        .unwrap()
+                        .name(),
                     "dx"
                 );
                 assert_eq!(
-                    img_ops.dependent_ids()[1].as_spirv_id().as_named().unwrap().name(),
+                    img_ops.dependent_ids()[1]
+                        .as_spirv_id()
+                        .as_named()
+                        .unwrap()
+                        .name(),
                     "dy"
                 );
             }
@@ -949,10 +956,9 @@ mod tests {
 
     #[test]
     fn parses_image_operands_none() {
-        let parsed = parse_instruction(
-            "%result = OpImageSampleExplicitLod %v4float %img %coord None",
-        )
-        .expect("parse");
+        let parsed =
+            parse_instruction("%result = OpImageSampleExplicitLod %v4float %img %coord None")
+                .expect("parse");
         let last = parsed.operands().last().expect("image operands");
         match last.value() {
             OperandValue::ImageOperands(img_ops) => {

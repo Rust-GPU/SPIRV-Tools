@@ -107,10 +107,7 @@ pub fn validate_capabilities(
                     });
                 }
                 if env.is_opencl_1_2() {
-                    return Err(ValidationError::DisallowedCapability {
-                        capability,
-                        env,
-                    });
+                    return Err(ValidationError::DisallowedCapability { capability, env });
                 }
             }
 

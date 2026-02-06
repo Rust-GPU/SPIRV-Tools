@@ -375,7 +375,11 @@ fn int_bit_width(
     }
 }
 
-pub(super) fn has_decoration(ctx: &ValidationContext<'_>, target: u32, decoration: Decoration) -> bool {
+pub(super) fn has_decoration(
+    ctx: &ValidationContext<'_>,
+    target: u32,
+    decoration: Decoration,
+) -> bool {
     ctx.module.annotations.iter().any(|inst| {
         inst.class.opcode == Op::Decorate
             && matches!(
@@ -757,7 +761,10 @@ pub(super) fn get_variable_pointee_type(
 }
 
 /// Gets the struct element type from an array type.
-pub(super) fn get_array_element_struct(array_type_id: u32, ctx: &ValidationContext<'_>) -> Option<u32> {
+pub(super) fn get_array_element_struct(
+    array_type_id: u32,
+    ctx: &ValidationContext<'_>,
+) -> Option<u32> {
     let array_inst = ResultId::try_from(array_type_id)
         .ok()
         .and_then(|rid| ctx.definitions.get(&rid))?;

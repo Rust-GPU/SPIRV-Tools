@@ -2816,7 +2816,9 @@ pub enum ValidationError {
         terminator: rspirv::spirv::Op,
     },
     /// OpSwitch contains a duplicate case literal.
-    #[error("OpSwitch in block {block:?} of function {function:?} has duplicate case literal {literal}")]
+    #[error(
+        "OpSwitch in block {block:?} of function {function:?} has duplicate case literal {literal}"
+    )]
     SwitchDuplicateCaseLiteral {
         /// The function containing the switch.
         function: Option<Id>,
@@ -2878,7 +2880,9 @@ pub enum ValidationError {
         type_opcode: rspirv::spirv::Op,
     },
     /// OpBranchConditional condition operand must be OpTypeBool.
-    #[error("OpBranchConditional condition {condition_id} must be OpTypeBool, found {found_opcode:?}")]
+    #[error(
+        "OpBranchConditional condition {condition_id} must be OpTypeBool, found {found_opcode:?}"
+    )]
     BranchConditionalConditionNotBool {
         /// The condition operand ID.
         condition_id: Id,
@@ -4328,9 +4332,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// MakeTexelAvailable can only be used with OpImageWrite.
-    #[error(
-        "Image Operand MakeTexelAvailable can only be used with OpImageWrite: {opcode:?}"
-    )]
+    #[error("Image Operand MakeTexelAvailable can only be used with OpImageWrite: {opcode:?}")]
     ImageOperandMakeTexelAvailableRequiresWrite {
         /// The function containing the instruction.
         function: Option<Id>,
@@ -4340,9 +4342,7 @@ pub enum ValidationError {
         opcode: rspirv::spirv::Op,
     },
     /// MakeTexelVisible cannot be used with OpImageWrite.
-    #[error(
-        "Image Operand MakeTexelVisible cannot be used with OpImageWrite: {opcode:?}"
-    )]
+    #[error("Image Operand MakeTexelVisible cannot be used with OpImageWrite: {opcode:?}")]
     ImageOperandMakeTexelVisibleCannotBeUsedWithWrite {
         /// The function containing the instruction.
         function: Option<Id>,
@@ -6541,7 +6541,9 @@ pub enum ValidationError {
     },
     // Note: InterfaceLocationConflict was consolidated into EntryPointInterfaceLocationConflict
     /// Interface variable must have a Location decoration.
-    #[error("variable <{variable_id:?}> is an interface variable and must be decorated with a location")]
+    #[error(
+        "variable <{variable_id:?}> is an interface variable and must be decorated with a location"
+    )]
     InterfaceVariableMissingLocation {
         /// The variable ID.
         variable_id: Id,

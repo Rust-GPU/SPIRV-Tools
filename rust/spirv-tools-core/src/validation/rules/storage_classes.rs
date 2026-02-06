@@ -122,8 +122,7 @@ impl ValidationRule for BlockStorageClassRule {
                                 | StorageClass::PushConstant
                                 | StorageClass::Input
                                 | StorageClass::Output
-                        ) || (storage_class == StorageClass::Workgroup
-                            && workgroup_blocks_allowed)
+                        ) || (storage_class == StorageClass::Workgroup && workgroup_blocks_allowed)
                     }
                     Decoration::BufferBlock => matches!(
                         storage_class,

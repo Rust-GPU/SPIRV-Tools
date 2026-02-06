@@ -1650,7 +1650,10 @@ fn switch_duplicate_case_literal_fails() {
         .validate(&ctx)
         .expect_err("switch with duplicate case 42 should fail");
     assert!(
-        matches!(err.error, ValidationError::SwitchDuplicateCaseLiteral { literal: 42, .. }),
+        matches!(
+            err.error,
+            ValidationError::SwitchDuplicateCaseLiteral { literal: 42, .. }
+        ),
         "expected SwitchDuplicateCaseLiteral with literal 42, got {err:?}"
     );
 }
@@ -1738,23 +1741,36 @@ fn switch_with_float_selector_fails() {
     ));
 
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     // %3 = OpTypeFunction %void
     module.types_global_values.push(Instruction::new(
-        Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)],
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
     ));
     // %4 = OpTypeFloat 32
     module.types_global_values.push(Instruction::new(
-        Op::TypeFloat, None, Some(4), vec![Operand::LiteralBit32(32)],
+        Op::TypeFloat,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32)],
     ));
     // %5 = OpConstant %4 0.0
     module.types_global_values.push(Instruction::new(
-        Op::Constant, Some(4), Some(5), vec![Operand::LiteralBit32(0)],
+        Op::Constant,
+        Some(4),
+        Some(5),
+        vec![Operand::LiteralBit32(0)],
     ));
 
     let mut func = rspirv::dr::Function::new();
     func.def = Some(Instruction::new(
-        Op::Function, Some(2), Some(10),
+        Op::Function,
+        Some(2),
+        Some(10),
         vec![
             Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
             Operand::IdRef(3),
@@ -1765,19 +1781,28 @@ fn switch_with_float_selector_fails() {
     let mut entry = rspirv::dr::Block::new();
     entry.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
     entry.instructions.push(Instruction::new(
-        Op::SelectionMerge, None, None,
-        vec![Operand::IdRef(14), Operand::SelectionControl(rspirv::spirv::SelectionControl::NONE)],
+        Op::SelectionMerge,
+        None,
+        None,
+        vec![
+            Operand::IdRef(14),
+            Operand::SelectionControl(rspirv::spirv::SelectionControl::NONE),
+        ],
     ));
     // OpSwitch %5(float) %14(merge) -- this is invalid
     entry.instructions.push(Instruction::new(
-        Op::Switch, None, None,
+        Op::Switch,
+        None,
+        None,
         vec![Operand::IdRef(5), Operand::IdRef(14)],
     ));
     func.blocks.push(entry);
 
     let mut merge = rspirv::dr::Block::new();
     merge.label = Some(Instruction::new(Op::Label, None, Some(14), vec![]));
-    merge.instructions.push(Instruction::new(Op::Return, None, None, vec![]));
+    merge
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
     func.blocks.push(merge);
 
     func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
@@ -1837,18 +1862,24 @@ fn branch_conditional_with_int_condition_fails() {
     });
 
     module.capabilities.push(Instruction::new(
-        Op::Capability, None, None,
+        Op::Capability,
+        None,
+        None,
         vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
     ));
     module.memory_model = Some(Instruction::new(
-        Op::MemoryModel, None, None,
+        Op::MemoryModel,
+        None,
+        None,
         vec![
             Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
             Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
         ],
     ));
     module.entry_points.push(Instruction::new(
-        Op::EntryPoint, None, None,
+        Op::EntryPoint,
+        None,
+        None,
         vec![
             Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
             Operand::IdRef(10),
@@ -1856,7 +1887,9 @@ fn branch_conditional_with_int_condition_fails() {
         ],
     ));
     module.execution_modes.push(Instruction::new(
-        Op::ExecutionMode, None, None,
+        Op::ExecutionMode,
+        None,
+        None,
         vec![
             Operand::IdRef(10),
             Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSize),
@@ -1867,23 +1900,36 @@ fn branch_conditional_with_int_condition_fails() {
     ));
 
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     // %3 = OpTypeFunction %void
     module.types_global_values.push(Instruction::new(
-        Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)],
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
     ));
     // %4 = OpTypeInt 32 0
     module.types_global_values.push(Instruction::new(
-        Op::TypeInt, None, Some(4), vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+        Op::TypeInt,
+        None,
+        Some(4),
+        vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
     ));
     // %5 = OpConstant %4 1
     module.types_global_values.push(Instruction::new(
-        Op::Constant, Some(4), Some(5), vec![Operand::LiteralBit32(1)],
+        Op::Constant,
+        Some(4),
+        Some(5),
+        vec![Operand::LiteralBit32(1)],
     ));
 
     let mut func = rspirv::dr::Function::new();
     func.def = Some(Instruction::new(
-        Op::Function, Some(2), Some(10),
+        Op::Function,
+        Some(2),
+        Some(10),
         vec![
             Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
             Operand::IdRef(3),
@@ -1893,29 +1939,48 @@ fn branch_conditional_with_int_condition_fails() {
     let mut entry = rspirv::dr::Block::new();
     entry.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
     entry.instructions.push(Instruction::new(
-        Op::SelectionMerge, None, None,
-        vec![Operand::IdRef(14), Operand::SelectionControl(rspirv::spirv::SelectionControl::NONE)],
+        Op::SelectionMerge,
+        None,
+        None,
+        vec![
+            Operand::IdRef(14),
+            Operand::SelectionControl(rspirv::spirv::SelectionControl::NONE),
+        ],
     ));
     // OpBranchConditional %5(int!) %12 %13 -- condition is integer, not bool
     entry.instructions.push(Instruction::new(
-        Op::BranchConditional, None, None,
+        Op::BranchConditional,
+        None,
+        None,
         vec![Operand::IdRef(5), Operand::IdRef(12), Operand::IdRef(13)],
     ));
     func.blocks.push(entry);
 
     let mut then_block = rspirv::dr::Block::new();
     then_block.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
-    then_block.instructions.push(Instruction::new(Op::Branch, None, None, vec![Operand::IdRef(14)]));
+    then_block.instructions.push(Instruction::new(
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(14)],
+    ));
     func.blocks.push(then_block);
 
     let mut else_block = rspirv::dr::Block::new();
     else_block.label = Some(Instruction::new(Op::Label, None, Some(13), vec![]));
-    else_block.instructions.push(Instruction::new(Op::Branch, None, None, vec![Operand::IdRef(14)]));
+    else_block.instructions.push(Instruction::new(
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(14)],
+    ));
     func.blocks.push(else_block);
 
     let mut merge = rspirv::dr::Block::new();
     merge.label = Some(Instruction::new(Op::Label, None, Some(14), vec![]));
-    merge.instructions.push(Instruction::new(Op::Return, None, None, vec![]));
+    merge
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
     func.blocks.push(merge);
 
     func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
@@ -1925,7 +1990,10 @@ fn branch_conditional_with_int_condition_fails() {
     let err = validate_module(&binary, TargetEnv::Universal1_6)
         .expect_err("BranchConditional with int condition should fail");
     assert!(
-        matches!(err, ValidationError::BranchConditionalConditionNotBool { .. }),
+        matches!(
+            err,
+            ValidationError::BranchConditionalConditionNotBool { .. }
+        ),
         "expected BranchConditionalConditionNotBool, got {err:?}"
     );
 }
@@ -2026,18 +2094,24 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     });
 
     module.capabilities.push(Instruction::new(
-        Op::Capability, None, None,
+        Op::Capability,
+        None,
+        None,
         vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
     ));
     module.memory_model = Some(Instruction::new(
-        Op::MemoryModel, None, None,
+        Op::MemoryModel,
+        None,
+        None,
         vec![
             Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
             Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
         ],
     ));
     module.entry_points.push(Instruction::new(
-        Op::EntryPoint, None, None,
+        Op::EntryPoint,
+        None,
+        None,
         vec![
             Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
             Operand::IdRef(1),
@@ -2045,7 +2119,9 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
         ],
     ));
     module.execution_modes.push(Instruction::new(
-        Op::ExecutionMode, None, None,
+        Op::ExecutionMode,
+        None,
+        None,
         vec![
             Operand::IdRef(1),
             Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSize),
@@ -2057,20 +2133,31 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
 
     // Types
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     // %3 = OpTypeFunction %void
     module.types_global_values.push(Instruction::new(
-        Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)],
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
     ));
     // %4 = OpTypeBool
-    module.types_global_values.push(Instruction::new(Op::TypeBool, None, Some(4), vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeBool, None, Some(4), vec![]));
     // %5 = OpConstantTrue %bool
-    module.types_global_values.push(Instruction::new(Op::ConstantTrue, Some(4), Some(5), vec![]));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::ConstantTrue, Some(4), Some(5), vec![]));
 
     // Function
     let mut func = rspirv::dr::Function::new();
     func.def = Some(Instruction::new(
-        Op::Function, Some(2), Some(1),
+        Op::Function,
+        Some(2),
+        Some(1),
         vec![
             Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
             Operand::IdRef(3),
@@ -2083,7 +2170,10 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut entry = rspirv::dr::Block::new();
     entry.label = Some(Instruction::new(Op::Label, None, Some(10), vec![]));
     entry.instructions.push(Instruction::new(
-        Op::Branch, None, None, vec![Operand::IdRef(11)],
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(11)],
     ));
     func.blocks.push(entry);
 
@@ -2091,7 +2181,9 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut header = rspirv::dr::Block::new();
     header.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
     header.instructions.push(Instruction::new(
-        Op::LoopMerge, None, None,
+        Op::LoopMerge,
+        None,
+        None,
         vec![
             Operand::IdRef(16), // merge
             Operand::IdRef(13), // continue target
@@ -2099,7 +2191,9 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
         ],
     ));
     header.instructions.push(Instruction::new(
-        Op::BranchConditional, None, None,
+        Op::BranchConditional,
+        None,
+        None,
         vec![Operand::IdRef(5), Operand::IdRef(12), Operand::IdRef(16)],
     ));
     func.blocks.push(header);
@@ -2108,7 +2202,10 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut body = rspirv::dr::Block::new();
     body.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
     body.instructions.push(Instruction::new(
-        Op::Branch, None, None, vec![Operand::IdRef(13)],
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(13)],
     ));
     func.blocks.push(body);
 
@@ -2116,7 +2213,9 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut cont = rspirv::dr::Block::new();
     cont.label = Some(Instruction::new(Op::Label, None, Some(13), vec![]));
     cont.instructions.push(Instruction::new(
-        Op::BranchConditional, None, None,
+        Op::BranchConditional,
+        None,
+        None,
         vec![Operand::IdRef(5), Operand::IdRef(14), Operand::IdRef(15)],
     ));
     func.blocks.push(cont);
@@ -2125,7 +2224,10 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut path_a = rspirv::dr::Block::new();
     path_a.label = Some(Instruction::new(Op::Label, None, Some(14), vec![]));
     path_a.instructions.push(Instruction::new(
-        Op::Branch, None, None, vec![Operand::IdRef(11)],
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(11)],
     ));
     func.blocks.push(path_a);
 
@@ -2133,14 +2235,19 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let mut path_b = rspirv::dr::Block::new();
     path_b.label = Some(Instruction::new(Op::Label, None, Some(15), vec![]));
     path_b.instructions.push(Instruction::new(
-        Op::Branch, None, None, vec![Operand::IdRef(11)],
+        Op::Branch,
+        None,
+        None,
+        vec![Operand::IdRef(11)],
     ));
     func.blocks.push(path_b);
 
     // merge
     let mut merge = rspirv::dr::Block::new();
     merge.label = Some(Instruction::new(Op::Label, None, Some(16), vec![]));
-    merge.instructions.push(Instruction::new(Op::Return, None, None, vec![]));
+    merge
+        .instructions
+        .push(Instruction::new(Op::Return, None, None, vec![]));
     func.blocks.push(merge);
 
     func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
@@ -2150,7 +2257,10 @@ fn loop_continue_construct_back_edge_not_post_dominating_fails() {
     let err = validate_module(&binary, TargetEnv::Universal1_6)
         .expect_err("back-edge block not post-dominating continue target should fail");
     assert!(
-        matches!(err, ValidationError::ContinueConstructNotPostDominated { .. }),
+        matches!(
+            err,
+            ValidationError::ContinueConstructNotPostDominated { .. }
+        ),
         "expected ContinueConstructNotPostDominated, got {err:?}"
     );
 }

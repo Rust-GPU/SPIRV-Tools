@@ -7,7 +7,9 @@ use rspirv::grammar::{LogicalOperand, OperandKind, OperandQuantifier};
 use rspirv::spirv;
 
 use crate::assembly::decoration::decoration_operand_descriptors;
-use crate::assembly::ext_inst::{lookup_custom_ext_inst_opcode, ExtInstImportInfo, ResolvedExtInst};
+use crate::assembly::ext_inst::{
+    lookup_custom_ext_inst_opcode, ExtInstImportInfo, ResolvedExtInst,
+};
 use crate::assembly::instruction::LiteralNumber;
 use crate::assembly::options::TextToBinaryOptions;
 use crate::assembly::parser::{
@@ -1322,9 +1324,7 @@ impl<'a> AssemblyTranslator<'a> {
                 .emit_error(opcode_pos, "OpTypeImage missing sampled type");
             return;
         };
-        let Some(sampled_type) =
-            self.operand_as_id(sampled_type_operand, "sampled type")
-        else {
+        let Some(sampled_type) = self.operand_as_id(sampled_type_operand, "sampled type") else {
             return;
         };
 
@@ -1343,9 +1343,7 @@ impl<'a> AssemblyTranslator<'a> {
                 "Rect" | "DimRect" => spirv::Dim::DimRect,
                 "Buffer" | "DimBuffer" => spirv::Dim::DimBuffer,
                 "SubpassData" | "DimSubpassData" => spirv::Dim::DimSubpassData,
-                "TileImageDataEXT" | "DimTileImageDataEXT" => {
-                    spirv::Dim::DimTileImageDataEXT
-                }
+                "TileImageDataEXT" | "DimTileImageDataEXT" => spirv::Dim::DimTileImageDataEXT,
                 _ => {
                     self.module_builder
                         .emit_error(dim_operand.span().start(), "Invalid Dim");
@@ -1383,10 +1381,8 @@ impl<'a> AssemblyTranslator<'a> {
         let arrayed = match arrayed_operand.value() {
             OperandValue::Literal(lit) => literal_to_u32(lit),
             _ => {
-                self.module_builder.emit_error(
-                    arrayed_operand.span().start(),
-                    "Arrayed must be a literal",
-                );
+                self.module_builder
+                    .emit_error(arrayed_operand.span().start(), "Arrayed must be a literal");
                 return;
             }
         };
@@ -1415,10 +1411,8 @@ impl<'a> AssemblyTranslator<'a> {
         let sampled = match sampled_operand.value() {
             OperandValue::Literal(lit) => literal_to_u32(lit),
             _ => {
-                self.module_builder.emit_error(
-                    sampled_operand.span().start(),
-                    "Sampled must be a literal",
-                );
+                self.module_builder
+                    .emit_error(sampled_operand.span().start(), "Sampled must be a literal");
                 return;
             }
         };
@@ -1474,12 +1468,7 @@ impl<'a> AssemblyTranslator<'a> {
             inst_operands.push(dr::Operand::from(aq));
         }
 
-        let inst = dr::Instruction::new(
-            spirv::Op::TypeImage,
-            None,
-            Some(result_id),
-            inst_operands,
-        );
+        let inst = dr::Instruction::new(spirv::Op::TypeImage, None, Some(result_id), inst_operands);
         self.builder.module_mut().types_global_values.push(inst);
         self.record_from_module(|module| module.types_global_values.last().cloned());
     }
@@ -3172,10 +3161,8 @@ impl<'a> AssemblyTranslator<'a> {
         let mut dr_operands = Vec::new();
         for label in ["image", "coordinate", "texel"] {
             let Some(op) = operands.next() else {
-                self.module_builder.emit_error(
-                    opcode_pos,
-                    format!("OpImageWrite missing {label} operand"),
-                );
+                self.module_builder
+                    .emit_error(opcode_pos, format!("OpImageWrite missing {label} operand"));
                 return;
             };
             let Some(id) = self.operand_as_id(op, label) else {
@@ -3932,18 +3919,18 @@ impl<'a> AssemblyTranslator<'a> {
         let opcode = instruction.opcode();
 
         // Resolve result type and result id if present.
-        let (result_type_id, result_id) =
-            match (instruction.result_type(), instruction.result_id()) {
-                (Some(rt), Some(ri)) => {
-                    let (type_id, value_id) = self.module_builder.bind_typed_result(rt, ri);
-                    (Some(type_id), Some(value_id))
-                }
-                (None, Some(ri)) => {
-                    let value_id = self.module_builder.resolve_result_id(ri);
-                    (None, Some(value_id))
-                }
-                _ => (None, None),
-            };
+        let (result_type_id, result_id) = match (instruction.result_type(), instruction.result_id())
+        {
+            (Some(rt), Some(ri)) => {
+                let (type_id, value_id) = self.module_builder.bind_typed_result(rt, ri);
+                (Some(type_id), Some(value_id))
+            }
+            (None, Some(ri)) => {
+                let value_id = self.module_builder.resolve_result_id(ri);
+                (None, Some(value_id))
+            }
+            _ => (None, None),
+        };
 
         // Encode each operand using its grammar descriptor kind.
         let mut dr_operands = Vec::new();

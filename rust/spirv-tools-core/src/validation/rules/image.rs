@@ -186,8 +186,9 @@ impl ValidationRule for ImageTypeRule {
                             Op::TypeVoid | Op::TypeInt | Op::TypeFloat
                         );
                         if !valid {
-                            return Err(ValidationError::ImageTypeInvalidSampledType { type_id }
-                                .into());
+                            return Err(
+                                ValidationError::ImageTypeInvalidSampledType { type_id }.into()
+                            );
                         }
                     }
                 }
@@ -231,38 +232,34 @@ impl ValidationRule for ImageTypeRule {
 
             // Validate Depth must be 0, 1, or 2
             if depth > 2 {
-                return Err(
-                    ValidationError::ImageTypeInvalidDepthValue { type_id, value: depth }.into(),
-                );
+                return Err(ValidationError::ImageTypeInvalidDepthValue {
+                    type_id,
+                    value: depth,
+                }
+                .into());
             }
 
             // Validate Arrayed must be 0 or 1
             if arrayed > 1 {
-                return Err(
-                    ValidationError::ImageTypeInvalidArrayedValue {
-                        type_id,
-                        value: arrayed,
-                    }
-                    .into(),
-                );
+                return Err(ValidationError::ImageTypeInvalidArrayedValue {
+                    type_id,
+                    value: arrayed,
+                }
+                .into());
             }
 
             // Validate MS must be 0 or 1
             if ms > 1 {
-                return Err(
-                    ValidationError::ImageTypeInvalidMsValue { type_id, value: ms }.into(),
-                );
+                return Err(ValidationError::ImageTypeInvalidMsValue { type_id, value: ms }.into());
             }
 
             // Validate Sampled must be 0, 1, or 2
             if sampled > 2 {
-                return Err(
-                    ValidationError::ImageTypeInvalidSampledValue {
-                        type_id,
-                        value: sampled,
-                    }
-                    .into(),
-                );
+                return Err(ValidationError::ImageTypeInvalidSampledValue {
+                    type_id,
+                    value: sampled,
+                }
+                .into());
             }
 
             // Vulkan: Sampled must be 1 or 2 (cannot be 0)
@@ -274,13 +271,11 @@ impl ValidationRule for ImageTypeRule {
 
             // SubpassData requires Vulkan environment
             if dim == Dim::DimSubpassData && !ctx.env.is_vulkan() {
-                return Err(
-                    ValidationError::ImageTypeSubpassDataRequiresVulkan {
-                        type_id,
-                        env: ctx.env,
-                    }
-                    .into(),
-                );
+                return Err(ValidationError::ImageTypeSubpassDataRequiresVulkan {
+                    type_id,
+                    env: ctx.env,
+                }
+                .into());
             }
 
             // SubpassData constraints
@@ -296,10 +291,10 @@ impl ValidationRule for ImageTypeRule {
                     );
                 }
                 if format != rspirv::spirv::ImageFormat::Unknown {
-                    return Err(
-                        ValidationError::ImageTypeSubpassDataFormatMustBeUnknown { type_id }
-                            .into(),
-                    );
+                    return Err(ValidationError::ImageTypeSubpassDataFormatMustBeUnknown {
+                        type_id,
+                    }
+                    .into());
                 }
             }
         }
@@ -546,10 +541,7 @@ impl ValidationRule for ImageOperandRule {
 /// Gets the type instruction for a value operand ID.
 /// Given an ID, looks up its defining instruction, gets its result_type,
 /// and returns the type instruction.
-fn get_value_type_id(
-    operand_id: u32,
-    definitions: &HashMap<ResultId, Instruction>,
-) -> Option<u32> {
+fn get_value_type_id(operand_id: u32, definitions: &HashMap<ResultId, Instruction>) -> Option<u32> {
     let rid = ResultId::try_from(operand_id).ok()?;
     let inst = definitions.get(&rid)?;
     inst.result_type
@@ -625,7 +617,9 @@ impl ValidationRule for ImageOperandTypeRule {
 
                     // Bias (bit 0)
                     if mask.contains(ImageOperands::BIAS) {
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             word_idx += 1;
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 if !resolver.is_float_scalar(type_id, &ctx.definitions)
@@ -646,7 +640,10 @@ impl ValidationRule for ImageOperandTypeRule {
                         }
 
                         if let Some(ref info) = image_type_info {
-                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                            if !matches!(
+                                info.dim,
+                                Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube
+                            ) {
                                 return Err(ValidationError::ImageOperandBiasInvalidDim {
                                     function: function_id,
                                     block: block_id,
@@ -659,7 +656,9 @@ impl ValidationRule for ImageOperandTypeRule {
 
                     // Lod (bit 1)
                     if mask.contains(ImageOperands::LOD) {
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             word_idx += 1;
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 let is_explicit = opcode.is_explicit_lod();
@@ -669,7 +668,8 @@ impl ValidationRule for ImageOperandTypeRule {
                                 if is_explicit || is_gather_lod_bias_amd {
                                     // Must be 32-bit float scalar
                                     if !resolver.is_float_scalar(type_id, &ctx.definitions)
-                                        || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                        || resolver.get_bit_width(type_id, &ctx.definitions)
+                                            != Some(32)
                                     {
                                         return Err(
                                             ValidationError::ImageOperandLodNotFloat32ScalarForExplicit {
@@ -683,7 +683,8 @@ impl ValidationRule for ImageOperandTypeRule {
                                 } else {
                                     // Must be 32-bit int scalar (for Fetch)
                                     if !resolver.is_int_scalar(type_id, &ctx.definitions)
-                                        || resolver.get_bit_width(type_id, &ctx.definitions) != Some(32)
+                                        || resolver.get_bit_width(type_id, &ctx.definitions)
+                                            != Some(32)
                                     {
                                         return Err(
                                             ValidationError::ImageOperandLodNotInt32ScalarForFetch {
@@ -701,7 +702,10 @@ impl ValidationRule for ImageOperandTypeRule {
                         }
 
                         if let Some(ref info) = image_type_info {
-                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                            if !matches!(
+                                info.dim,
+                                Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube
+                            ) {
                                 return Err(ValidationError::ImageOperandLodInvalidDim {
                                     function: function_id,
                                     block: block_id,
@@ -769,7 +773,9 @@ impl ValidationRule for ImageOperandTypeRule {
 
                     // ConstOffset (bit 3)
                     if mask.contains(ImageOperands::CONST_OFFSET) {
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             word_idx += 1;
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
@@ -805,14 +811,12 @@ impl ValidationRule for ImageOperandTypeRule {
 
                             // Must be a constant
                             if !is_constant_id(operand_id, &ctx.definitions) {
-                                return Err(
-                                    ValidationError::ImageOperandConstOffsetNotConstant {
-                                        function: function_id,
-                                        block: block_id,
-                                        opcode,
-                                    }
-                                    .into(),
-                                );
+                                return Err(ValidationError::ImageOperandConstOffsetNotConstant {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
                             }
                         } else {
                             word_idx += 1;
@@ -821,7 +825,9 @@ impl ValidationRule for ImageOperandTypeRule {
 
                     // Offset (bit 4)
                     if mask.contains(ImageOperands::OFFSET) {
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             word_idx += 1;
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 if !resolver.is_int_scalar_or_vector(type_id, &ctx.definitions)
@@ -866,7 +872,9 @@ impl ValidationRule for ImageOperandTypeRule {
 
                     // Sample (bit 6)
                     if mask.contains(ImageOperands::SAMPLE) {
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             word_idx += 1;
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 if !resolver.is_int_scalar(type_id, &ctx.definitions)
@@ -890,9 +898,7 @@ impl ValidationRule for ImageOperandTypeRule {
                     // MinLod (bit 7)
                     if mask.contains(ImageOperands::MIN_LOD) {
                         // MinLod only valid with ImplicitLod or Grad
-                        if !opcode.is_implicit_lod()
-                            && !mask.contains(ImageOperands::GRAD)
-                        {
+                        if !opcode.is_implicit_lod() && !mask.contains(ImageOperands::GRAD) {
                             return Err(
                                 ValidationError::ImageOperandMinLodRequiresImplicitOrGrad {
                                     function: function_id,
@@ -903,7 +909,9 @@ impl ValidationRule for ImageOperandTypeRule {
                             );
                         }
 
-                        if let Some(operand_id) = inst.operands.get(word_idx).and_then(|o| o.id_ref_any()) {
+                        if let Some(operand_id) =
+                            inst.operands.get(word_idx).and_then(|o| o.id_ref_any())
+                        {
                             let _ = word_idx; // last operand we check
                             if let Some(type_id) = get_value_type_id(operand_id, &ctx.definitions) {
                                 if !resolver.is_float_scalar(type_id, &ctx.definitions)
@@ -922,7 +930,10 @@ impl ValidationRule for ImageOperandTypeRule {
                         }
 
                         if let Some(ref info) = image_type_info {
-                            if !matches!(info.dim, Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube) {
+                            if !matches!(
+                                info.dim,
+                                Dim::Dim1D | Dim::Dim2D | Dim::Dim3D | Dim::DimCube
+                            ) {
                                 return Err(ValidationError::ImageOperandMinLodInvalidDim {
                                     function: function_id,
                                     block: block_id,
@@ -931,14 +942,12 @@ impl ValidationRule for ImageOperandTypeRule {
                                 .into());
                             }
                             if info.multisampled != 0 {
-                                return Err(
-                                    ValidationError::ImageOperandMinLodRequiresMsZero {
-                                        function: function_id,
-                                        block: block_id,
-                                        opcode,
-                                    }
-                                    .into(),
-                                );
+                                return Err(ValidationError::ImageOperandMinLodRequiresMsZero {
+                                    function: function_id,
+                                    block: block_id,
+                                    opcode,
+                                }
+                                .into());
                             }
                         }
                     }
@@ -1194,7 +1203,8 @@ impl ValidationRule for ImageQueryRule {
                                 ExecutionModel::MeshEXT,
                                 ExecutionModel::TaskEXT,
                             ];
-                            let has_valid_model = ctx.entry_models.iter().any(|m| valid_models.contains(m));
+                            let has_valid_model =
+                                ctx.entry_models.iter().any(|m| valid_models.contains(m));
                             if !has_valid_model && !ctx.entry_models.is_empty() {
                                 return Err(ValidationError::ImageQueryLodRequiresFragment {
                                     function: function_id,
@@ -1215,15 +1225,19 @@ impl ValidationRule for ImageQueryRule {
                             if needs_derivative_mode
                                 && !ctx.entry_models.contains(&ExecutionModel::Fragment)
                             {
-                                let has_derivative_mode = ctx.module.execution_modes.iter().any(|mode_inst| {
-                                    mode_inst.operands.get(1).is_some_and(|operand| {
-                                        matches!(
-                                            operand,
-                                            Operand::ExecutionMode(ExecutionMode::DerivativeGroupQuadsKHR)
-                                                | Operand::ExecutionMode(ExecutionMode::DerivativeGroupLinearKHR)
-                                        )
-                                    })
-                                });
+                                let has_derivative_mode =
+                                    ctx.module.execution_modes.iter().any(|mode_inst| {
+                                        mode_inst.operands.get(1).is_some_and(|operand| {
+                                            matches!(
+                                                operand,
+                                                Operand::ExecutionMode(
+                                                    ExecutionMode::DerivativeGroupQuadsKHR
+                                                ) | Operand::ExecutionMode(
+                                                    ExecutionMode::DerivativeGroupLinearKHR
+                                                )
+                                            )
+                                        })
+                                    });
                                 if !has_derivative_mode {
                                     return Err(ValidationError::ImageQueryLodRequiresFragment {
                                         function: function_id,
@@ -3027,8 +3041,7 @@ impl ValidationRule for ImageCoordinateRule {
                     // Type check: float vs int vs either
                     let is_float =
                         resolver.is_float_scalar_or_vector(coord_type_id, ctx.definitions);
-                    let is_int =
-                        resolver.is_int_scalar_or_vector(coord_type_id, ctx.definitions);
+                    let is_int = resolver.is_int_scalar_or_vector(coord_type_id, ctx.definitions);
 
                     if requires_float_coords(opcode) && !is_float {
                         return Err(ValidationError::ImageCoordinateTypeMismatch {
@@ -3077,16 +3090,14 @@ impl ValidationRule for ImageCoordinateRule {
                         let actual = resolver.get_dimension(coord_type_id, ctx.definitions);
 
                         if actual < required {
-                            return Err(
-                                ValidationError::ImageCoordinateInsufficientComponents {
-                                    function: function_id,
-                                    block: block_id,
-                                    opcode,
-                                    required,
-                                    actual,
-                                }
-                                .into(),
-                            );
+                            return Err(ValidationError::ImageCoordinateInsufficientComponents {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                                required,
+                                actual,
+                            }
+                            .into());
                         }
                     }
                 }
@@ -3277,14 +3288,12 @@ impl ValidationRule for ImageSampleResultTypeRule {
                     if opcode.is_dref() && !opcode.is_gather() {
                         // Dref (non-gather): result must be a scalar of sampled type
                         if rt_inst.is_vector_type() || rt_inst.is_matrix_type() {
-                            return Err(
-                                ValidationError::ImageDrefSampleResultMustBeScalar {
-                                    function: function_id,
-                                    block: block_id,
-                                    opcode,
-                                }
-                                .into(),
-                            );
+                            return Err(ValidationError::ImageDrefSampleResultMustBeScalar {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }
+                            .into());
                         }
                     } else {
                         // Non-Dref sample / gather: result must be vec4
@@ -3300,23 +3309,19 @@ impl ValidationRule for ImageSampleResultTypeRule {
                                 );
                             }
                         } else {
-                            return Err(
-                                ValidationError::ImageSampleResultMustBe4ComponentVector {
-                                    function: function_id,
-                                    block: block_id,
-                                    opcode,
-                                }
-                                .into(),
-                            );
+                            return Err(ValidationError::ImageSampleResultMustBe4ComponentVector {
+                                function: function_id,
+                                block: block_id,
+                                opcode,
+                            }
+                            .into());
                         }
                     }
 
                     // Validate component type matches image sampled type
                     if let Some(info) = get_image_type_from_instruction(inst, ctx) {
                         if info.sampled_type != 0 {
-                            let actual_component_type = if opcode.is_dref()
-                                && !opcode.is_gather()
-                            {
+                            let actual_component_type = if opcode.is_dref() && !opcode.is_gather() {
                                 // Scalar result: the result type ID itself is the component type
                                 Some(result_type_id)
                             } else {
@@ -3326,14 +3331,12 @@ impl ValidationRule for ImageSampleResultTypeRule {
 
                             if let Some(component_type_id) = actual_component_type {
                                 if component_type_id != info.sampled_type {
-                                    return Err(
-                                        ValidationError::ImageSampleResultTypeMismatch {
-                                            function: function_id,
-                                            block: block_id,
-                                            opcode,
-                                        }
-                                        .into(),
-                                    );
+                                    return Err(ValidationError::ImageSampleResultTypeMismatch {
+                                        function: function_id,
+                                        block: block_id,
+                                        opcode,
+                                    }
+                                    .into());
                                 }
                             }
                         }

@@ -692,10 +692,7 @@ fn vendor_capability_requiring_disallowed_extension_reports_env_error() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -725,10 +722,7 @@ fn cooperative_matrix_nv_capability_rejected_outside_vulkan() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -761,10 +755,7 @@ fn tile_shading_capability_rejected_outside_vulkan() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -797,10 +788,7 @@ fn ray_tracing_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -833,10 +821,7 @@ fn mesh_shading_nv_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -869,10 +854,7 @@ fn mesh_shading_ext_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -908,10 +890,7 @@ fn cooperative_matrix_khr_capability_rejected_outside_vulkan_even_with_extension
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -946,10 +925,7 @@ fn ray_tracing_motion_blur_capability_rejected_outside_vulkan_even_with_extensio
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "RayTracingMotionBlurNV should be rejected when its extension is disallowed",
         );
@@ -992,10 +968,7 @@ fn ray_tracing_displacement_micromap_capability_rejected_outside_vulkan_even_wit
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "RayTracingDisplacementMicromapNV should be rejected when its extension is disallowed",
         );
@@ -1037,10 +1010,7 @@ fn ray_tracing_linear_swept_spheres_capability_rejected_outside_vulkan_even_with
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
                 "RayTracingLinearSweptSpheresGeometryNV should be rejected when its extension is disallowed",
             );
@@ -1081,10 +1051,7 @@ fn ray_tracing_opacity_micromap_capability_rejected_outside_vulkan_even_with_ext
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "RayTracingOpacityMicromapEXT should be rejected when its extension is disallowed",
         );
@@ -1125,10 +1092,7 @@ fn shader_invocation_reorder_capability_rejected_outside_vulkan_even_with_extens
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "ShaderInvocationReorderNV should be rejected when its extension is disallowed",
         );
@@ -1169,10 +1133,7 @@ fn cluster_acceleration_capability_rejected_outside_vulkan_even_with_extension()
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
                 "RayTracingClusterAccelerationStructureNV should be rejected when its extension is disallowed",
             );
@@ -1211,10 +1172,7 @@ fn shader_sm_builtins_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -1247,10 +1205,7 @@ fn fragment_shader_interlock_capability_rejected_outside_vulkan_even_with_extens
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "FragmentShaderPixelInterlockEXT should be rejected when its extension is disallowed",
         );
@@ -1282,10 +1237,7 @@ fn image_footprint_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -1318,10 +1270,7 @@ fn shader_atomic_float_add_capability_rejected_outside_vulkan_even_with_extensio
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -1354,10 +1303,7 @@ fn fragment_shading_rate_capability_rejected_outside_vulkan_even_with_extension(
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text.as_str().validate(env).expect_err(
             "FragmentShadingRateKHR should be rejected when its extension is disallowed",
         );
@@ -1390,10 +1336,7 @@ fn fragment_invocation_density_capability_rejected_outside_vulkan_even_with_exte
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -2336,10 +2279,7 @@ fn shader_clock_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -2633,10 +2573,7 @@ fn mesh_shader_extension_is_vulkan_only() {
     text.as_str()
         .validate(TargetEnv::Vulkan1_2)
         .expect("Mesh shader extension should be accepted for Vulkan targets");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)
@@ -3146,10 +3083,7 @@ fn device_group_capability_rejected_outside_vulkan_even_with_extension() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    for env in [
-        TargetEnv::OpenCl2_2,
-        TargetEnv::OpenGl4_5,
-    ] {
+    for env in [TargetEnv::OpenCl2_2, TargetEnv::OpenGl4_5] {
         let error = text
             .as_str()
             .validate(env)

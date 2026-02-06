@@ -4806,7 +4806,10 @@ fn test_dce_quadruple_store_elimination() {
     // Four stores to same location = single store of last value
     let mut egraph = create_spirv_egraph().unwrap();
 
-    egraph.parse_and_run_program(None, r#"
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
         (let mem (InitMem))
         (let ptr (Var "x" 0))
         (let v1 (Const 1))
@@ -4815,7 +4818,9 @@ fn test_dce_quadruple_store_elimination() {
         (let v4 (Const 4))
         (let quad_store (StoreMem ptr v4 (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 mem)))))
         (let single_store (StoreMem ptr v4 mem))
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 15 (run)))")
         .unwrap();

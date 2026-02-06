@@ -109,8 +109,7 @@ impl ValidationRule for ExecutionModesRule {
                 // Validate LocalSizeId operands are constants
                 if is_id_form && execution_mode == ExecutionMode::LocalSizeId {
                     for idx in 2..=4 {
-                        if let Some(rspirv::dr::Operand::IdRef(operand_id)) =
-                            mode.operands.get(idx)
+                        if let Some(rspirv::dr::Operand::IdRef(operand_id)) = mode.operands.get(idx)
                         {
                             if let Ok(op_rid) =
                                 crate::validation::types::ResultId::try_from(*operand_id)
@@ -424,17 +423,16 @@ fn is_id_form_mode(mode: ExecutionMode) -> bool {
         ExecutionMode::SubgroupsPerWorkgroupId
             | ExecutionMode::LocalSizeHintId
             | ExecutionMode::LocalSizeId
-            | ExecutionMode::FPFastMathDefault
-            // INTEL/AMDX modes: raw values since rspirv may not have them
-    )
-    || matches!(mode as u32,
+            | ExecutionMode::FPFastMathDefault // INTEL/AMDX modes: raw values since rspirv may not have them
+    ) || matches!(
+        mode as u32,
         5893  // MaximumRegistersIdINTEL
         | 5073  // IsApiEntryAMDX
         | 5071  // MaxNodeRecursionAMDX
         | 5077  // MaxNumWorkgroupsAMDX
         | 5072  // ShaderIndexAMDX
         | 5074  // SharesInputWithAMDX
-        | 5078  // StaticNumWorkgroupsAMDX
+        | 5078 // StaticNumWorkgroupsAMDX
     )
 }
 
@@ -525,23 +523,21 @@ fn validate_mode_model(
         ExecutionMode::OutputPoints => {
             let model_allowed = match model {
                 ExecutionModel::Geometry => true,
-                ExecutionModel::MeshNV => {
-                    ctx.declared_capabilities
-                        .contains(&Capability::MeshShadingNV)
-                }
-                ExecutionModel::MeshEXT => {
-                    ctx.declared_capabilities
-                        .contains(&Capability::MeshShadingEXT)
-                }
+                ExecutionModel::MeshNV => ctx
+                    .declared_capabilities
+                    .contains(&Capability::MeshShadingNV),
+                ExecutionModel::MeshEXT => ctx
+                    .declared_capabilities
+                    .contains(&Capability::MeshShadingEXT),
                 _ => false,
             };
             if !model_allowed {
-                let has_mesh_cap =
-                    ctx.declared_capabilities
-                        .contains(&Capability::MeshShadingNV)
-                        || ctx
-                            .declared_capabilities
-                            .contains(&Capability::MeshShadingEXT);
+                let has_mesh_cap = ctx
+                    .declared_capabilities
+                    .contains(&Capability::MeshShadingNV)
+                    || ctx
+                        .declared_capabilities
+                        .contains(&Capability::MeshShadingEXT);
                 let allowed = if has_mesh_cap {
                     vec![
                         ExecutionModel::Geometry,

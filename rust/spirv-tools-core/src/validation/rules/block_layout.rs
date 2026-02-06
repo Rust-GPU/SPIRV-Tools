@@ -555,7 +555,14 @@ fn type_alignment(
                 scalar_align.checked_mul(multiplier)?
             } else {
                 // Column-major (or scalar layout): alignment of column vector.
-                type_alignment(column, ctx, visiting, scalar_layout, extended_alignment, false)?
+                type_alignment(
+                    column,
+                    ctx,
+                    visiting,
+                    scalar_layout,
+                    extended_alignment,
+                    false,
+                )?
             };
             if extended_alignment && !scalar_layout {
                 Some(round_up(base_align, 16))
@@ -593,8 +600,7 @@ fn type_alignment(
                     _ => return None,
                 };
                 // Each struct member has its own RowMajor/ColMajor decoration.
-                let member_rm =
-                    member_is_row_major(ctx.module, struct_id, MemberIndex(idx as u32));
+                let member_rm = member_is_row_major(ctx.module, struct_id, MemberIndex(idx as u32));
                 let align = type_alignment(
                     member_ty,
                     ctx,
@@ -1156,16 +1162,14 @@ fn check_struct_layout(
 
         // Matrix stride check (C++ line 622).
         if member_inst.class.opcode == Op::TypeMatrix {
-            let stride =
-                member_matrix_stride(ctx.module, struct_id, MemberIndex(member_idx)).ok_or_else(
-                    || -> SpannedValidationError {
-                        ValidationError::InvalidBlockLayout {
-                            struct_type: struct_id,
-                            reason: "matrix member is missing MatrixStride".to_string(),
-                        }
-                        .into()
-                    },
-                )?;
+            let stride = member_matrix_stride(ctx.module, struct_id, MemberIndex(member_idx))
+                .ok_or_else(|| -> SpannedValidationError {
+                    ValidationError::InvalidBlockLayout {
+                        struct_type: struct_id,
+                        reason: "matrix member is missing MatrixStride".to_string(),
+                    }
+                    .into()
+                })?;
             if stride % alignment != 0 {
                 return Err(ValidationError::InvalidBlockLayout {
                     struct_type: struct_id,
@@ -1175,8 +1179,7 @@ fn check_struct_layout(
             }
             let (column_type, _) = matrix_info(member_inst);
             if let Some(col_ty) = column_type {
-                if let Some(col_size) =
-                    type_layout_size(col_ty, ctx, &mut HashSet::new(), false, 0)
+                if let Some(col_size) = type_layout_size(col_ty, ctx, &mut HashSet::new(), false, 0)
                 {
                     if col_size > stride {
                         return Err(ValidationError::InvalidBlockLayout {
@@ -1225,10 +1228,7 @@ fn check_struct_layout(
                 if s % array_alignment != 0 {
                     return Err(ValidationError::InvalidBlockLayout {
                         struct_type: struct_id,
-                        reason: format!(
-                            "array stride {} is not aligned to {}",
-                            s, array_alignment
-                        ),
+                        reason: format!("array stride {} is not aligned to {}", s, array_alignment),
                     }
                     .into());
                 }
@@ -1236,7 +1236,9 @@ fn check_struct_layout(
             let stride_val = stride.unwrap_or(0);
 
             let num_elements = if array_inst.class.opcode == Op::TypeArray {
-                array_length(array_inst, ctx.definitions).unwrap_or(1).max(1)
+                array_length(array_inst, ctx.definitions)
+                    .unwrap_or(1)
+                    .max(1)
             } else {
                 1
             };
@@ -1318,12 +1320,7 @@ fn check_struct_layout(
 
         // Update next valid offset (C++ lines 708-714).
         next_valid_offset = offset.saturating_add(size);
-        if !scalar_layout
-            && matches!(
-                member_inst.class.opcode,
-                Op::TypeArray | Op::TypeStruct
-            )
-        {
+        if !scalar_layout && matches!(member_inst.class.opcode, Op::TypeArray | Op::TypeStruct) {
             next_valid_offset = round_up(next_valid_offset, alignment);
         }
     }

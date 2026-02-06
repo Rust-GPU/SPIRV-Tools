@@ -4,9 +4,11 @@ use rspirv::grammar::{GlslStd450InstructionTable, OpenCLStd100InstructionTable};
 use rspirv::spirv;
 use std::collections::HashMap;
 
-use crate::assembly::{lookup_custom_ext_inst_name, BinaryToTextOptions, ExtInstImportInfo, ExtInstSetKind};
 use super::names::visit_module_instructions;
 use super::unsupported_options;
+use crate::assembly::{
+    lookup_custom_ext_inst_name, BinaryToTextOptions, ExtInstImportInfo, ExtInstSetKind,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum LiteralFormat {

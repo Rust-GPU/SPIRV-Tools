@@ -1721,13 +1721,11 @@ impl ValidationRule for CopyLogicalRule {
 
                     // Result type must logically match operand type
                     if !types_logically_match(result_type_raw, source_type, ctx.definitions) {
-                        return Err(
-                            ValidationError::CopyLogicalTypesNotLogicallyMatching {
-                                function: function_id,
-                                block: block_id,
-                            }
-                            .into(),
-                        );
+                        return Err(ValidationError::CopyLogicalTypesNotLogicallyMatching {
+                            function: function_id,
+                            block: block_id,
+                        }
+                        .into());
                     }
 
                     // Check Shader capability restriction for 8/16-bit types
@@ -1901,48 +1899,40 @@ fn contains_limited_type(
     };
 
     match type_inst.class.opcode {
-        Op::TypeInt => {
-            type_inst.operands.first().is_some_and(|op| {
-                if let rspirv::dr::Operand::LiteralBit32(width) = op {
-                    (*width == 8 && !has_int8) || (*width == 16 && !has_int16)
-                } else {
-                    false
-                }
-            })
-        }
-        Op::TypeFloat => {
-            type_inst.operands.first().is_some_and(|op| {
-                if let rspirv::dr::Operand::LiteralBit32(width) = op {
-                    *width == 16 && !has_float16
-                } else {
-                    false
-                }
-            })
-        }
-        Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => {
-            type_inst
-                .operands
-                .first()
-                .and_then(|op| {
-                    if let rspirv::dr::Operand::IdRef(id) = op {
-                        Some(*id)
-                    } else {
-                        None
-                    }
-                })
-                .is_some_and(|elem_type_id| {
-                    contains_limited_type(elem_type_id, definitions, has_int8, has_int16, has_float16)
-                })
-        }
-        Op::TypeStruct => {
-            type_inst.operands.iter().any(|op| {
+        Op::TypeInt => type_inst.operands.first().is_some_and(|op| {
+            if let rspirv::dr::Operand::LiteralBit32(width) = op {
+                (*width == 8 && !has_int8) || (*width == 16 && !has_int16)
+            } else {
+                false
+            }
+        }),
+        Op::TypeFloat => type_inst.operands.first().is_some_and(|op| {
+            if let rspirv::dr::Operand::LiteralBit32(width) = op {
+                *width == 16 && !has_float16
+            } else {
+                false
+            }
+        }),
+        Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => type_inst
+            .operands
+            .first()
+            .and_then(|op| {
                 if let rspirv::dr::Operand::IdRef(id) = op {
-                    contains_limited_type(*id, definitions, has_int8, has_int16, has_float16)
+                    Some(*id)
                 } else {
-                    false
+                    None
                 }
             })
-        }
+            .is_some_and(|elem_type_id| {
+                contains_limited_type(elem_type_id, definitions, has_int8, has_int16, has_float16)
+            }),
+        Op::TypeStruct => type_inst.operands.iter().any(|op| {
+            if let rspirv::dr::Operand::IdRef(id) = op {
+                contains_limited_type(*id, definitions, has_int8, has_int16, has_float16)
+            } else {
+                false
+            }
+        }),
         _ => false,
     }
 }

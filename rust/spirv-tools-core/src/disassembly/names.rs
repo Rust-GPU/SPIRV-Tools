@@ -2,12 +2,12 @@ use rspirv::dr::{self, Instruction, Operand};
 use rspirv::spirv;
 use std::collections::HashMap;
 
-use super::types::*;
 use super::formatting::{
     canonical_storage_class, format_f32_literal, format_f64_literal, format_hex_float,
     format_integer_bits, HEX_FLOAT_F16,
 };
-use super::{STANDARD_INDENT_COLUMN};
+use super::types::*;
+use super::STANDARD_INDENT_COLUMN;
 
 #[derive(Default)]
 pub(super) struct FriendlyNameTable {
@@ -32,7 +32,10 @@ impl FriendlyNameTable {
     }
 }
 
-pub(super) fn visit_module_instructions<'a>(module: &'a dr::Module, mut visit: impl FnMut(&'a Instruction)) {
+pub(super) fn visit_module_instructions<'a>(
+    module: &'a dr::Module,
+    mut visit: impl FnMut(&'a Instruction),
+) {
     for instruction in &module.capabilities {
         visit(instruction);
     }

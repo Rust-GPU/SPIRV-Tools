@@ -1196,7 +1196,10 @@ fn opengl_uniform_without_block_does_not_need_binding() {
     let result = text.as_str().validate(TargetEnv::OpenGl4_5);
     if let Err(ref err) = result {
         assert!(
-            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            !matches!(
+                err,
+                ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+            ),
             "OpenGL binding check should not trigger without Block/BufferBlock"
         );
     }
@@ -1229,7 +1232,10 @@ fn vulkan_env_does_not_trigger_opengl_binding_check() {
     let result = text.as_str().validate(TargetEnv::Vulkan1_0);
     if let Err(ref err) = result {
         assert!(
-            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            !matches!(
+                err,
+                ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+            ),
             "Vulkan env should not trigger OpenGL binding check"
         );
     }
@@ -1260,7 +1266,10 @@ fn opengl_unreferenced_variable_does_not_need_binding() {
     let result = text.as_str().validate(TargetEnv::OpenGl4_5);
     if let Err(ref err) = result {
         assert!(
-            !matches!(err, ValidationError::OpenGlBufferMissingBindingDecoration { .. }),
+            !matches!(
+                err,
+                ValidationError::OpenGlBufferMissingBindingDecoration { .. }
+            ),
             "Unreferenced variable should not trigger OpenGL binding check"
         );
     }

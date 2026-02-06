@@ -2,8 +2,8 @@ use rspirv::dr::{self, Instruction};
 use rspirv::spirv;
 use std::collections::HashMap;
 
-use super::types::*;
 use super::names::extract_id_ref;
+use super::types::*;
 use super::HEADER_WORD_COUNT;
 
 pub(super) fn collect_instruction_offsets(words: &[u32]) -> Vec<u32> {
@@ -35,7 +35,10 @@ pub(super) enum LocationPlacement {
     ModuleTail,
 }
 
-pub(super) fn classify_location_debugs(words: &[u32], function_count: usize) -> Vec<LocationPlacement> {
+pub(super) fn classify_location_debugs(
+    words: &[u32],
+    function_count: usize,
+) -> Vec<LocationPlacement> {
     let mut placements = Vec::new();
     if words.len() <= HEADER_WORD_COUNT {
         return placements;
@@ -476,7 +479,11 @@ pub(super) fn reorder_function_blocks(function: &dr::Function) -> Vec<usize> {
     order
 }
 
-pub(super) fn push_successor(stack: &mut Vec<StackEntry>, id_to_index: &HashMap<u32, usize>, block_id: u32) {
+pub(super) fn push_successor(
+    stack: &mut Vec<StackEntry>,
+    id_to_index: &HashMap<u32, usize>,
+    block_id: u32,
+) {
     if block_id == 0 {
         return;
     }
@@ -488,7 +495,11 @@ pub(super) fn push_successor(stack: &mut Vec<StackEntry>, id_to_index: &HashMap<
     }
 }
 
-pub(super) fn nest_successors(infos: &mut [BlockInfo], index: usize, id_to_index: &HashMap<u32, usize>) {
+pub(super) fn nest_successors(
+    infos: &mut [BlockInfo],
+    index: usize,
+    id_to_index: &HashMap<u32, usize>,
+) {
     let level = infos[index].nest_level.unwrap_or(0);
     let merge_block_id = infos[index].merge_block_id;
     let continue_block_id = infos[index].continue_block_id;

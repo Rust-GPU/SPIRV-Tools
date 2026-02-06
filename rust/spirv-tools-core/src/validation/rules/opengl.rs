@@ -36,8 +36,7 @@ impl ValidationRule for OpenGlBufferBindingRule {
 
     fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         // Build a set of variable IDs referenced by any entry point
-        let mut entry_point_vars: std::collections::HashSet<u32> =
-            std::collections::HashSet::new();
+        let mut entry_point_vars: std::collections::HashSet<u32> = std::collections::HashSet::new();
         for ep in &ctx.module.entry_points {
             let mut operands = ep.operands.iter();
             // Skip ExecutionModel
@@ -110,9 +109,7 @@ impl ValidationRule for OpenGlBufferBindingRule {
             // OpenGL requires Binding on:
             // - Uniform variables with Block or BufferBlock decoration
             // - StorageBuffer variables with Block decoration
-            if (uniform && (has_block || has_buffer_block))
-                || (storage_buffer && has_block)
-            {
+            if (uniform && (has_block || has_buffer_block)) || (storage_buffer && has_block) {
                 // Only check variables referenced by entry points
                 if !entry_point_vars.is_empty()
                     && entry_point_vars.contains(&var_id)

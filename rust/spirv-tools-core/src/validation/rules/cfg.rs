@@ -1891,15 +1891,13 @@ impl ValidationRule for ContinueConstructPostDominanceRule {
                         // This is a back-edge block. Check that it post-dominates
                         // the continue target.
                         if !cfg.post_dominates(*back_edge_candidate, continue_target) {
-                            return Err(
-                                ValidationError::ContinueConstructNotPostDominated {
-                                    function: func_id,
-                                    header: header_id,
-                                    continue_target,
-                                    back_edge_block: *back_edge_candidate,
-                                }
-                                .into(),
-                            );
+                            return Err(ValidationError::ContinueConstructNotPostDominated {
+                                function: func_id,
+                                header: header_id,
+                                continue_target,
+                                back_edge_block: *back_edge_candidate,
+                            }
+                            .into());
                         }
                     }
                 }

@@ -1,17 +1,16 @@
 use rspirv::dr::{self, ModuleHeader};
 use rspirv::spirv;
 
-use super::{
-    COLOR_BLUE, COLOR_GREY, COLOR_RESET,
-    STANDARD_INDENT_COLUMN, BLOCK_NEST_INDENT, BLOCK_BODY_INDENT_OFFSET,
-};
-use super::types::*;
+use super::block_analysis::*;
 use super::formatting::disassemble_with_format;
 use super::names::{
-    FriendlyNameTable, section_heading, append_section_heading,
-    append_function_heading,
+    append_function_heading, append_section_heading, section_heading, FriendlyNameTable,
 };
-use super::block_analysis::*;
+use super::types::*;
+use super::{
+    BLOCK_BODY_INDENT_OFFSET, BLOCK_NEST_INDENT, COLOR_BLUE, COLOR_GREY, COLOR_RESET,
+    STANDARD_INDENT_COLUMN,
+};
 
 pub(super) fn emit_disassembly_text(text: &str) {
     #[cfg(test)]

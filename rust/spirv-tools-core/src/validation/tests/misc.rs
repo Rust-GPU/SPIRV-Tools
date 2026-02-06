@@ -3470,12 +3470,9 @@ fn glsl_refract_vec3_f32_with_f64_eta_fails() {
 
     // Types and constants
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        None,
-        Some(2),
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     // %3 = OpTypeFunction %void
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
@@ -3543,9 +3540,7 @@ fn glsl_refract_vec3_f32_with_f64_eta_fails() {
         Op::Variable,
         Some(7),
         Some(15),
-        vec![Operand::StorageClass(
-            rspirv::spirv::StorageClass::Output,
-        )],
+        vec![Operand::StorageClass(rspirv::spirv::StorageClass::Output)],
     ));
 
     // Function
@@ -3567,11 +3562,11 @@ fn glsl_refract_vec3_f32_with_f64_eta_fails() {
         Some(6),
         Some(13),
         vec![
-            Operand::IdRef(1),                     // GLSL import
-            Operand::LiteralExtInstInteger(72),     // Refract opcode
-            Operand::IdRef(11),                     // I
-            Operand::IdRef(11),                     // N
-            Operand::IdRef(9),                      // eta (f64!)
+            Operand::IdRef(1),                  // GLSL import
+            Operand::LiteralExtInstInteger(72), // Refract opcode
+            Operand::IdRef(11),                 // I
+            Operand::IdRef(11),                 // N
+            Operand::IdRef(9),                  // eta (f64!)
         ],
     ));
     block.instructions.push(Instruction::new(
@@ -3928,8 +3923,7 @@ fn build_transpose_module(
 fn transpose_mat2x3_to_mat3x2_passes() {
     // mat2x3 (2 cols of vec3) transposed = mat3x2 (3 cols of vec2) - valid
     let binary = build_transpose_module(2, 3, 3, 2);
-    validate_module(&binary, TargetEnv::Vulkan1_2)
-        .expect("Transpose mat2x3 -> mat3x2 should pass");
+    validate_module(&binary, TargetEnv::Vulkan1_2).expect("Transpose mat2x3 -> mat3x2 should pass");
 }
 
 #[test]
@@ -3949,10 +3943,7 @@ fn transpose_mat2x3_to_mat2x3_fails() {
 // ============================================================================
 
 /// Helper to build a binary module with OpCopyLogical between two struct types.
-fn build_copy_logical_module(
-    struct_a_members: &[u32],
-    struct_b_members: &[u32],
-) -> Vec<u32> {
+fn build_copy_logical_module(struct_a_members: &[u32], struct_b_members: &[u32]) -> Vec<u32> {
     use rspirv::binary::Assemble;
     use rspirv::dr::{Instruction, Module, Operand};
 
@@ -4026,21 +4017,21 @@ fn build_copy_logical_module(
     ));
 
     // %5 = OpTypeStruct <struct_a_members>
-    let a_ops: Vec<_> = struct_a_members.iter().map(|id| Operand::IdRef(*id)).collect();
-    module.types_global_values.push(Instruction::new(
-        Op::TypeStruct,
-        None,
-        Some(5),
-        a_ops,
-    ));
+    let a_ops: Vec<_> = struct_a_members
+        .iter()
+        .map(|id| Operand::IdRef(*id))
+        .collect();
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeStruct, None, Some(5), a_ops));
     // %6 = OpTypeStruct <struct_b_members>
-    let b_ops: Vec<_> = struct_b_members.iter().map(|id| Operand::IdRef(*id)).collect();
-    module.types_global_values.push(Instruction::new(
-        Op::TypeStruct,
-        None,
-        Some(6),
-        b_ops,
-    ));
+    let b_ops: Vec<_> = struct_b_members
+        .iter()
+        .map(|id| Operand::IdRef(*id))
+        .collect();
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeStruct, None, Some(6), b_ops));
 
     // Build constant for struct_a
     let mut const_ops = Vec::new();
@@ -4516,12 +4507,9 @@ fn execution_mode_id_with_non_id_mode_fails() {
             Operand::IdRef(3),
         ],
     ));
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        None,
-        Some(2),
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         None,
@@ -4607,12 +4595,9 @@ fn execution_mode_with_id_only_mode_fails() {
             Operand::IdRef(3),
         ],
     ));
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        None,
-        Some(2),
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         None,
@@ -4863,12 +4848,9 @@ fn kernel_only_mode_rejected_with_fragment() {
             Operand::LiteralBit32(0),
         ],
     ));
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        None,
-        Some(2),
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         None,
@@ -5066,12 +5048,9 @@ fn build_image_fetch_module(
     ));
 
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        None,
-        Some(2),
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
     // %3 = OpTypeFunction %void
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
@@ -5155,10 +5134,7 @@ fn build_image_fetch_module(
             Op::TypeVector,
             None,
             Some(13),
-            vec![
-                Operand::IdRef(9),
-                Operand::LiteralBit32(coord_components),
-            ],
+            vec![Operand::IdRef(9), Operand::LiteralBit32(coord_components)],
         ));
         13
     };
@@ -5240,16 +5216,14 @@ fn build_image_fetch_module(
 
 #[test]
 fn image_fetch_valid_2d_sampled_passes() {
-    let binary =
-        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, true);
+    let binary = build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, true);
     validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect("Valid OpImageFetch with 2D sampled image should pass");
 }
 
 #[test]
 fn image_fetch_dim_cube_fails() {
-    let binary =
-        build_image_fetch_module(1, rspirv::spirv::Dim::DimCube, 4, true);
+    let binary = build_image_fetch_module(1, rspirv::spirv::Dim::DimCube, 4, true);
     let err = validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect_err("OpImageFetch with Cube dimension should fail");
     assert!(
@@ -5261,15 +5235,11 @@ fn image_fetch_dim_cube_fails() {
 #[test]
 fn image_fetch_sampled_2_fails() {
     // Sampled=2 means read/write storage image, not valid for fetch
-    let binary =
-        build_image_fetch_module(2, rspirv::spirv::Dim::Dim2D, 4, true);
+    let binary = build_image_fetch_module(2, rspirv::spirv::Dim::Dim2D, 4, true);
     let err = validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect_err("OpImageFetch with Sampled=2 should fail");
     assert!(
-        matches!(
-            err,
-            ValidationError::ImageFetchRequiresSampledImage { .. }
-        ),
+        matches!(err, ValidationError::ImageFetchRequiresSampledImage { .. }),
         "expected ImageFetchRequiresSampledImage, got {err:?}"
     );
 }
@@ -5277,15 +5247,11 @@ fn image_fetch_sampled_2_fails() {
 #[test]
 fn image_fetch_result_type_mismatch_fails() {
     // Result vector uses int but image sampled type is float
-    let binary =
-        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, false);
+    let binary = build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 4, false);
     let err = validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect_err("OpImageFetch with mismatched component type should fail");
     assert!(
-        matches!(
-            err,
-            ValidationError::ImageSampleResultTypeMismatch { .. }
-        ),
+        matches!(err, ValidationError::ImageSampleResultTypeMismatch { .. }),
         "expected ImageSampleResultTypeMismatch, got {err:?}"
     );
 }
@@ -5293,8 +5259,7 @@ fn image_fetch_result_type_mismatch_fails() {
 #[test]
 fn image_fetch_non_4_component_result_fails() {
     // Result vector has 3 components instead of 4
-    let binary =
-        build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 3, true);
+    let binary = build_image_fetch_module(1, rspirv::spirv::Dim::Dim2D, 3, true);
     let err = validate_module(&binary, TargetEnv::Vulkan1_2)
         .expect_err("OpImageFetch with 3-component result should fail");
     assert!(
@@ -5377,11 +5342,16 @@ fn image_fetch_with_float_coordinate_fails() {
 
     // Types
     // %2 = OpTypeVoid
-    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
-    // %3 = OpTypeFunction %void
     module
         .types_global_values
-        .push(Instruction::new(Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)]));
+        .push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    // %3 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction,
+        None,
+        Some(3),
+        vec![Operand::IdRef(2)],
+    ));
     // %4 = OpTypeFloat 32
     module.types_global_values.push(Instruction::new(
         Op::TypeFloat,
@@ -5433,7 +5403,9 @@ fn image_fetch_with_float_coordinate_fails() {
         Op::Variable,
         Some(8),
         Some(10),
-        vec![Operand::StorageClass(rspirv::spirv::StorageClass::UniformConstant)],
+        vec![Operand::StorageClass(
+            rspirv::spirv::StorageClass::UniformConstant,
+        )],
     ));
     // %16 = OpConstant %float 0.0
     module.types_global_values.push(Instruction::new(
@@ -5629,12 +5601,9 @@ fn local_size_id_operands_must_be_constants() {
     // Use OpUndef (not a constant) for the third operand to trigger the error
     let undef_id = 8u32;
 
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        Some(void_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(void_id), None, vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         Some(fn_type_id),
@@ -5719,9 +5688,7 @@ fn local_size_id_operands_must_be_constants() {
     assert!(
         matches!(
             err,
-            ValidationError::LocalSizeIdOperandNotConstant {
-                operand_index: 4,
-            }
+            ValidationError::LocalSizeIdOperandNotConstant { operand_index: 4 }
         ),
         "expected LocalSizeIdOperandNotConstant at index 4, got {err:?}"
     );
@@ -5819,12 +5786,9 @@ fn type_image_invalid_depth_value() {
     let f32_id = 4u32;
     let img_id = 5u32;
 
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        Some(void_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(void_id), None, vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         Some(fn_type_id),
@@ -5931,12 +5895,9 @@ fn type_image_vulkan_sampled_zero_rejected() {
     let f32_id = 4u32;
     let img_id = 5u32;
 
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        Some(void_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(void_id), None, vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         Some(fn_type_id),
@@ -6041,24 +6002,18 @@ fn type_image_sampled_type_must_be_numeric() {
     let bool_id = 4u32;
     let img_id = 5u32;
 
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        Some(void_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(void_id), None, vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         Some(fn_type_id),
         None,
         vec![Operand::IdRef(void_id)],
     ));
-    module.types_global_values.push(Instruction::new(
-        Op::TypeBool,
-        Some(bool_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeBool, Some(bool_id), None, vec![]));
     // OpTypeImage with Sampled Type = bool (invalid)
     module.types_global_values.push(Instruction::new(
         Op::TypeImage,
@@ -6119,7 +6074,9 @@ fn type_image_subpass_data_format_must_be_unknown() {
         Op::Capability,
         None,
         None,
-        vec![Operand::Capability(rspirv::spirv::Capability::InputAttachment)],
+        vec![Operand::Capability(
+            rspirv::spirv::Capability::InputAttachment,
+        )],
     ));
     module.memory_model = Some(Instruction::new(
         Op::MemoryModel,
@@ -6154,12 +6111,9 @@ fn type_image_subpass_data_format_must_be_unknown() {
     let f32_id = 4u32;
     let img_id = 5u32;
 
-    module.types_global_values.push(Instruction::new(
-        Op::TypeVoid,
-        Some(void_id),
-        None,
-        vec![],
-    ));
+    module
+        .types_global_values
+        .push(Instruction::new(Op::TypeVoid, Some(void_id), None, vec![]));
     module.types_global_values.push(Instruction::new(
         Op::TypeFunction,
         Some(fn_type_id),
@@ -6352,22 +6306,33 @@ fn make_texel_available_only_valid_with_image_write() {
         Some(1),
         Some(2),
         vec![
-            Operand::IdRef(3),                // image
-            Operand::IdRef(4),                // coordinate
+            Operand::IdRef(3), // image
+            Operand::IdRef(4), // coordinate
             Operand::ImageOperands(
                 rspirv::spirv::ImageOperands::MAKE_TEXEL_AVAILABLE
                     | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
             ),
-            Operand::IdRef(5),                // scope
+            Operand::IdRef(5), // scope
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandRule.validate(&ctx);
-    assert!(result.is_err(), "MakeTexelAvailable should not be valid with OpImageRead");
+    assert!(
+        result.is_err(),
+        "MakeTexelAvailable should not be valid with OpImageRead"
+    );
     let err = result.unwrap_err();
     assert!(
         matches!(
@@ -6391,23 +6356,34 @@ fn make_texel_visible_not_valid_with_image_write() {
         None,
         None,
         vec![
-            Operand::IdRef(1),                // image
-            Operand::IdRef(2),                // coordinate
-            Operand::IdRef(3),                // texel
+            Operand::IdRef(1), // image
+            Operand::IdRef(2), // coordinate
+            Operand::IdRef(3), // texel
             Operand::ImageOperands(
                 rspirv::spirv::ImageOperands::MAKE_TEXEL_VISIBLE
                     | rspirv::spirv::ImageOperands::NON_PRIVATE_TEXEL,
             ),
-            Operand::IdRef(4),                // scope
+            Operand::IdRef(4), // scope
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandRule.validate(&ctx);
-    assert!(result.is_err(), "MakeTexelVisible should not be valid with OpImageWrite");
+    assert!(
+        result.is_err(),
+        "MakeTexelVisible should not be valid with OpImageWrite"
+    );
     let err = result.unwrap_err();
     assert!(
         matches!(
@@ -6439,12 +6415,23 @@ fn make_texel_available_requires_non_private_texel() {
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandRule.validate(&ctx);
-    assert!(result.is_err(), "MakeTexelAvailable without NonPrivateTexel should fail");
+    assert!(
+        result.is_err(),
+        "MakeTexelAvailable without NonPrivateTexel should fail"
+    );
     let err = result.unwrap_err();
     assert!(
         matches!(
@@ -6475,12 +6462,23 @@ fn make_texel_visible_requires_non_private_texel() {
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandRule.validate(&ctx);
-    assert!(result.is_err(), "MakeTexelVisible without NonPrivateTexel should fail");
+    assert!(
+        result.is_err(),
+        "MakeTexelVisible without NonPrivateTexel should fail"
+    );
     let err = result.unwrap_err();
     assert!(
         matches!(
@@ -6515,11 +6513,21 @@ fn make_texel_available_with_non_private_on_write_passes() {
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandRule.validate(&ctx).expect("MakeTexelAvailable + NonPrivateTexel on write should pass");
+    ImageOperandRule
+        .validate(&ctx)
+        .expect("MakeTexelAvailable + NonPrivateTexel on write should pass");
 }
 
 #[test]
@@ -6544,11 +6552,21 @@ fn make_texel_visible_with_non_private_on_read_passes() {
         ],
     );
     let mut data = TestContextData::default();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandRule.validate(&ctx).expect("MakeTexelVisible + NonPrivateTexel on read should pass");
+    ImageOperandRule
+        .validate(&ctx)
+        .expect("MakeTexelVisible + NonPrivateTexel on read should pass");
 }
 
 // ============================================================================
@@ -6557,77 +6575,152 @@ fn make_texel_visible_with_non_private_on_read_passes() {
 
 /// Helper to create a TestContextData with type definitions needed for image operand type tests.
 fn image_operand_type_test_data() -> crate::validation::TestContextData {
+    use crate::validation::types::ResultId;
     use rspirv::dr::{Instruction, Operand};
     use rspirv::spirv::{Dim, ImageFormat, Op};
-    use crate::validation::types::ResultId;
 
     let mut data = crate::validation::TestContextData::default();
     let rid = |id: u32| ResultId::try_from(id).unwrap();
 
     // OpTypeFloat %10 32
-    data.definitions.insert(rid(10), Instruction::new(
-        Op::TypeFloat, None, Some(10), vec![Operand::LiteralBit32(32)],
-    ));
+    data.definitions.insert(
+        rid(10),
+        Instruction::new(
+            Op::TypeFloat,
+            None,
+            Some(10),
+            vec![Operand::LiteralBit32(32)],
+        ),
+    );
 
     // OpTypeInt %11 32 0
-    data.definitions.insert(rid(11), Instruction::new(
-        Op::TypeInt, None, Some(11), vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
-    ));
+    data.definitions.insert(
+        rid(11),
+        Instruction::new(
+            Op::TypeInt,
+            None,
+            Some(11),
+            vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+        ),
+    );
 
     // OpTypeImage %13 %10 2D 0 0 0 1 Unknown
-    data.definitions.insert(rid(13), Instruction::new(
-        Op::TypeImage, None, Some(13), vec![
-            Operand::IdRef(10), Operand::Dim(Dim::Dim2D),
-            Operand::LiteralBit32(0), Operand::LiteralBit32(0),
-            Operand::LiteralBit32(0), Operand::LiteralBit32(1),
-            Operand::ImageFormat(ImageFormat::Unknown),
-        ],
-    ));
+    data.definitions.insert(
+        rid(13),
+        Instruction::new(
+            Op::TypeImage,
+            None,
+            Some(13),
+            vec![
+                Operand::IdRef(10),
+                Operand::Dim(Dim::Dim2D),
+                Operand::LiteralBit32(0),
+                Operand::LiteralBit32(0),
+                Operand::LiteralBit32(0),
+                Operand::LiteralBit32(1),
+                Operand::ImageFormat(ImageFormat::Unknown),
+            ],
+        ),
+    );
 
     // OpTypeSampledImage %12 %13
-    data.definitions.insert(rid(12), Instruction::new(
-        Op::TypeSampledImage, None, Some(12), vec![Operand::IdRef(13)],
-    ));
+    data.definitions.insert(
+        rid(12),
+        Instruction::new(
+            Op::TypeSampledImage,
+            None,
+            Some(12),
+            vec![Operand::IdRef(13)],
+        ),
+    );
 
     // float constant: ID 20, type=float32
-    data.definitions.insert(rid(20), Instruction::new(
-        Op::Constant, Some(10), Some(20), vec![Operand::LiteralBit32(0x3f800000)],
-    ));
+    data.definitions.insert(
+        rid(20),
+        Instruction::new(
+            Op::Constant,
+            Some(10),
+            Some(20),
+            vec![Operand::LiteralBit32(0x3f800000)],
+        ),
+    );
 
     // int constant: ID 21, type=int32
-    data.definitions.insert(rid(21), Instruction::new(
-        Op::Constant, Some(11), Some(21), vec![Operand::LiteralBit32(0)],
-    ));
+    data.definitions.insert(
+        rid(21),
+        Instruction::new(
+            Op::Constant,
+            Some(11),
+            Some(21),
+            vec![Operand::LiteralBit32(0)],
+        ),
+    );
 
     // int constant: ID 22, type=int32
-    data.definitions.insert(rid(22), Instruction::new(
-        Op::Constant, Some(11), Some(22), vec![Operand::LiteralBit32(1)],
-    ));
+    data.definitions.insert(
+        rid(22),
+        Instruction::new(
+            Op::Constant,
+            Some(11),
+            Some(22),
+            vec![Operand::LiteralBit32(1)],
+        ),
+    );
 
     // OpTypeVector %14 %10 2  (vec2<f32>)
-    data.definitions.insert(rid(14), Instruction::new(
-        Op::TypeVector, None, Some(14), vec![Operand::IdRef(10), Operand::LiteralBit32(2)],
-    ));
+    data.definitions.insert(
+        rid(14),
+        Instruction::new(
+            Op::TypeVector,
+            None,
+            Some(14),
+            vec![Operand::IdRef(10), Operand::LiteralBit32(2)],
+        ),
+    );
 
     // OpTypeVector %15 %11 2  (ivec2)
-    data.definitions.insert(rid(15), Instruction::new(
-        Op::TypeVector, None, Some(15), vec![Operand::IdRef(11), Operand::LiteralBit32(2)],
-    ));
+    data.definitions.insert(
+        rid(15),
+        Instruction::new(
+            Op::TypeVector,
+            None,
+            Some(15),
+            vec![Operand::IdRef(11), Operand::LiteralBit32(2)],
+        ),
+    );
 
     // vec2 float constant: ID 23, type=vec2<f32>
-    data.definitions.insert(rid(23), Instruction::new(
-        Op::ConstantComposite, Some(14), Some(23), vec![Operand::IdRef(20), Operand::IdRef(20)],
-    ));
+    data.definitions.insert(
+        rid(23),
+        Instruction::new(
+            Op::ConstantComposite,
+            Some(14),
+            Some(23),
+            vec![Operand::IdRef(20), Operand::IdRef(20)],
+        ),
+    );
 
     // ivec2 constant: ID 24, type=ivec2
-    data.definitions.insert(rid(24), Instruction::new(
-        Op::ConstantComposite, Some(15), Some(24), vec![Operand::IdRef(21), Operand::IdRef(21)],
-    ));
+    data.definitions.insert(
+        rid(24),
+        Instruction::new(
+            Op::ConstantComposite,
+            Some(15),
+            Some(24),
+            vec![Operand::IdRef(21), Operand::IdRef(21)],
+        ),
+    );
 
     // sampled image: ID 30, type=sampled_image
-    data.definitions.insert(rid(30), Instruction::new(
-        Op::SampledImage, Some(12), Some(30), vec![Operand::IdRef(40), Operand::IdRef(41)],
-    ));
+    data.definitions.insert(
+        rid(30),
+        Instruction::new(
+            Op::SampledImage,
+            Some(12),
+            Some(30),
+            vec![Operand::IdRef(40), Operand::IdRef(41)],
+        ),
+    );
 
     data
 }
@@ -6652,18 +6745,24 @@ fn image_operand_bias_rejects_int_type() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandTypeRule.validate(&ctx);
     assert!(result.is_err(), "Bias with int type should fail");
-    assert!(
-        matches!(
-            result.unwrap_err().error,
-            ValidationError::ImageOperandBiasNotFloat32Scalar { .. }
-        ),
-    );
+    assert!(matches!(
+        result.unwrap_err().error,
+        ValidationError::ImageOperandBiasNotFloat32Scalar { .. }
+    ),);
 }
 
 #[test]
@@ -6686,11 +6785,21 @@ fn image_operand_bias_accepts_float32() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandTypeRule.validate(&ctx).expect("Bias with float32 should pass");
+    ImageOperandTypeRule
+        .validate(&ctx)
+        .expect("Bias with float32 should pass");
 }
 
 #[test]
@@ -6713,18 +6822,24 @@ fn image_operand_lod_rejects_float_for_fetch() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandTypeRule.validate(&ctx);
     assert!(result.is_err(), "Lod with float type on Fetch should fail");
-    assert!(
-        matches!(
-            result.unwrap_err().error,
-            ValidationError::ImageOperandLodNotInt32ScalarForFetch { .. }
-        ),
-    );
+    assert!(matches!(
+        result.unwrap_err().error,
+        ValidationError::ImageOperandLodNotInt32ScalarForFetch { .. }
+    ),);
 }
 
 #[test]
@@ -6747,11 +6862,21 @@ fn image_operand_lod_accepts_int32_for_fetch() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandTypeRule.validate(&ctx).expect("Lod with int32 on Fetch should pass");
+    ImageOperandTypeRule
+        .validate(&ctx)
+        .expect("Lod with int32 on Fetch should pass");
 }
 
 #[test]
@@ -6774,18 +6899,24 @@ fn image_operand_sample_rejects_float_type() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandTypeRule.validate(&ctx);
     assert!(result.is_err(), "Sample with float type should fail");
-    assert!(
-        matches!(
-            result.unwrap_err().error,
-            ValidationError::ImageOperandSampleNotInt32Scalar { .. }
-        ),
-    );
+    assert!(matches!(
+        result.unwrap_err().error,
+        ValidationError::ImageOperandSampleNotInt32Scalar { .. }
+    ),);
 }
 
 #[test]
@@ -6819,20 +6950,29 @@ fn image_operand_const_offset_rejects_non_constant() {
         Some(50),
         vec![Operand::IdRef(24), Operand::IdRef(24)],
     );
-    data.definitions.insert(crate::validation::types::ResultId::try_from(50).unwrap(), non_const);
+    data.definitions.insert(
+        crate::validation::types::ResultId::try_from(50).unwrap(),
+        non_const,
+    );
 
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandTypeRule.validate(&ctx);
     assert!(result.is_err(), "ConstOffset with non-constant should fail");
-    assert!(
-        matches!(
-            result.unwrap_err().error,
-            ValidationError::ImageOperandConstOffsetNotConstant { .. }
-        ),
-    );
+    assert!(matches!(
+        result.unwrap_err().error,
+        ValidationError::ImageOperandConstOffsetNotConstant { .. }
+    ),);
 }
 
 #[test]
@@ -6856,11 +6996,21 @@ fn image_operand_const_offset_accepts_constant_int32() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandTypeRule.validate(&ctx).expect("ConstOffset with constant ivec2 should pass");
+    ImageOperandTypeRule
+        .validate(&ctx)
+        .expect("ConstOffset with constant ivec2 should pass");
 }
 
 #[test]
@@ -6884,18 +7034,27 @@ fn image_operand_minlod_rejects_without_implicit_or_grad() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
     let result = ImageOperandTypeRule.validate(&ctx);
-    assert!(result.is_err(), "MinLod without ImplicitLod or Grad should fail");
     assert!(
-        matches!(
-            result.unwrap_err().error,
-            ValidationError::ImageOperandMinLodRequiresImplicitOrGrad { .. }
-        ),
+        result.is_err(),
+        "MinLod without ImplicitLod or Grad should fail"
     );
+    assert!(matches!(
+        result.unwrap_err().error,
+        ValidationError::ImageOperandMinLodRequiresImplicitOrGrad { .. }
+    ),);
 }
 
 #[test]
@@ -6921,11 +7080,21 @@ fn image_operand_minlod_accepts_with_grad() {
         ],
     );
     let mut data = image_operand_type_test_data();
-    let block = rspirv::dr::Block { label: None, instructions: vec![inst] };
-    let function = rspirv::dr::Function { def: None, parameters: Vec::new(), blocks: vec![block], end: None };
+    let block = rspirv::dr::Block {
+        label: None,
+        instructions: vec![inst],
+    };
+    let function = rspirv::dr::Function {
+        def: None,
+        parameters: Vec::new(),
+        blocks: vec![block],
+        end: None,
+    };
     data.module.functions.push(function);
     let ctx = data.as_context();
-    ImageOperandTypeRule.validate(&ctx).expect("MinLod with Grad should pass");
+    ImageOperandTypeRule
+        .validate(&ctx)
+        .expect("MinLod with Grad should pass");
 }
 
 // ============================================================================
@@ -6952,7 +7121,10 @@ OpFunctionEnd
     let err = assemble_and_validate_with_env(text, TargetEnv::Vulkan1_2)
         .expect_err("Input var without Location should fail in Vulkan");
     assert!(
-        matches!(err, ValidationError::InterfaceVariableMissingLocation { .. }),
+        matches!(
+            err,
+            ValidationError::InterfaceVariableMissingLocation { .. }
+        ),
         "expected InterfaceVariableMissingLocation, got {err:?}"
     );
 }
@@ -7144,7 +7316,10 @@ OpFunctionEnd
     let err = assemble_and_validate_with_env(text, TargetEnv::Universal1_6)
         .expect_err("SubpassData should be rejected in non-Vulkan");
     assert!(
-        matches!(err, ValidationError::ImageTypeSubpassDataRequiresVulkan { .. }),
+        matches!(
+            err,
+            ValidationError::ImageTypeSubpassDataRequiresVulkan { .. }
+        ),
         "expected ImageTypeSubpassDataRequiresVulkan, got {err:?}"
     );
 }

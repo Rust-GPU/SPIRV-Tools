@@ -634,17 +634,16 @@ impl ValidationRule for InterfaceLocationRequiredRule {
                 let member_locs = member_locations.get(&pointee_id);
                 let member_count = ctx
                     .definitions
-                    .get(&ResultId::try_from(pointee_id).unwrap_or_else(|_| {
-                        ResultId::try_from(1u32).unwrap()
-                    }))
+                    .get(
+                        &ResultId::try_from(pointee_id)
+                            .unwrap_or_else(|_| ResultId::try_from(1u32).unwrap()),
+                    )
                     .filter(|inst| inst.class.opcode == Op::TypeStruct)
                     .map(|inst| inst.operands.len() as u32)
                     .unwrap_or(0);
 
                 for i in 0..member_count {
-                    let has_member_loc = member_locs
-                        .map(|locs| locs.contains(&i))
-                        .unwrap_or(false);
+                    let has_member_loc = member_locs.map(|locs| locs.contains(&i)).unwrap_or(false);
 
                     if !has_member_loc {
                         return Err(ValidationError::BlockMemberMissingLocation {

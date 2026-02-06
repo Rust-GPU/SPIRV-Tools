@@ -1193,7 +1193,12 @@ impl ValidationRule for VariablePointerRule {
             if let Some(result_id) = inst.result_id {
                 if let Ok(id) = ResultId::try_from(result_id) {
                     if is_logical_pointer(inst, ctx.definitions) {
-                        is_variable_pointer(id, ctx.definitions, &param_var_ptr, &mut var_ptr_cache);
+                        is_variable_pointer(
+                            id,
+                            ctx.definitions,
+                            &param_var_ptr,
+                            &mut var_ptr_cache,
+                        );
                     }
                 }
             }

@@ -493,10 +493,8 @@ impl ValidationRule for ConstantCompositeRule {
             match result_type_inst.class.opcode {
                 Op::TypeVector => {
                     // Get expected component type and count
-                    let component_type_id = result_type_inst
-                        .operands
-                        .first()
-                        .and_then(|op| match op {
+                    let component_type_id =
+                        result_type_inst.operands.first().and_then(|op| match op {
                             Operand::IdRef(id) => Some(*id),
                             _ => None,
                         });
@@ -547,10 +545,8 @@ impl ValidationRule for ConstantCompositeRule {
                 }
                 Op::TypeMatrix => {
                     // Get expected column type and count
-                    let column_type_id = result_type_inst
-                        .operands
-                        .first()
-                        .and_then(|op| match op {
+                    let column_type_id =
+                        result_type_inst.operands.first().and_then(|op| match op {
                             Operand::IdRef(id) => Some(*id),
                             _ => None,
                         });
@@ -601,10 +597,8 @@ impl ValidationRule for ConstantCompositeRule {
                 }
                 Op::TypeArray => {
                     // Get array element type and length
-                    let element_type_id = result_type_inst
-                        .operands
-                        .first()
-                        .and_then(|op| match op {
+                    let element_type_id =
+                        result_type_inst.operands.first().and_then(|op| match op {
                             Operand::IdRef(id) => Some(*id),
                             _ => None,
                         });

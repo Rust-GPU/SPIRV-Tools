@@ -4,9 +4,9 @@ use rspirv::spirv;
 use std::collections::HashSet;
 use std::num::FpCategory;
 
-use crate::string_literal::render_string_literal;
-use super::types::*;
 use super::names::{extract_id_ref, literal_operand_bits};
+use super::types::*;
+use crate::string_literal::render_string_literal;
 
 pub(super) fn disassemble_with_format(
     instruction: &Instruction,
@@ -147,7 +147,11 @@ pub(super) fn format_ext_inst_operands(
     Some(parts.join(" "))
 }
 
-pub(super) fn format_integer_literal(operand: &Operand, width: u32, signed: bool) -> Option<String> {
+pub(super) fn format_integer_literal(
+    operand: &Operand,
+    width: u32,
+    signed: bool,
+) -> Option<String> {
     let bits = match operand {
         Operand::LiteralBit32(value) => u64::from(*value),
         Operand::LiteralBit64(value) => *value,

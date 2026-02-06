@@ -1,22 +1,22 @@
-mod names;
-mod types;
-mod formatting;
 mod block_analysis;
+mod formatting;
+mod names;
 mod text_rendering;
+mod types;
 
 #[cfg(test)]
 mod tests;
 
 #[allow(unused_imports)]
-use types::*;
+use block_analysis::*;
 #[allow(unused_imports)]
 use formatting::*;
 #[allow(unused_imports)]
-use block_analysis::*;
+use names::*;
 #[allow(unused_imports)]
 use text_rendering::*;
 #[allow(unused_imports)]
-use names::*;
+use types::*;
 
 use rspirv::binary::Parser;
 use rspirv::dr::ModuleHeader;
