@@ -2865,6 +2865,14 @@ pub enum ValidationError {
         /// The invalid result type opcode.
         type_opcode: rspirv::spirv::Op,
     },
+    /// OpBranchConditional condition operand must be OpTypeBool.
+    #[error("OpBranchConditional condition {condition_id} must be OpTypeBool, found {found_opcode:?}")]
+    BranchConditionalConditionNotBool {
+        /// The condition operand ID.
+        condition_id: Id,
+        /// The opcode of the condition's type.
+        found_opcode: rspirv::spirv::Op,
+    },
     /// In SPIR-V 1.6 or later, BranchConditional True Label and False Label must be different.
     #[error("In SPIR-V 1.6 or later, True Label and False Label must be different labels")]
     BranchConditionalSameLabels {

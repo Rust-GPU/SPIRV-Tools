@@ -1363,6 +1363,29 @@ impl ValidationRule for BranchConditionalRule {
                         continue;
                     }
 
+                    // Validate condition operand is OpTypeBool
+                    if let Some(Operand::IdRef(cond_id)) = inst.operands.first() {
+                        if let Ok(cond_rid) = ResultId::try_from(*cond_id) {
+                            if let Some(cond_def) = ctx.definitions.get(&cond_rid) {
+                                if let Some(type_id) = cond_def.result_type {
+                                    if let Ok(type_rid) = ResultId::try_from(type_id) {
+                                        if let Some(type_inst) = ctx.definitions.get(&type_rid) {
+                                            if type_inst.class.opcode != Op::TypeBool {
+                                                return Err(
+                                                    ValidationError::BranchConditionalConditionNotBool {
+                                                        condition_id: to_id(*cond_id),
+                                                        found_opcode: type_inst.class.opcode,
+                                                    }
+                                                    .into(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Get true and false label operands (operands 1 and 2)
                     let true_label = match inst.operands.get(1) {
                         Some(Operand::IdRef(id)) => *id,

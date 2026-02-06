@@ -1791,3 +1791,141 @@ fn switch_with_float_selector_fails() {
         "expected SwitchSelectorNotInteger, got {err:?}"
     );
 }
+
+// ============================================================================
+// BranchConditional Condition Type Validation
+// ============================================================================
+
+#[test]
+fn branch_conditional_with_bool_condition_passes() {
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpSelectionMerge %merge None
+OpBranchConditional %true %then %else
+%then = OpLabel
+OpBranch %merge
+%else = OpLabel
+OpBranch %merge
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate(text).expect("BranchConditional with bool condition should pass");
+}
+
+#[test]
+fn branch_conditional_with_int_condition_fails() {
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 20,
+        reserved_word: 0,
+    });
+
+    module.capabilities.push(Instruction::new(
+        Op::Capability, None, None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel, None, None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint, None, None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
+            Operand::IdRef(10),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode, None, None,
+        vec![
+            Operand::IdRef(10),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSize),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+        ],
+    ));
+
+    // %2 = OpTypeVoid
+    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    // %3 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)],
+    ));
+    // %4 = OpTypeInt 32 0
+    module.types_global_values.push(Instruction::new(
+        Op::TypeInt, None, Some(4), vec![Operand::LiteralBit32(32), Operand::LiteralBit32(0)],
+    ));
+    // %5 = OpConstant %4 1
+    module.types_global_values.push(Instruction::new(
+        Op::Constant, Some(4), Some(5), vec![Operand::LiteralBit32(1)],
+    ));
+
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function, Some(2), Some(10),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+
+    let mut entry = rspirv::dr::Block::new();
+    entry.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
+    entry.instructions.push(Instruction::new(
+        Op::SelectionMerge, None, None,
+        vec![Operand::IdRef(14), Operand::SelectionControl(rspirv::spirv::SelectionControl::NONE)],
+    ));
+    // OpBranchConditional %5(int!) %12 %13 -- condition is integer, not bool
+    entry.instructions.push(Instruction::new(
+        Op::BranchConditional, None, None,
+        vec![Operand::IdRef(5), Operand::IdRef(12), Operand::IdRef(13)],
+    ));
+    func.blocks.push(entry);
+
+    let mut then_block = rspirv::dr::Block::new();
+    then_block.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
+    then_block.instructions.push(Instruction::new(Op::Branch, None, None, vec![Operand::IdRef(14)]));
+    func.blocks.push(then_block);
+
+    let mut else_block = rspirv::dr::Block::new();
+    else_block.label = Some(Instruction::new(Op::Label, None, Some(13), vec![]));
+    else_block.instructions.push(Instruction::new(Op::Branch, None, None, vec![Operand::IdRef(14)]));
+    func.blocks.push(else_block);
+
+    let mut merge = rspirv::dr::Block::new();
+    merge.label = Some(Instruction::new(Op::Label, None, Some(14), vec![]));
+    merge.instructions.push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(merge);
+
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Universal1_6)
+        .expect_err("BranchConditional with int condition should fail");
+    assert!(
+        matches!(err, ValidationError::BranchConditionalConditionNotBool { .. }),
+        "expected BranchConditionalConditionNotBool, got {err:?}"
+    );
+}
