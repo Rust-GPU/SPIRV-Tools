@@ -1929,3 +1929,228 @@ fn branch_conditional_with_int_condition_fails() {
         "expected BranchConditionalConditionNotBool, got {err:?}"
     );
 }
+
+// ============================================================================
+// Continue Construct Post-Dominance Validation
+// ============================================================================
+
+#[test]
+fn loop_with_single_block_continue_passes() {
+    // Simple loop where the continue target IS the back-edge block.
+    // The back-edge block trivially post-dominates itself.
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpBranch %header
+%header = OpLabel
+OpLoopMerge %merge %continue None
+OpBranchConditional %true %body %merge
+%body = OpLabel
+OpBranch %continue
+%continue = OpLabel
+OpBranch %header
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate(text).expect("simple loop with single-block continue should pass");
+}
+
+#[test]
+fn loop_with_multi_block_continue_construct_passes() {
+    // Loop where the continue construct has multiple blocks:
+    //   continue_start → continue_end → header (back edge)
+    // continue_end post-dominates continue_start since it's the only path.
+    let text = r#"
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%main = OpFunction %void None %fn
+%entry = OpLabel
+OpBranch %header
+%header = OpLabel
+OpLoopMerge %merge %continue_start None
+OpBranchConditional %true %body %merge
+%body = OpLabel
+OpBranch %continue_start
+%continue_start = OpLabel
+OpBranch %continue_end
+%continue_end = OpLabel
+OpBranch %header
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+"#;
+    assemble_and_validate(text).expect("loop with multi-block continue should pass");
+}
+
+#[test]
+fn loop_continue_construct_back_edge_not_post_dominating_fails() {
+    // Build a loop where the continue construct has two back-edge paths
+    // to the header, meaning neither back-edge block post-dominates the
+    // continue target:
+    //
+    //   entry → header (LoopMerge %merge %cont)
+    //   header → body | merge
+    //   body → cont
+    //   cont → path_a | path_b        (branch conditional)
+    //   path_a → header               (back edge 1)
+    //   path_b → header               (back edge 2)
+    //   merge → return
+    //
+    // path_a doesn't post-dominate cont (path_b bypasses it)
+    // path_b doesn't post-dominate cont (path_a bypasses it)
+    use rspirv::binary::Assemble;
+    use rspirv::dr::{Instruction, Module, Operand};
+
+    let mut module = Module::new();
+    module.header = Some(rspirv::dr::ModuleHeader {
+        magic_number: rspirv::spirv::MAGIC_NUMBER,
+        version: (1 << 16) | (5 << 8),
+        generator: 0,
+        bound: 30,
+        reserved_word: 0,
+    });
+
+    module.capabilities.push(Instruction::new(
+        Op::Capability, None, None,
+        vec![Operand::Capability(rspirv::spirv::Capability::Shader)],
+    ));
+    module.memory_model = Some(Instruction::new(
+        Op::MemoryModel, None, None,
+        vec![
+            Operand::AddressingModel(rspirv::spirv::AddressingModel::Logical),
+            Operand::MemoryModel(rspirv::spirv::MemoryModel::GLSL450),
+        ],
+    ));
+    module.entry_points.push(Instruction::new(
+        Op::EntryPoint, None, None,
+        vec![
+            Operand::ExecutionModel(rspirv::spirv::ExecutionModel::GLCompute),
+            Operand::IdRef(1),
+            Operand::LiteralString("main".to_string()),
+        ],
+    ));
+    module.execution_modes.push(Instruction::new(
+        Op::ExecutionMode, None, None,
+        vec![
+            Operand::IdRef(1),
+            Operand::ExecutionMode(rspirv::spirv::ExecutionMode::LocalSize),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+            Operand::LiteralBit32(1),
+        ],
+    ));
+
+    // Types
+    // %2 = OpTypeVoid
+    module.types_global_values.push(Instruction::new(Op::TypeVoid, None, Some(2), vec![]));
+    // %3 = OpTypeFunction %void
+    module.types_global_values.push(Instruction::new(
+        Op::TypeFunction, None, Some(3), vec![Operand::IdRef(2)],
+    ));
+    // %4 = OpTypeBool
+    module.types_global_values.push(Instruction::new(Op::TypeBool, None, Some(4), vec![]));
+    // %5 = OpConstantTrue %bool
+    module.types_global_values.push(Instruction::new(Op::ConstantTrue, Some(4), Some(5), vec![]));
+
+    // Function
+    let mut func = rspirv::dr::Function::new();
+    func.def = Some(Instruction::new(
+        Op::Function, Some(2), Some(1),
+        vec![
+            Operand::FunctionControl(rspirv::spirv::FunctionControl::NONE),
+            Operand::IdRef(3),
+        ],
+    ));
+
+    // Block IDs: entry=10, header=11, body=12, cont=13, path_a=14, path_b=15, merge=16
+
+    // entry
+    let mut entry = rspirv::dr::Block::new();
+    entry.label = Some(Instruction::new(Op::Label, None, Some(10), vec![]));
+    entry.instructions.push(Instruction::new(
+        Op::Branch, None, None, vec![Operand::IdRef(11)],
+    ));
+    func.blocks.push(entry);
+
+    // header (loop header)
+    let mut header = rspirv::dr::Block::new();
+    header.label = Some(Instruction::new(Op::Label, None, Some(11), vec![]));
+    header.instructions.push(Instruction::new(
+        Op::LoopMerge, None, None,
+        vec![
+            Operand::IdRef(16), // merge
+            Operand::IdRef(13), // continue target
+            Operand::LoopControl(rspirv::spirv::LoopControl::NONE),
+        ],
+    ));
+    header.instructions.push(Instruction::new(
+        Op::BranchConditional, None, None,
+        vec![Operand::IdRef(5), Operand::IdRef(12), Operand::IdRef(16)],
+    ));
+    func.blocks.push(header);
+
+    // body
+    let mut body = rspirv::dr::Block::new();
+    body.label = Some(Instruction::new(Op::Label, None, Some(12), vec![]));
+    body.instructions.push(Instruction::new(
+        Op::Branch, None, None, vec![Operand::IdRef(13)],
+    ));
+    func.blocks.push(body);
+
+    // cont (continue target) — branches to two paths
+    let mut cont = rspirv::dr::Block::new();
+    cont.label = Some(Instruction::new(Op::Label, None, Some(13), vec![]));
+    cont.instructions.push(Instruction::new(
+        Op::BranchConditional, None, None,
+        vec![Operand::IdRef(5), Operand::IdRef(14), Operand::IdRef(15)],
+    ));
+    func.blocks.push(cont);
+
+    // path_a — back edge to header
+    let mut path_a = rspirv::dr::Block::new();
+    path_a.label = Some(Instruction::new(Op::Label, None, Some(14), vec![]));
+    path_a.instructions.push(Instruction::new(
+        Op::Branch, None, None, vec![Operand::IdRef(11)],
+    ));
+    func.blocks.push(path_a);
+
+    // path_b — back edge to header
+    let mut path_b = rspirv::dr::Block::new();
+    path_b.label = Some(Instruction::new(Op::Label, None, Some(15), vec![]));
+    path_b.instructions.push(Instruction::new(
+        Op::Branch, None, None, vec![Operand::IdRef(11)],
+    ));
+    func.blocks.push(path_b);
+
+    // merge
+    let mut merge = rspirv::dr::Block::new();
+    merge.label = Some(Instruction::new(Op::Label, None, Some(16), vec![]));
+    merge.instructions.push(Instruction::new(Op::Return, None, None, vec![]));
+    func.blocks.push(merge);
+
+    func.end = Some(Instruction::new(Op::FunctionEnd, None, None, vec![]));
+    module.functions.push(func);
+
+    let binary = module.assemble();
+    let err = validate_module(&binary, TargetEnv::Universal1_6)
+        .expect_err("back-edge block not post-dominating continue target should fail");
+    assert!(
+        matches!(err, ValidationError::ContinueConstructNotPostDominated { .. }),
+        "expected ContinueConstructNotPostDominated, got {err:?}"
+    );
+}

@@ -1816,6 +1816,100 @@ impl ValidationRule for SwitchSelectorTypeRule {
     }
 }
 
+// ============================================================================
+// Continue Construct Post-Dominance Rule
+// ============================================================================
+
+/// Validates that in each loop's continue construct, the back-edge block
+/// structurally post-dominates the continue target.
+///
+/// The back-edge block is the block within the continue construct that branches
+/// back to the loop header. For the continue construct to be well-structured,
+/// every path from the continue target must eventually reach the back-edge block.
+pub struct ContinueConstructPostDominanceRule;
+
+impl ValidationRule for ContinueConstructPostDominanceRule {
+    fn name(&self) -> &'static str {
+        "continue-construct-post-dominance"
+    }
+
+    fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        let module = ctx.module();
+
+        for func in &module.functions {
+            let func_id = func
+                .def
+                .as_ref()
+                .and_then(|d| d.result_id)
+                .map(to_id)
+                .unwrap_or_else(|| to_id(0));
+
+            if func.blocks.is_empty() {
+                continue;
+            }
+
+            let Some(cfg) = ControlFlowGraph::build(func) else {
+                continue;
+            };
+
+            // Find all loop headers with their merge info
+            for block in &func.blocks {
+                let Some(header_id) = get_block_label(block) else {
+                    continue;
+                };
+
+                for inst in &block.instructions {
+                    if inst.class.opcode != Op::LoopMerge {
+                        continue;
+                    }
+
+                    // Get continue target (second operand of LoopMerge)
+                    let Some(Operand::IdRef(raw_continue)) = inst.operands.get(1) else {
+                        continue;
+                    };
+                    let continue_target = to_id(*raw_continue);
+
+                    // Skip if continue target is unreachable
+                    if !cfg.is_reachable(continue_target) {
+                        continue;
+                    }
+
+                    // Find the back-edge block: a predecessor of the loop header
+                    // that is dominated by the continue target.
+                    let Some(preds) = cfg.get_predecessors(header_id) else {
+                        continue;
+                    };
+
+                    for back_edge_candidate in preds {
+                        // The back-edge block must be dominated by the continue target
+                        // (it's within the continue construct) and must not be the entry
+                        // block branching to the header for the first time.
+                        if !cfg.dominates(continue_target, *back_edge_candidate) {
+                            continue;
+                        }
+
+                        // This is a back-edge block. Check that it post-dominates
+                        // the continue target.
+                        if !cfg.post_dominates(*back_edge_candidate, continue_target) {
+                            return Err(
+                                ValidationError::ContinueConstructNotPostDominated {
+                                    function: func_id,
+                                    header: header_id,
+                                    continue_target,
+                                    back_edge_block: *back_edge_candidate,
+                                }
+                                .into(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Static rule instances
 static BLOCK_STRUCTURE_RULE: BlockStructureRule = BlockStructureRule;
 static MERGE_INSTRUCTION_RULE: MergeInstructionRule = MergeInstructionRule;
@@ -1832,6 +1926,8 @@ static MAXIMAL_RECONVERGENCE_PREDECESSORS_RULE: MaximalReconvergencePredecessors
 static LIFETIME_RULE: LifetimeRule = LifetimeRule;
 static SWITCH_CASE_UNIQUENESS_RULE: SwitchCaseUniquenessRule = SwitchCaseUniquenessRule;
 static SWITCH_SELECTOR_TYPE_RULE: SwitchSelectorTypeRule = SwitchSelectorTypeRule;
+static CONTINUE_CONSTRUCT_POST_DOMINANCE_RULE: ContinueConstructPostDominanceRule =
+    ContinueConstructPostDominanceRule;
 
 /// Returns all CFG validation rules.
 pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
@@ -1850,5 +1946,6 @@ pub fn all_cfg_rules() -> Vec<&'static dyn ValidationRule> {
         &LIFETIME_RULE,
         &SWITCH_CASE_UNIQUENESS_RULE,
         &SWITCH_SELECTOR_TYPE_RULE,
+        &CONTINUE_CONSTRUCT_POST_DOMINANCE_RULE,
     ]
 }

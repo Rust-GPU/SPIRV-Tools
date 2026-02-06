@@ -2747,6 +2747,18 @@ pub enum ValidationError {
         /// The continue target block.
         continue_target: Id,
     },
+    /// The back-edge block does not structurally post-dominate the continue target.
+    #[error("back-edge block {back_edge_block:?} does not post-dominate continue target {continue_target:?} of loop header {header:?} in function {function:?}")]
+    ContinueConstructNotPostDominated {
+        /// The function containing the loop.
+        function: Id,
+        /// The loop header block.
+        header: Id,
+        /// The continue target block.
+        continue_target: Id,
+        /// The back-edge block.
+        back_edge_block: Id,
+    },
     /// Unroll and DontUnroll loop controls are both specified.
     #[error("Unroll and DontUnroll loop controls must not both be specified")]
     LoopControlUnrollAndDontUnroll {

@@ -24,6 +24,9 @@ pub struct ControlFlowGraph {
     pub successors: HashMap<Id, HashSet<Id>>,
     /// Dominator sets: for each block, the set of blocks that dominate it.
     pub dominators: HashMap<Id, HashSet<Id>>,
+    /// Post-dominator sets: for each block, the set of blocks that post-dominate it.
+    /// A block P post-dominates block B if every path from B to any exit goes through P.
+    pub post_dominators: HashMap<Id, HashSet<Id>>,
     /// Blocks that are reachable from the entry block.
     pub reachable: HashSet<Id>,
 }
@@ -141,12 +144,16 @@ impl ControlFlowGraph {
         // Compute dominators
         let dominators = Self::compute_dominators(entry, &blocks, &predecessors);
 
+        // Compute post-dominators (dominators on the reversed CFG)
+        let post_dominators = Self::compute_post_dominators(&blocks, &successors);
+
         Some(Self {
             entry,
             blocks,
             predecessors,
             successors,
             dominators,
+            post_dominators,
             reachable,
         })
     }
@@ -229,6 +236,76 @@ impl ControlFlowGraph {
         dominators
     }
 
+    /// Compute post-dominators using a pseudo-exit node on the reversed CFG.
+    ///
+    /// A block P post-dominates block B if every path from B to any exit
+    /// goes through P. Computed by running the dominator algorithm on the
+    /// reversed graph with a pseudo-exit node as entry.
+    fn compute_post_dominators(
+        blocks: &HashSet<Id>,
+        successors: &HashMap<Id, HashSet<Id>>,
+    ) -> HashMap<Id, HashSet<Id>> {
+        // Find exit blocks (blocks with no successors within the function)
+        let exit_blocks: Vec<Id> = blocks
+            .iter()
+            .filter(|b| {
+                successors
+                    .get(b)
+                    .map_or(true, |s| s.is_empty() || s.iter().all(|t| !blocks.contains(t)))
+            })
+            .copied()
+            .collect();
+
+        if exit_blocks.is_empty() {
+            // All blocks are in cycles with no exit — can't compute post-dominators
+            return HashMap::new();
+        }
+
+        // Create pseudo-exit node (u32::MAX won't conflict with real SPIR-V IDs)
+        let pseudo_exit = Id::try_from(u32::MAX).unwrap();
+
+        // Build augmented block set including pseudo-exit
+        let mut aug_blocks = blocks.clone();
+        aug_blocks.insert(pseudo_exit);
+
+        // Build predecessor map for the reversed graph.
+        // In the reversed graph: predecessors_reversed[B] = successors_original[B]
+        // Additionally, pseudo_exit is a predecessor of each exit block
+        // (from the added exit→pseudo_exit edge in the augmented original graph).
+        let mut reversed_preds: HashMap<Id, HashSet<Id>> = HashMap::new();
+
+        // pseudo_exit is the entry of the reversed graph — no predecessors
+        reversed_preds.insert(pseudo_exit, HashSet::new());
+
+        for block in blocks {
+            let mut preds = successors.get(block).cloned().unwrap_or_default();
+            // Only keep edges to blocks within this function
+            preds.retain(|p| blocks.contains(p));
+
+            // Exit blocks get pseudo_exit as a predecessor
+            if exit_blocks.contains(block) {
+                preds.insert(pseudo_exit);
+            }
+
+            reversed_preds.insert(*block, preds);
+        }
+
+        // Run standard dominator computation on the reversed graph
+        let post_doms = Self::compute_dominators(pseudo_exit, &aug_blocks, &reversed_preds);
+
+        // Remove pseudo_exit from results and from dominator sets
+        let mut result: HashMap<Id, HashSet<Id>> = HashMap::new();
+        for (block, mut doms) in post_doms {
+            if block == pseudo_exit {
+                continue;
+            }
+            doms.remove(&pseudo_exit);
+            result.insert(block, doms);
+        }
+
+        result
+    }
+
     /// Check if block `dominator` dominates block `block`.
     pub fn dominates(&self, dominator: Id, block: Id) -> bool {
         if dominator == block {
@@ -237,6 +314,20 @@ impl ControlFlowGraph {
         self.dominators
             .get(&block)
             .map(|doms| doms.contains(&dominator))
+            .unwrap_or(false)
+    }
+
+    /// Check if block `post_dominator` post-dominates block `block`.
+    ///
+    /// A block P post-dominates B if every path from B to any function exit
+    /// goes through P.
+    pub fn post_dominates(&self, post_dominator: Id, block: Id) -> bool {
+        if post_dominator == block {
+            return true;
+        }
+        self.post_dominators
+            .get(&block)
+            .map(|pdoms| pdoms.contains(&post_dominator))
             .unwrap_or(false)
     }
 
@@ -415,5 +506,106 @@ mod tests {
         assert!(!dominators.get(&b3).unwrap().contains(&b1));
         // b2 does NOT dominate b3 (can reach b3 through b1)
         assert!(!dominators.get(&b3).unwrap().contains(&b2));
+    }
+
+    #[test]
+    fn test_post_dominator_computation_linear() {
+        // Linear CFG: entry → B1 → B2 (exit)
+        // B2 post-dominates B1 and entry
+        // B1 post-dominates entry
+        let entry = Id::try_from(1u32).unwrap();
+        let b1 = Id::try_from(2u32).unwrap();
+        let b2 = Id::try_from(3u32).unwrap();
+
+        let blocks: HashSet<Id> = [entry, b1, b2].into_iter().collect();
+        let mut successors: HashMap<Id, HashSet<Id>> = HashMap::new();
+        successors.insert(entry, [b1].into_iter().collect());
+        successors.insert(b1, [b2].into_iter().collect());
+        successors.insert(b2, HashSet::new()); // exit block
+
+        let post_doms = ControlFlowGraph::compute_post_dominators(&blocks, &successors);
+
+        // B2 post-dominates itself, B1, and entry
+        assert!(post_doms.get(&entry).unwrap().contains(&b2));
+        assert!(post_doms.get(&b1).unwrap().contains(&b2));
+        assert!(post_doms.get(&b2).unwrap().contains(&b2));
+
+        // B1 post-dominates entry
+        assert!(post_doms.get(&entry).unwrap().contains(&b1));
+
+        // entry does NOT post-dominate B1 or B2
+        assert!(!post_doms.get(&b1).unwrap().contains(&entry));
+        assert!(!post_doms.get(&b2).unwrap().contains(&entry));
+    }
+
+    #[test]
+    fn test_post_dominator_computation_diamond() {
+        // Diamond CFG:
+        //      entry
+        //      /   \
+        //     B1   B2
+        //      \   /
+        //       B3 (exit)
+        //
+        // B3 post-dominates everything
+        // B1 does NOT post-dominate entry (can reach B3 through B2)
+        let entry = Id::try_from(1u32).unwrap();
+        let b1 = Id::try_from(2u32).unwrap();
+        let b2 = Id::try_from(3u32).unwrap();
+        let b3 = Id::try_from(4u32).unwrap();
+
+        let blocks: HashSet<Id> = [entry, b1, b2, b3].into_iter().collect();
+        let mut successors: HashMap<Id, HashSet<Id>> = HashMap::new();
+        successors.insert(entry, [b1, b2].into_iter().collect());
+        successors.insert(b1, [b3].into_iter().collect());
+        successors.insert(b2, [b3].into_iter().collect());
+        successors.insert(b3, HashSet::new()); // exit block
+
+        let post_doms = ControlFlowGraph::compute_post_dominators(&blocks, &successors);
+
+        // B3 post-dominates all blocks
+        assert!(post_doms.get(&entry).unwrap().contains(&b3));
+        assert!(post_doms.get(&b1).unwrap().contains(&b3));
+        assert!(post_doms.get(&b2).unwrap().contains(&b3));
+
+        // B1 does NOT post-dominate entry
+        assert!(!post_doms.get(&entry).unwrap().contains(&b1));
+        // B2 does NOT post-dominate entry
+        assert!(!post_doms.get(&entry).unwrap().contains(&b2));
+    }
+
+    #[test]
+    fn test_post_dominator_computation_multiple_exits() {
+        // CFG with two exits:
+        //      entry
+        //      /   \
+        //     B1   B2 (exit)
+        //     |
+        //     B3 (exit)
+        //
+        // Neither B1 nor B2 post-dominates entry (two paths to exit)
+        let entry = Id::try_from(1u32).unwrap();
+        let b1 = Id::try_from(2u32).unwrap();
+        let b2 = Id::try_from(3u32).unwrap();
+        let b3 = Id::try_from(4u32).unwrap();
+
+        let blocks: HashSet<Id> = [entry, b1, b2, b3].into_iter().collect();
+        let mut successors: HashMap<Id, HashSet<Id>> = HashMap::new();
+        successors.insert(entry, [b1, b2].into_iter().collect());
+        successors.insert(b1, [b3].into_iter().collect());
+        successors.insert(b2, HashSet::new()); // exit
+        successors.insert(b3, HashSet::new()); // exit
+
+        let post_doms = ControlFlowGraph::compute_post_dominators(&blocks, &successors);
+
+        // No block post-dominates entry except itself (two independent exit paths)
+        let entry_pdoms = post_doms.get(&entry).unwrap();
+        assert!(entry_pdoms.contains(&entry));
+        assert!(!entry_pdoms.contains(&b1));
+        assert!(!entry_pdoms.contains(&b2));
+        assert!(!entry_pdoms.contains(&b3));
+
+        // B3 post-dominates B1
+        assert!(post_doms.get(&b1).unwrap().contains(&b3));
     }
 }
