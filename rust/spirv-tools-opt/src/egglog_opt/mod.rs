@@ -682,6 +682,15 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
         float_fmod(a.0.0, b.0.0).map(|r| F::from(OrderedFloat(r)))
     });
 
+    // IEEE 754 float negation (sign bit flip, handles ±0.0 correctly)
+    add_primitive!(&mut egraph, "float-neg" = |a: F| -> F {
+        F::from(OrderedFloat(float_neg(a.0.0)))
+    });
+
+    // Safe signed 32-bit division/remainder (guards i32::MIN / -1 overflow)
+    add_primitive!(&mut egraph, "sdiv32" = |a: i64, b: i64| -?> i64 { sdiv32(a, b) });
+    add_primitive!(&mut egraph, "srem32" = |a: i64, b: i64| -?> i64 { srem32(a, b) });
+
     // f64 bit pattern predicates for dot product rules
     add_primitive!(&mut egraph, "is-float-one64" = |x: i64| -?> () { is_float_one64(x) });
     add_primitive!(&mut egraph, "is-float-zero64" = |x: i64| -?> () { is_float_zero64(x) });

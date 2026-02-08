@@ -42,8 +42,10 @@
       ((union e (FConst (* a b)))))
 (rule ((= e (FDiv (FConst a) (FConst b))) (!= b 0.0))
       ((union e (FConst (/ a b)))))
+; Use float-neg primitive (sign bit flip) instead of 0.0 - a,
+; because IEEE 754: 0.0 - 0.0 = +0.0, but FNeg(+0.0) must be -0.0.
 (rule ((= e (FNeg (FConst a))))
-      ((union e (FConst (- 0.0 a)))))
+      ((union e (FConst (float-neg a)))))
 
 ; =============================================================================
 ; Comparison Constant Folding
@@ -204,12 +206,10 @@
 ; Division and Modulo Constant Folding
 ; =============================================================================
 
-; Signed division of constants (avoiding division by zero)
-(rule ((= e (SDiv (Const a) (Const b))) (!= b 0))
-      ((union e (Const (/ a b)))))
-; SDiv by zero returns 0 (C++ parity)
-(rule ((= e (SDiv (Const a) (Const 0))))
-      ((union e (Const 0))))
+; Signed division of constants (using sdiv32 for correct 32-bit semantics)
+; sdiv32 returns None for: division by zero, i32::MIN / -1 (overflow UB)
+(rule ((= e (SDiv (Const a) (Const b))))
+      ((union e (Const (sdiv32 a b)))))
 
 ; Unsigned division (using u32 primitive for correct unsigned semantics)
 ; u32-div returns None on zero divisor, so add explicit zero rule
@@ -218,12 +218,10 @@
 (rule ((= e (UDiv (Const a) (Const 0))))
       ((union e (Const 0))))
 
-; Signed remainder of constants
-(rule ((= e (SRem (Const a) (Const b))) (!= b 0))
-      ((union e (Const (% a b)))))
-; SRem by zero returns 0 (C++ parity)
-(rule ((= e (SRem (Const a) (Const 0))))
-      ((union e (Const 0))))
+; Signed remainder of constants (using srem32 for correct 32-bit semantics)
+; srem32 returns None for: division by zero, i32::MIN % -1 (overflow UB)
+(rule ((= e (SRem (Const a) (Const b))))
+      ((union e (Const (srem32 a b)))))
 
 ; Unsigned modulo (using u32 primitive for correct unsigned semantics)
 ; u32-mod returns None on zero divisor, so add explicit zero rule

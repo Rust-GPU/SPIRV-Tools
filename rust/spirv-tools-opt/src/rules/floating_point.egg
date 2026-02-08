@@ -330,11 +330,8 @@
 ; FRem Rules (C++ RedundantFMod)
 ; =============================================================================
 
-; 0.0 % x = 0.0 - ONE-DIRECTIONAL (C++ RedundantFMod)
-(rule ((= e (FRem (FConst c) x)) (= c 0.0))
-      ((union e (FConst c))))
-
-; NOTE: FMod(0, x)→0 and FDiv(0, x)→0 rules are intentionally NOT included.
+; NOTE: FRem(0, x)→0, FMod(0, x)→0, and FDiv(0, x)→0 rules are intentionally
+; NOT included as algebraic simplifications.
 ; While C++ has RedundantFMod/FDiv that fold these, they require the
 ; "IsFloatingPointFoldingAllowed" guard. Without it, FDiv(0, NaN)→0 is wrong
 ; (should be NaN) and would equate 0 and NaN in the e-graph if both the

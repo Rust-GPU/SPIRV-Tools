@@ -331,6 +331,40 @@ pub fn float_fmod(a: f64, b: f64) -> Option<f64> {
 // f64 float bit pattern predicates
 // =============================================================================
 
+/// IEEE 754 float negation: flip the sign bit.
+/// Unlike `0.0 - a`, this correctly handles: neg(+0.0) = -0.0, neg(-0.0) = +0.0.
+pub fn float_neg(a: f64) -> f64 {
+    -a
+}
+
+/// Safe signed 32-bit division. Returns None for i32::MIN / -1 (overflow)
+/// and for division by zero. This is safer than C++ which silently produces
+/// undefined results for these cases.
+pub fn sdiv32(a: i64, b: i64) -> Option<i64> {
+    if b == 0 {
+        return None;
+    }
+    let (a32, b32) = (a as i32, b as i32);
+    // i32::MIN / -1 overflows — don't fold (UB in SPIR-V)
+    if a32 == i32::MIN && b32 == -1 {
+        return None;
+    }
+    Some((a32 / b32) as i64)
+}
+
+/// Safe signed 32-bit remainder. Returns None for i32::MIN % -1 (overflow)
+/// and for division by zero.
+pub fn srem32(a: i64, b: i64) -> Option<i64> {
+    if b == 0 {
+        return None;
+    }
+    let (a32, b32) = (a as i32, b as i32);
+    if a32 == i32::MIN && b32 == -1 {
+        return None;
+    }
+    Some((a32 % b32) as i64)
+}
+
 /// Check if an i64, interpreted as f64 bit pattern, equals 1.0.
 pub fn is_float_one64(x: i64) -> Option<()> {
     let f = f64::from_bits(x as u64);

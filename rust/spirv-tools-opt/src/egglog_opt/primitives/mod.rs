@@ -6,11 +6,11 @@ mod glsl;
 pub(super) use bitwise::{
     bitreverse32, bitreverse64, bits_disjoint, f64_has_exact_recip, find_lsb, find_msb_signed,
     find_msb_unsigned, float_fmod, float_recip, float_to_int_signed, float_to_int_unsigned,
-    ford_eq, ford_ge, ford_gt, ford_le, ford_lt, ford_ne, funord_eq, funord_ge, funord_gt,
-    funord_le, funord_lt, funord_ne, has_exact_recip, int_to_float_signed, int_to_float_unsigned,
-    is_float_one64, is_float_zero64, is_pow2, log2_pow2, mask_superset, popcount,
-    shl_clears_mask, shr_clears_mask, smod, u32_div, u32_ge, u32_gt, u32_le, u32_lt, u32_max,
-    u32_min, u32_mod,
+    float_neg, ford_eq, ford_ge, ford_gt, ford_le, ford_lt, ford_ne, funord_eq, funord_ge,
+    funord_gt, funord_le, funord_lt, funord_ne, has_exact_recip, int_to_float_signed,
+    int_to_float_unsigned, is_float_one64, is_float_zero64, is_pow2, log2_pow2, mask_superset,
+    popcount, sdiv32, shl_clears_mask, shr_clears_mask, smod, srem32, u32_div, u32_ge, u32_gt,
+    u32_le, u32_lt, u32_max, u32_min, u32_mod,
 };
 
 #[allow(unused_imports)]
