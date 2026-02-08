@@ -449,6 +449,21 @@ fn float_recip32(x: i64) -> i64 {
 // These primitives evaluate GLSL math functions on float constants.
 // FConst uses native f64 values, so primitives operate on f64 directly.
 
+/// Auto-detect f32/f64 bit pattern and multiply.
+/// If both values have zero high 32 bits, treat as f32; otherwise f64.
+/// Returns the product as a native f64.
+fn float_mul_auto(a: i64, b: i64) -> f64 {
+    if (a >> 32) == 0 && (b >> 32) == 0 {
+        let fa = f32::from_bits(a as u32);
+        let fb = f32::from_bits(b as u32);
+        (fa * fb) as f64
+    } else {
+        let fa = f64::from_bits(a as u64);
+        let fb = f64::from_bits(b as u64);
+        fa * fb
+    }
+}
+
 /// Compute sign of an integer constant (-1, 0, or 1).
 fn int_sign(x: i64) -> i64 {
     if x > 0 { 1 } else if x < 0 { -1 } else { 0 }
@@ -694,6 +709,12 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     // f64 bit pattern predicates for dot product rules
     add_primitive!(&mut egraph, "is-float-one64" = |x: i64| -?> () { is_float_one64(x) });
     add_primitive!(&mut egraph, "is-float-zero64" = |x: i64| -?> () { is_float_zero64(x) });
+
+    // Auto-detecting float multiply: i64 bit patterns → f64 result
+    // If both values have zero high 32 bits, treat as f32; otherwise f64
+    add_primitive!(&mut egraph, "float-mul-auto" = |a: i64, b: i64| -> F {
+        F::from(OrderedFloat(float_mul_auto(a, b)))
+    });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
     egraph

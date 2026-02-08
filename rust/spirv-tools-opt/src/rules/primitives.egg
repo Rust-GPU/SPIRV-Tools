@@ -259,3 +259,27 @@
 ; ConvertUToF: unsigned int -> float
 (rule ((= e (ConvertUToF (Const a))))
       ((union e (FConst (int-to-float-unsigned a)))))
+
+; =============================================================================
+; Dot Product Constant Folding
+; =============================================================================
+; Folds Dot(Vec_of_constants, Vec_of_constants) to FConst.
+; Uses float-mul-auto (auto-detects f32/f64 from bit patterns) for products,
+; then existing FAdd(FConst, FConst) rules fold the sums.
+
+; Vec2 dot constant fold
+(rule ((= e (Dot (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                 (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (FAdd (FConst (float-mul-auto a0 b0)) (FConst (float-mul-auto a1 b1))))))
+
+; Vec3 dot constant fold
+(rule ((= e (Dot (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                 (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (FAdd (FAdd (FConst (float-mul-auto a0 b0)) (FConst (float-mul-auto a1 b1)))
+                      (FConst (float-mul-auto a2 b2))))))
+
+; Vec4 dot constant fold
+(rule ((= e (Dot (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                 (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (FAdd (FAdd (FConst (float-mul-auto a0 b0)) (FConst (float-mul-auto a1 b1)))
+                      (FAdd (FConst (float-mul-auto a2 b2)) (FConst (float-mul-auto a3 b3)))))))
