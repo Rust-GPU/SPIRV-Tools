@@ -113,12 +113,12 @@
 ; Loop Invariant BitField Operations
 ; =============================================================================
 
-(rule ((= e (BitFieldUExtract (LoopInvariant x) (LoopInvariant off) (LoopInvariant cnt))))
-      ((union e (LoopInvariant (BitFieldUExtract x off cnt)))))
-(rule ((= e (BitFieldSExtract (LoopInvariant x) (LoopInvariant off) (LoopInvariant cnt))))
-      ((union e (LoopInvariant (BitFieldSExtract x off cnt)))))
-(rule ((= e (BitFieldInsert (LoopInvariant base) (LoopInvariant insert) (LoopInvariant off) (LoopInvariant cnt))))
-      ((union e (LoopInvariant (BitFieldInsert base insert off cnt)))))
+(rule ((= e (BitFieldUExtract (LoopInvariantI x) (LoopInvariantI off) (LoopInvariantI cnt))))
+      ((union e (LoopInvariantI (BitFieldUExtract x off cnt)))))
+(rule ((= e (BitFieldSExtract (LoopInvariantI x) (LoopInvariantI off) (LoopInvariantI cnt))))
+      ((union e (LoopInvariantI (BitFieldSExtract x off cnt)))))
+(rule ((= e (BitFieldInsert (LoopInvariantI base) (LoopInvariantI insert) (LoopInvariantI off) (LoopInvariantI cnt))))
+      ((union e (LoopInvariantI (BitFieldInsert base insert off cnt)))))
 
 ; =============================================================================
 ; Image Query Optimizations

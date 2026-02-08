@@ -37,16 +37,15 @@
 ; Fragment Derivative Optimization
 ; =============================================================================
 ; Derivatives have special properties.
+; Note: DPdx/DPdy/Fwidth take FloatExpr and return FloatExpr.
+; FAdd/FSub/FMul/FDiv/FNeg are FloatExpr operations.
 
 ; Already in memory.egg:
 ; - DPdx/DPdy of constant = 0
 ; - Fwidth of constant = 0
 
 ; Derivative of sum = sum of derivatives
-(rule ((= e (DPdx (Add a b))))
-      ((union e (Add (DPdx a) (DPdx b)))))
-(rule ((= e (DPdy (Add a b))))
-      ((union e (Add (DPdy a) (DPdy b)))))
+; Note: Add is IntExpr, DPdx takes FloatExpr. Only FAdd variant is valid.
 (rule ((= e (DPdx (FAdd a b))))
       ((union e (FAdd (DPdx a) (DPdx b)))))
 (rule ((= e (DPdy (FAdd a b))))
@@ -61,10 +60,11 @@
 
 ; Derivative of scaled value
 ; d/dx(c * x) where c is constant = c * d/dx(x)
-(rule ((= e (DPdx (FMul (Const c) x))))
-      ((union e (FMul (Const c) (DPdx x)))))
-(rule ((= e (DPdy (FMul (Const c) x))))
-      ((union e (FMul (Const c) (DPdy x)))))
+; Note: FConst for float constants in FMul context (FMul takes FloatExpr)
+(rule ((= e (DPdx (FMul (FConst c) x))))
+      ((union e (FMul (FConst c) (DPdx x)))))
+(rule ((= e (DPdy (FMul (FConst c) x))))
+      ((union e (FMul (FConst c) (DPdy x)))))
 
 ; Derivative of negation
 ; d/dx(-x) = -d/dx(x)
@@ -82,10 +82,11 @@
 
 ; Derivative of division (quotient rule) when divisor is constant
 ; d/dx(x / c) = d/dx(x) / c
-(rule ((= e (DPdx (FDiv x (Const c)))))
-      ((union e (FDiv (DPdx x) (Const c)))))
-(rule ((= e (DPdy (FDiv x (Const c)))))
-      ((union e (FDiv (DPdy x) (Const c)))))
+; Note: FConst for float constants in FDiv context (FDiv takes FloatExpr)
+(rule ((= e (DPdx (FDiv x (FConst c)))))
+      ((union e (FDiv (DPdx x) (FConst c)))))
+(rule ((= e (DPdy (FDiv x (FConst c)))))
+      ((union e (FDiv (DPdy x) (FConst c)))))
 
 ; Fwidth distribution over addition
 ; fwidth(a + b) can be approximated as fwidth(a) + fwidth(b)
@@ -94,8 +95,9 @@
       ((union e (FAdd (Fwidth a) (Fwidth b)))))
 
 ; Fwidth of scaled value
-(rule ((= e (Fwidth (FMul (Const c) x))))
-      ((union e (FMul (FAbs (Const c)) (Fwidth x)))))
+; Note: FConst for float constants, FAbs(FloatExpr) -> FloatExpr
+(rule ((= e (Fwidth (FMul (FConst c) x))))
+      ((union e (FMul (FAbs (FConst c)) (Fwidth x)))))
 
 ; Fwidth of negation is same as fwidth of original
 ; fwidth(-x) = fwidth(x) since fwidth uses absolute values
@@ -182,4 +184,3 @@
 ; if (cond) { output = a; } else { output = b; }
 ; becomes: output = select(cond, a, b)
 ; (Handled by Gamma rules)
-

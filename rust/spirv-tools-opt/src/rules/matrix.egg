@@ -8,7 +8,8 @@
 
 ; Matrix times identity (represented as 1.0 scalar) - conceptual
 ; MatTimesScalar with 1 and 0 - ONE-DIRECTIONAL to prevent explosion
-(rule ((= e (MatTimesScalar m (Const 1))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (MatTimesScalar m (IntToExpr (Const 1)))))
       ((union e m)))
 
 ; Double inverse is identity - ONE-DIRECTIONAL to prevent explosion
@@ -46,25 +47,29 @@
 
 ; Scalar multiply by 0 gives zero matrix (represented as scalar 0 times matrix)
 ; Note: Without a ZeroMatrix constructor, we keep the scalar multiply form
-(rule ((= e (MatTimesScalar m (Const 0))))
-      ((union e (MatTimesScalar m (Const 0)))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (MatTimesScalar m (IntToExpr (Const 0)))))
+      ((union e (MatTimesScalar m (IntToExpr (Const 0))))))
 
 ; Scalar multiply is commutative in the scalar: (M*s1)*s2 = (M*s2)*s1
 ; And associative: (M*s1)*s2 = M*(s1*s2)
 ; We express this as merging the scalars
-(rule ((= e (MatTimesScalar (MatTimesScalar m (Const a)) (Const b))) (mul-safe a b))
-      ((union e (MatTimesScalar m (Const (* a b))))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (MatTimesScalar (MatTimesScalar m (IntToExpr (Const a))) (IntToExpr (Const b)))) (mul-safe a b))
+      ((union e (MatTimesScalar m (IntToExpr (Const (* a b)))))))
 
 ; =============================================================================
 ; Determinant Rules
 ; =============================================================================
 
 ; Determinant of transpose equals determinant of original - ONE-DIRECTIONAL
+; Note: Determinant(Expr) -> FloatExpr
 (rule ((= e (Determinant (Transpose m))))
       ((union e (Determinant m))))
 
 ; Determinant of product = product of determinants - ONE-DIRECTIONAL
 ; det(A*B) = det(A) * det(B)
+; Note: Determinant returns FloatExpr, FMul(FloatExpr, FloatExpr) -> FloatExpr
 (rule ((= e (Determinant (MatTimesMat a b))))
       ((union e (FMul (Determinant a) (Determinant b)))))
 
@@ -72,8 +77,10 @@
 ; This is complex without knowing n, so we skip it
 
 ; Determinant of inverse = 1/determinant of original - ONE-DIRECTIONAL
+; Note: FDiv(FloatExpr, FloatExpr) -> FloatExpr, FConst for float constant
+; Note: Const is IntExpr, use FConst for float 1.0 in FDiv context
 (rule ((= e (Determinant (MatInverse m))))
-      ((union e (FDiv (Const 1) (Determinant m)))))
+      ((union e (FDiv (FConst 1.0) (Determinant m)))))
 
 ; =============================================================================
 ; Inverse Rules (beyond what's already there)
@@ -91,8 +98,9 @@
 
 ; Inverse of scalar*matrix - ONE-DIRECTIONAL
 ; (s*M)^-1 = (1/s)*M^-1
-(rule ((= e (MatInverse (MatTimesScalar m (Const s)))))
-      ((union e (MatTimesScalar (MatInverse m) (Const (/ 1 s))))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (MatInverse (MatTimesScalar m (IntToExpr (Const s))))))
+      ((union e (MatTimesScalar (MatInverse m) (IntToExpr (Const (/ 1 s)))))))
 
 ; =============================================================================
 ; Outer Product Rules
@@ -143,7 +151,8 @@
 (rule ((= e (VecTimesMat (LoopInvariant v) (LoopInvariant m)))) ((union e (LoopInvariant (VecTimesMat v m)))))
 (rule ((= e (MatTimesMat (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (MatTimesMat a b)))))
 (rule ((= e (Transpose (LoopInvariant m)))) ((union e (LoopInvariant (Transpose m)))))
-(rule ((= e (Determinant (LoopInvariant m)))) ((union e (LoopInvariant (Determinant m)))))
+; Note: Determinant returns FloatExpr, use LoopInvariantF (FloatExpr -> FloatExpr)
+(rule ((= e (Determinant (LoopInvariant m)))) ((union e (LoopInvariantF (Determinant m)))))
 (rule ((= e (MatInverse (LoopInvariant m)))) ((union e (LoopInvariant (MatInverse m)))))
 (rule ((= e (OuterProduct (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (OuterProduct a b)))))
 
@@ -152,6 +161,7 @@
 ; =============================================================================
 
 ; select(c, M*v1, M*v2) = M * select(c, v1, v2)
+; Note: Gamma condition is BoolExpr (already correct in typed sort system)
 (rule ((= e (Gamma c (MatTimesVec m v1) (MatTimesVec m v2)))) ((union e (MatTimesVec m (Gamma c v1 v2)))))
 
 ; select(c, v1*M, v2*M) = select(c, v1, v2) * M

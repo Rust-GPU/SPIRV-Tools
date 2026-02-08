@@ -58,17 +58,18 @@
 ; =============================================================================
 
 ; Vector identity operations - ONE-DIRECTIONAL to prevent explosion
-(rule ((= e (VecAdd v (Vec2 (Const 0) (Const 0)))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context (Vec components)
+(rule ((= e (VecAdd v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecAdd v (Vec3 (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecAdd v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecAdd v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecMul v (Vec2 (Const 1) (Const 1)))))
+(rule ((= e (VecMul v (Vec2 (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
       ((union e v)))
-(rule ((= e (VecMul v (Vec3 (Const 1) (Const 1) (Const 1)))))
+(rule ((= e (VecMul v (Vec3 (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
       ((union e v)))
-(rule ((= e (VecMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1)))))
+(rule ((= e (VecMul v (Vec4 (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
       ((union e v)))
 
 ; VecNeg double negation - ONE-DIRECTIONAL
@@ -78,11 +79,10 @@
       ((union e v)))
 
 ; VecTimesScalar with 0 and 1 - ONE-DIRECTIONAL for identity
-; Note: VecTimesScalar v 0 → Vec2(0,0) assumes Vec2, but dimension info is lost
-; For now we keep this as a simplification
-(rule ((= e (VecTimesScalar v (Const 0))))
-      ((union e (Vec2 (Const 0) (Const 0)))))
-(rule ((= e (VecTimesScalar v (Const 1))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (VecTimesScalar v (IntToExpr (Const 0)))))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecTimesScalar v (IntToExpr (Const 1)))))
       ((union e v)))
 
 ; =============================================================================
@@ -94,86 +94,90 @@
 ; Self-dot is length squared
 
 ; Dot with zero vector is zero - ONE-DIRECTIONAL
-; Integer vectors (Const 0 for integer 0)
-(rule ((= e (Dot (Vec2 (Const 0) (Const 0)) v))) ((union e (Const 0))))
-(rule ((= e (Dot v (Vec2 (Const 0) (Const 0))))) ((union e (Const 0))))
-(rule ((= e (Dot (Vec3 (Const 0) (Const 0) (Const 0)) v))) ((union e (Const 0))))
-(rule ((= e (Dot v (Vec3 (Const 0) (Const 0) (Const 0))))) ((union e (Const 0))))
-(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v))) ((union e (Const 0))))
-(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0))))) ((union e (Const 0))))
+; Note: Dot(Expr, Expr) -> FloatExpr, so result is FConst for float zero
+; Integer vectors (Const 0 for integer 0, wrapped with IntToExpr for Expr)
+(rule ((= e (Dot (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (FConst 0.0))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (FConst 0.0))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (FConst 0.0))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (FConst 0.0))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (FConst 0.0))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (FConst 0.0))))
 
 ; Extract from Dot when one vector is unit vector (has a 1 in one component, 0 elsewhere)
-; INTEGER vectors - Dot(Vec2(1,0), v) = VecExtract(v, 0) - ONE-DIRECTIONAL
-(rule ((= e (Dot (Vec2 (Const 1) (Const 0)) v))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec2 (Const 0) (Const 1)) v))) ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec2 (Const 1) (Const 0))))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec2 (Const 0) (Const 1))))) ((union e (VecExtract v 1))))
+; INTEGER vectors - Dot(Vec2(1,0), v) = ExprToFloat(VecExtract(v, 0)) - ONE-DIRECTIONAL
+; Note: Dot returns FloatExpr, VecExtract returns Expr, so wrap with ExprToFloat
+(rule ((= e (Dot (Vec2 (IntToExpr (Const 1)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 1))) v))) ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const 1)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 1)))))) ((union e (ExprToFloat (VecExtract v 1)))))
 
-(rule ((= e (Dot (Vec3 (Const 1) (Const 0) (Const 0)) v))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec3 (Const 0) (Const 1) (Const 0)) v))) ((union e (VecExtract v 1))))
-(rule ((= e (Dot (Vec3 (Const 0) (Const 0) (Const 1)) v))) ((union e (VecExtract v 2))))
-(rule ((= e (Dot v (Vec3 (Const 1) (Const 0) (Const 0))))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec3 (Const 0) (Const 1) (Const 0))))) ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec3 (Const 0) (Const 0) (Const 1))))) ((union e (VecExtract v 2))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1))) v))) ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1)))))) ((union e (ExprToFloat (VecExtract v 2)))))
 
-(rule ((= e (Dot (Vec4 (Const 1) (Const 0) (Const 0) (Const 0)) v))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec4 (Const 0) (Const 1) (Const 0) (Const 0)) v))) ((union e (VecExtract v 1))))
-(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 1) (Const 0)) v))) ((union e (VecExtract v 2))))
-(rule ((= e (Dot (Vec4 (Const 0) (Const 0) (Const 0) (Const 1)) v))) ((union e (VecExtract v 3))))
-(rule ((= e (Dot v (Vec4 (Const 1) (Const 0) (Const 0) (Const 0))))) ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec4 (Const 0) (Const 1) (Const 0) (Const 0))))) ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 1) (Const 0))))) ((union e (VecExtract v 2))))
-(rule ((= e (Dot v (Vec4 (Const 0) (Const 0) (Const 0) (Const 1))))) ((union e (VecExtract v 3))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0))) v))) ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1))) v))) ((union e (ExprToFloat (VecExtract v 3)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0)))))) ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1)))))) ((union e (ExprToFloat (VecExtract v 3)))))
 
 ; FLOAT vectors - Dot with unit vector (one f32 1.0, rest f32 0.0) = VecExtract
 ; f32 1.0 = bit pattern 0x3f800000 = 1065353216
 ; f32 0.0 = bit pattern 0 (same as integer 0)
 ; These use is-float-one32/is-float-zero32 guards for proper f32 matching
+; Note: Const is IntExpr, wrapped with IntToExpr for Expr context in Vec components
+; Note: Dot returns FloatExpr, VecExtract returns Expr, wrap with ExprToFloat
 
 ; Vec2 float unit vectors
-(rule ((= e (Dot (Vec2 (Const c1) (Const c2)) v)) (is-float-one32 c1) (is-float-zero32 c2))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec2 (Const c1) (Const c2)) v)) (is-float-zero32 c1) (is-float-one32 c2))
-      ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec2 (Const c1) (Const c2)))) (is-float-one32 c1) (is-float-zero32 c2))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec2 (Const c1) (Const c2)))) (is-float-zero32 c1) (is-float-one32 c2))
-      ((union e (VecExtract v 1))))
+(rule ((= e (Dot (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))) v)) (is-float-one32 c1) (is-float-zero32 c2))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))) v)) (is-float-zero32 c1) (is-float-one32 c2))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))))) (is-float-one32 c1) (is-float-zero32 c2))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))))) (is-float-zero32 c1) (is-float-one32 c2))
+      ((union e (ExprToFloat (VecExtract v 1)))))
 
 ; Vec3 float unit vectors
-(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
-      ((union e (VecExtract v 1))))
-(rule ((= e (Dot (Vec3 (Const c1) (Const c2) (Const c3)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
-      ((union e (VecExtract v 2))))
-(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
-      ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec3 (Const c1) (Const c2) (Const c3)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
-      ((union e (VecExtract v 2))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3))
+      ((union e (ExprToFloat (VecExtract v 2)))))
 
 ; Vec4 float unit vectors
-(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 1))))
-(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 2))))
-(rule ((= e (Dot (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
-      ((union e (VecExtract v 3))))
-(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 0))))
-(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 1))))
-(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
-      ((union e (VecExtract v 2))))
-(rule ((= e (Dot v (Vec4 (Const c1) (Const c2) (Const c3) (Const c4)))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
-      ((union e (VecExtract v 3))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
+      ((union e (ExprToFloat (VecExtract v 3)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-one32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero32 c1) (is-float-one32 c2) (is-float-zero32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-one32 c3) (is-float-zero32 c4))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
+      ((union e (ExprToFloat (VecExtract v 3)))))
 
 ; Dot is commutative - REMOVED to prevent e-graph explosion
-; These bidirectional rules cause cycles: (Dot a b) ↔ (Dot b a) ↔ ...
+; These bidirectional rules cause cycles: (Dot a b) <-> (Dot b a) <-> ...
 
 ; =============================================================================
 ; Vector Subtraction and Negation
@@ -183,41 +187,42 @@
 ; Note: produces a zero vector, represented via construction
 
 ; v - 0 = v (for various dimensions) - ONE-DIRECTIONAL
-(rule ((= e (VecSub v (Vec2 (Const 0) (Const 0)))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
+(rule ((= e (VecSub v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecSub v (Vec3 (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecSub v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecSub v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
 
 ; 0 - v = -v - ONE-DIRECTIONAL
-(rule ((= e (VecSub (Vec2 (Const 0) (Const 0)) v)))
+(rule ((= e (VecSub (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
       ((union e (VecNeg v))))
-(rule ((= e (VecSub (Vec3 (Const 0) (Const 0) (Const 0)) v)))
+(rule ((= e (VecSub (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
       ((union e (VecNeg v))))
-(rule ((= e (VecSub (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)) v)))
+(rule ((= e (VecSub (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
       ((union e (VecNeg v))))
 
 ; Floating-point vector variants - ONE-DIRECTIONAL
-(rule ((= e (VecFAdd v (Vec2 (Const 0) (Const 0)))))
+(rule ((= e (VecFAdd v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecFAdd v (Vec3 (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecFAdd v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
-(rule ((= e (VecFAdd v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
-      ((union e v)))
-
-(rule ((= e (VecFMul v (Vec2 (Const 1) (Const 1)))))
-      ((union e v)))
-(rule ((= e (VecFMul v (Vec3 (Const 1) (Const 1) (Const 1)))))
-      ((union e v)))
-(rule ((= e (VecFMul v (Vec4 (Const 1) (Const 1) (Const 1) (Const 1)))))
+(rule ((= e (VecFAdd v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
 
-(rule ((= e (VecFSub v (Vec2 (Const 0) (Const 0)))))
+(rule ((= e (VecFMul v (Vec2 (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
       ((union e v)))
-(rule ((= e (VecFSub v (Vec3 (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecFMul v (Vec3 (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
       ((union e v)))
-(rule ((= e (VecFSub v (Vec4 (Const 0) (Const 0) (Const 0) (Const 0)))))
+(rule ((= e (VecFMul v (Vec4 (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1)) (IntToExpr (Const 1))))))
+      ((union e v)))
+
+(rule ((= e (VecFSub v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e v)))
+(rule ((= e (VecFSub v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e v)))
+(rule ((= e (VecFSub v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
 
 ; =============================================================================
@@ -229,8 +234,10 @@
       ((union e (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))))
 
 ; VecTimesScalar with scalar multiplication - ONE-DIRECTIONAL (combine scalars)
+; Note: s1 and s2 are Expr (from VecTimesScalar args), but Mul takes IntExpr.
+; Use ExprToInt/IntToExpr bridges to cross sorts.
 (rule ((= e (VecTimesScalar (VecTimesScalar v s1) s2)))
-      ((union e (VecTimesScalar v (Mul s1 s2)))))
+      ((union e (VecTimesScalar v (IntToExpr (Mul (ExprToInt s1) (ExprToInt s2)))))))
 
 ; =============================================================================
 ; Cross Product Properties
@@ -238,7 +245,7 @@
 
 ; Cross product with self is zero (for 3D vectors)
 ; Note: commented because zero vector construction is complex
-; (rewrite (Cross a a) (Vec3 (Const 0) (Const 0) (Const 0)))
+; (rewrite (Cross a a) (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
 
 ; Cross product negation - ONE-DIRECTIONAL (push VecNeg out of Cross)
 (rule ((= e (Cross (VecNeg a) b)))
@@ -259,23 +266,25 @@
 ; =============================================================================
 
 ; Dot product distributes over VecAdd - ONE-DIRECTIONAL (expand Dot)
-; This creates scalar Add from vector Dot, which is the ONLY direction we want
+; Note: Dot returns FloatExpr, so use FAdd (FloatExpr + FloatExpr -> FloatExpr)
 (rule ((= e (Dot (VecAdd a b) c)))
-      ((union e (Add (Dot a c) (Dot b c)))))
+      ((union e (FAdd (Dot a c) (Dot b c)))))
 (rule ((= e (Dot a (VecAdd b c))))
-      ((union e (Add (Dot a b) (Dot a c)))))
+      ((union e (FAdd (Dot a b) (Dot a c)))))
 
 ; Dot product distributes over scalar multiplication - ONE-DIRECTIONAL
+; Note: Dot returns FloatExpr, s is Expr (from VecTimesScalar), use FMul with ExprToFloat
 (rule ((= e (Dot (VecTimesScalar a s) b)))
-      ((union e (Mul s (Dot a b)))))
+      ((union e (FMul (ExprToFloat s) (Dot a b)))))
 (rule ((= e (Dot a (VecTimesScalar b s))))
-      ((union e (Mul (Dot a b) s))))
+      ((union e (FMul (Dot a b) (ExprToFloat s)))))
 
 ; Dot with negated vector - ONE-DIRECTIONAL
+; Note: Dot returns FloatExpr, so use FNeg (FloatExpr -> FloatExpr)
 (rule ((= e (Dot (VecNeg a) b)))
-      ((union e (Neg (Dot a b)))))
+      ((union e (FNeg (Dot a b)))))
 (rule ((= e (Dot a (VecNeg b))))
-      ((union e (Neg (Dot a b)))))
+      ((union e (FNeg (Dot a b)))))
 
 ; =============================================================================
 ; Reconstruct Vector from Extracts
@@ -328,20 +337,21 @@
       ((union e (VecFMul a (VecFMul b c)))))
 
 ; VecFAdd/VecFMul commutativity - REMOVED to prevent e-graph explosion
-; These bidirectional rules cause cycles: (VecFAdd a b) ↔ (VecFAdd b a) ↔ ...
+; These bidirectional rules cause cycles: (VecFAdd a b) <-> (VecFAdd b a) <-> ...
 
 ; =============================================================================
 ; Scalar-Vector Multiplication Chain
 ; =============================================================================
 
 ; (v * s1) * s2 = v * (s1 * s2)
-(rule ((= e (VecTimesScalar (VecTimesScalar v (Const s1)) (Const s2))) (mul-safe s1 s2))
-      ((union e (VecTimesScalar v (Const (* s1 s2))))))
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context in VecTimesScalar
+(rule ((= e (VecTimesScalar (VecTimesScalar v (IntToExpr (Const s1))) (IntToExpr (Const s2)))) (mul-safe s1 s2))
+      ((union e (VecTimesScalar v (IntToExpr (Const (* s1 s2)))))))
 
 ; v * 0 produces zero vector (already have for integer version)
 
 ; v * (-1) = -v - ONE-DIRECTIONAL
-(rule ((= e (VecTimesScalar v (Const -1))))
+(rule ((= e (VecTimesScalar v (IntToExpr (Const -1)))))
       ((union e (VecNeg v))))
 
 ; =============================================================================
@@ -564,16 +574,19 @@
 (rule ((= e (VecFSub (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecFSub a b)))))
 (rule ((= e (VecFMul (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (VecFMul a b)))))
 (rule ((= e (VecFNeg (LoopInvariant a)))) ((union e (LoopInvariant (VecFNeg a)))))
-(rule ((= e (Dot (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (Dot a b)))))
+; Note: Dot returns FloatExpr, use LoopInvariantF (FloatExpr -> FloatExpr)
+(rule ((= e (Dot (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariantF (Dot a b)))))
 (rule ((= e (Cross (LoopInvariant a) (LoopInvariant b)))) ((union e (LoopInvariant (Cross a b)))))
 (rule ((= e (Normalize (LoopInvariant a)))) ((union e (LoopInvariant (Normalize a)))))
-(rule ((= e (Length (LoopInvariant a)))) ((union e (LoopInvariant (Length a)))))
+; Note: Length returns FloatExpr, use LoopInvariantF (FloatExpr -> FloatExpr)
+(rule ((= e (Length (LoopInvariant a)))) ((union e (LoopInvariantF (Length a)))))
 
 ; =============================================================================
 ; Gamma Distribution for Vector Operations - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; select(c, v1 + v2, v1 + v3) = v1 + select(c, v2, v3)
+; Note: Gamma condition is BoolExpr (already correct in typed sort system)
 (rule ((= e (Gamma c (VecFAdd x a) (VecFAdd x b)))) ((union e (VecFAdd x (Gamma c a b)))))
 (rule ((= e (Gamma c (VecFMul x a) (VecFMul x b)))) ((union e (VecFMul x (Gamma c a b)))))
 (rule ((= e (Gamma c (VecAdd x a) (VecAdd x b)))) ((union e (VecAdd x (Gamma c a b)))))

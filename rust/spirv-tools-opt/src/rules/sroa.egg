@@ -248,6 +248,7 @@
 ; When storing to a field in both branches with the same value
 
 ; MergeMem where both branches store same value to same field
+; Note: MergeMem(BoolExpr, Expr, Expr) - condition is BoolExpr
 (rule ((= m (MergeMem cond (StoreMem (AccessChain1 base idx) val s1)
                             (StoreMem (AccessChain1 base idx) val s2))))
       ((union m (StoreMem (AccessChain1 base idx) val (MergeMem cond s1 s2)))))
@@ -288,4 +289,3 @@
                                 (ECons (Load (AccessChain1 ptr 2) mem)
                                 (ECons (Load (AccessChain1 ptr 3) mem) (ENil))))))))
       ((union e (Load ptr mem))))
-

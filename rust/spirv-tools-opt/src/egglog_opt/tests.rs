@@ -14,12 +14,12 @@ fn test_create_egraph() {
 fn test_add_zero_optimization() {
     let mut egraph = create_spirv_egraph().unwrap();
 
-    // Add expression: x + 0 and (Sym "x") - they should be equivalent
+    // Add expression: x + 0 and (ISym "x") - they should be equivalent
     egraph
-        .parse_and_run_program(None, r#"(let add_form (Add (Sym "x") (Const 0)))"#)
+        .parse_and_run_program(None, r#"(let add_form (Add (ISym "x") (Const 0)))"#)
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let x_form (Sym "x"))"#)
+        .parse_and_run_program(None, r#"(let x_form (ISym "x"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -41,7 +41,7 @@ fn test_absorption() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (BitOr (Sym "x") (BitAnd (Sym "x") (Sym "y"))))"#,
+            r#"(let root (BitOr (ISym "x") (BitAnd (ISym "x") (ISym "y"))))"#,
         )
         .unwrap();
     egraph
@@ -53,10 +53,10 @@ fn test_absorption() {
         .unwrap();
     assert!(!results.is_empty());
     let result = format!("{}", results[0]);
-    // Should simplify to just (Sym "x")
+    // Should simplify to just (ISym "x")
     assert!(
-        result.contains("Sym") && result.contains("x") && !result.contains("BitOr"),
-        "Expected absorption to (Sym \"x\"), got: {}",
+        result.contains("ISym") && result.contains("x") && !result.contains("BitOr"),
+        "Expected absorption to (ISym \"x\"), got: {}",
         result
     );
 }
@@ -69,7 +69,7 @@ fn test_factoring() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Add (Mul (Sym "x") (Const 2)) (Mul (Sym "x") (Const 3))))"#,
+            r#"(let root (Add (Mul (ISym "x") (Const 2)) (Mul (ISym "x") (Const 3))))"#,
         )
         .unwrap();
     egraph
@@ -82,7 +82,7 @@ fn test_factoring() {
     assert!(!results.is_empty());
     let result = format!("{}", results[0]);
     eprintln!("Factoring result: {}", result);
-    // Should factor to (Mul (Sym "x") (Const 5))
+    // Should factor to (Mul (ISym "x") (Const 5))
     assert!(
         result.contains("Mul") && result.contains("5"),
         "Expected factoring to (Mul x 5), got: {}",
@@ -297,7 +297,7 @@ fn test_mul_chain_merge() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Mul (Mul (Sym "x") (Const 3)) (Const 4)))"#,
+            r#"(let root (Mul (Mul (ISym "x") (Const 3)) (Const 4)))"#,
         )
         .unwrap();
     egraph
@@ -325,7 +325,7 @@ fn test_add_chain_merge() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Add (Add (Sym "x") (Const 5)) (Const 7)))"#,
+            r#"(let root (Add (Add (ISym "x") (Const 5)) (Const 7)))"#,
         )
         .unwrap();
     egraph
@@ -353,7 +353,7 @@ fn test_bitwise_chain_merge() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (BitAnd (BitAnd (Sym "x") (Const 255)) (Const 15)))"#,
+            r#"(let root (BitAnd (BitAnd (ISym "x") (Const 255)) (Const 15)))"#,
         )
         .unwrap();
     egraph
@@ -382,7 +382,7 @@ fn test_gamma_to_min() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "a") (Sym "b")))"#,
+            r#"(let root (GammaI (SLt (ISym "a") (ISym "b")) (ISym "a") (ISym "b")))"#,
         )
         .unwrap();
     egraph
@@ -406,7 +406,7 @@ fn test_gamma_to_max() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Gamma (SLt (Sym "a") (Sym "b")) (Sym "b") (Sym "a")))"#,
+            r#"(let root (GammaI (SLt (ISym "a") (ISym "b")) (ISym "b") (ISym "a")))"#,
         )
         .unwrap();
     egraph
@@ -428,7 +428,7 @@ fn test_de_morgan() {
 
     // !(a && b) should equal !a || !b
     egraph
-        .parse_and_run_program(None, r#"(let root (LogNot (LogAnd (Sym "a") (Sym "b"))))"#)
+        .parse_and_run_program(None, r#"(let root (LogNot (LogAnd (BSym "a") (BSym "b"))))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
@@ -456,7 +456,7 @@ fn test_loop_invariant_propagation() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Add (LoopInvariant (Sym "a")) (LoopInvariant (Sym "b"))))"#,
+            r#"(let root (Add (LoopInvariantI (ISym "a")) (LoopInvariantI (ISym "b"))))"#,
         )
         .unwrap();
     egraph
@@ -478,11 +478,11 @@ fn test_fmul_chain_merge() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // (x * 2.0) * 3.0 should merge to x * 6.0
-    // f32 bit patterns: 2.0 = 1073741824, 3.0 = 1077936128, 6.0 = 1086324736
+    // FConst values: 2.0, 3.0, expected result 6.0
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FMul (FMul (Sym "x") (Const 1073741824)) (Const 1077936128)))"#,
+            r#"(let root (FMul (FMul (FSym "x") (FConst 2.0)) (FConst 3.0)))"#,
         )
         .unwrap();
     egraph
@@ -495,10 +495,10 @@ fn test_fmul_chain_merge() {
     assert!(!results.is_empty());
     let result = format!("{}", results[0]);
     eprintln!("FMul chain result: {}", result);
-    // Should contain the bit pattern for 6.0 = 1086324736
+    // Should contain the float value 6.0
     assert!(
-        result.contains("1086324736"),
-        "Expected merged constant for 6.0 (1086324736), got: {}",
+        result.contains("6"),
+        "Expected merged constant for 6.0, got: {}",
         result
     );
 }
@@ -512,7 +512,7 @@ fn test_reciprocal_chain() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FDiv (Const 1065353216) (FDiv (Const 1065353216) (Sym "x"))))"#,
+            r#"(let root (FDiv (FConst 1.0) (FDiv (FConst 1.0) (FSym "x"))))"#,
         )
         .unwrap();
     egraph
@@ -526,8 +526,8 @@ fn test_reciprocal_chain() {
     let result = format!("{}", results[0]);
     eprintln!("Reciprocal chain result: {}", result);
     assert!(
-        result.contains("Sym") && result.contains("x") && !result.contains("FDiv"),
-        "Expected just (Sym \"x\"), got: {}",
+        result.contains("FSym") && result.contains("x") && !result.contains("FDiv"),
+        "Expected just (FSym \"x\"), got: {}",
         result
     );
 }
@@ -539,10 +539,10 @@ fn test_strength_reduction_mul() {
     // x * 8 should be equivalent to x << 3 in the e-graph
     // Both forms are valid; the e-graph knows they're equal
     egraph
-        .parse_and_run_program(None, r#"(let mul_form (Mul (Sym "x") (Const 8)))"#)
+        .parse_and_run_program(None, r#"(let mul_form (Mul (ISym "x") (Const 8)))"#)
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let shift_form (Shl (Sym "x") (Const 3)))"#)
+        .parse_and_run_program(None, r#"(let shift_form (Shl (ISym "x") (Const 3)))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
@@ -562,10 +562,10 @@ fn test_strength_reduction_div() {
 
     // x / 4 (unsigned) should be equivalent to x >> 2 in the e-graph
     egraph
-        .parse_and_run_program(None, r#"(let div_form (UDiv (Sym "x") (Const 4)))"#)
+        .parse_and_run_program(None, r#"(let div_form (UDiv (ISym "x") (Const 4)))"#)
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let shift_form (ShrU (Sym "x") (Const 2)))"#)
+        .parse_and_run_program(None, r#"(let shift_form (ShrU (ISym "x") (Const 2)))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
@@ -585,10 +585,10 @@ fn test_mod_to_and() {
 
     // x % 8 (unsigned) should be equivalent to x & 7 in the e-graph
     egraph
-        .parse_and_run_program(None, r#"(let mod_form (UMod (Sym "x") (Const 8)))"#)
+        .parse_and_run_program(None, r#"(let mod_form (UMod (ISym "x") (Const 8)))"#)
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let and_form (BitAnd (Sym "x") (Const 7)))"#)
+        .parse_and_run_program(None, r#"(let and_form (BitAnd (ISym "x") (Const 7)))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
@@ -605,7 +605,7 @@ fn test_double_negation() {
 
     // --x should become x
     egraph
-        .parse_and_run_program(None, r#"(let root (Neg (Neg (Sym "x"))))"#)
+        .parse_and_run_program(None, r#"(let root (Neg (Neg (ISym "x"))))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -618,8 +618,8 @@ fn test_double_negation() {
     let result = format!("{}", results[0]);
     eprintln!("Double negation result: {}", result);
     assert!(
-        result.contains("Sym") && !result.contains("Neg"),
-        "Expected (Sym \"x\"), got: {}",
+        result.contains("ISym") && !result.contains("Neg"),
+        "Expected (ISym \"x\"), got: {}",
         result
     );
 }
@@ -630,7 +630,7 @@ fn test_bitnot_bitnot() {
 
     // ~~x should become x
     egraph
-        .parse_and_run_program(None, r#"(let root (BitNot (BitNot (Sym "x"))))"#)
+        .parse_and_run_program(None, r#"(let root (BitNot (BitNot (ISym "x"))))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -643,8 +643,8 @@ fn test_bitnot_bitnot() {
     let result = format!("{}", results[0]);
     eprintln!("Double BitNot result: {}", result);
     assert!(
-        result.contains("Sym") && !result.contains("BitNot"),
-        "Expected (Sym \"x\"), got: {}",
+        result.contains("ISym") && !result.contains("BitNot"),
+        "Expected (ISym \"x\"), got: {}",
         result
     );
 }
@@ -655,7 +655,7 @@ fn test_gamma_constant_true() {
 
     // select(true, a, b) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (Gamma (Const 1) (Sym "a") (Sym "b")))"#)
+        .parse_and_run_program(None, r#"(let root (Gamma (BoolConst 1) (Sym "a") (Sym "b")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -680,7 +680,7 @@ fn test_gamma_constant_false() {
 
     // select(false, a, b) = b
     egraph
-        .parse_and_run_program(None, r#"(let root (Gamma (Const 0) (Sym "a") (Sym "b")))"#)
+        .parse_and_run_program(None, r#"(let root (Gamma (BoolConst 0) (Sym "a") (Sym "b")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -705,7 +705,7 @@ fn test_gamma_same_branches() {
 
     // select(c, x, x) = x
     egraph
-        .parse_and_run_program(None, r#"(let root (Gamma (Sym "c") (Sym "x") (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let root (Gamma (BSym "c") (Sym "x") (Sym "x")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -730,7 +730,7 @@ fn test_clamp_same_bounds() {
 
     // clamp(x, a, a) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (SClamp (Sym "x") (Sym "a") (Sym "a")))"#)
+        .parse_and_run_program(None, r#"(let root (SClamp (ISym "x") (ISym "a") (ISym "a")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -743,8 +743,8 @@ fn test_clamp_same_bounds() {
     let result = format!("{}", results[0]);
     eprintln!("Clamp same bounds result: {}", result);
     assert!(
-        result.contains("Sym") && result.contains("a") && !result.contains("Clamp"),
-        "Expected (Sym \"a\"), got: {}",
+        result.contains("ISym") && result.contains("a") && !result.contains("Clamp"),
+        "Expected (ISym \"a\"), got: {}",
         result
     );
 }
@@ -757,7 +757,7 @@ fn test_sqrt_squared() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FMul (Sqrt (Sym "x")) (Sqrt (Sym "x"))))"#,
+            r#"(let root (FMul (Sqrt (FSym "x")) (Sqrt (FSym "x"))))"#,
         )
         .unwrap();
     egraph
@@ -771,8 +771,8 @@ fn test_sqrt_squared() {
     let result = format!("{}", results[0]);
     eprintln!("Sqrt squared result: {}", result);
     assert!(
-        result.contains("Sym") && result.contains("x") && !result.contains("Sqrt"),
-        "Expected (Sym \"x\"), got: {}",
+        result.contains("FSym") && result.contains("x") && !result.contains("Sqrt"),
+        "Expected (FSym \"x\"), got: {}",
         result
     );
 }
@@ -783,7 +783,7 @@ fn test_log_exp_cancel() {
 
     // log(exp(x)) = x
     egraph
-        .parse_and_run_program(None, r#"(let root (Log (Exp (Sym "x"))))"#)
+        .parse_and_run_program(None, r#"(let root (Log (Exp (FSym "x"))))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -796,8 +796,8 @@ fn test_log_exp_cancel() {
     let result = format!("{}", results[0]);
     eprintln!("Log/Exp cancel result: {}", result);
     assert!(
-        result.contains("Sym") && !result.contains("Log") && !result.contains("Exp"),
-        "Expected (Sym \"x\"), got: {}",
+        result.contains("FSym") && !result.contains("Log") && !result.contains("Exp"),
+        "Expected (FSym \"x\"), got: {}",
         result
     );
 }
@@ -808,7 +808,7 @@ fn test_fmix_same_args() {
 
     // mix(a, a, t) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (FMix (Sym "a") (Sym "a") (Sym "t")))"#)
+        .parse_and_run_program(None, r#"(let root (FMix (FSym "a") (FSym "a") (FSym "t")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -821,8 +821,8 @@ fn test_fmix_same_args() {
     let result = format!("{}", results[0]);
     eprintln!("FMix same args result: {}", result);
     assert!(
-        result.contains("Sym") && result.contains("a") && !result.contains("FMix"),
-        "Expected (Sym \"a\"), got: {}",
+        result.contains("FSym") && result.contains("a") && !result.contains("FMix"),
+        "Expected (FSym \"a\"), got: {}",
         result
     );
 }
@@ -862,7 +862,7 @@ fn test_x_inversesqrt_x() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FMul (Sym "x") (InverseSqrt (Sym "x"))))"#,
+            r#"(let root (FMul (FSym "x") (InverseSqrt (FSym "x"))))"#,
         )
         .unwrap();
     egraph
@@ -891,11 +891,11 @@ fn test_add_sub_cancellation() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (Add (Sub (Sym "a") (Sym "b")) (Sym "b")))"#,
+            r#"(let expr (Add (Sub (ISym "a") (ISym "b")) (ISym "b")))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+        .parse_and_run_program(None, r#"(let expected (ISym "a"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -913,11 +913,11 @@ fn test_sub_add_cancellation() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (Sub (Add (Sym "a") (Sym "b")) (Sym "b")))"#,
+            r#"(let expr (Sub (Add (ISym "a") (ISym "b")) (ISym "b")))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+        .parse_and_run_program(None, r#"(let expected (ISym "a"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -936,13 +936,13 @@ fn test_mask_factoring_or() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (BitOr (BitAnd (Sym "a") (Sym "m")) (BitAnd (Sym "b") (Sym "m"))))"#,
+            r#"(let expr (BitOr (BitAnd (ISym "a") (ISym "m")) (BitAnd (ISym "b") (ISym "m"))))"#,
         )
         .unwrap();
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expected (BitAnd (BitOr (Sym "a") (Sym "b")) (Sym "m")))"#,
+            r#"(let expected (BitAnd (BitOr (ISym "a") (ISym "b")) (ISym "m")))"#,
         )
         .unwrap();
     egraph
@@ -965,11 +965,11 @@ fn test_fadd_fsub_cancellation() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (FAdd (FSub (Sym "a") (Sym "b")) (Sym "b")))"#,
+            r#"(let expr (FAdd (FSub (FSym "a") (FSym "b")) (FSym "b")))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sym "a"))"#)
+        .parse_and_run_program(None, r#"(let expected (FSym "a"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -988,11 +988,11 @@ fn test_fdiv_fmul_cancellation() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (FMul (FDiv (Sym "y") (Sym "x")) (Sym "x")))"#,
+            r#"(let expr (FMul (FDiv (FSym "y") (FSym "x")) (FSym "x")))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sym "y"))"#)
+        .parse_and_run_program(None, r#"(let expected (FSym "y"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -1009,10 +1009,10 @@ fn test_add_neg_to_sub() {
 
     // (-x) + c should simplify to c - x
     egraph
-        .parse_and_run_program(None, r#"(let expr (Add (Neg (Sym "x")) (Const 5)))"#)
+        .parse_and_run_program(None, r#"(let expr (Add (Neg (ISym "x")) (Const 5)))"#)
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sub (Const 5) (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (Sub (Const 5) (ISym "x")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
@@ -1031,11 +1031,11 @@ fn test_const_sub_add() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (Sub (Const 10) (Add (Sym "x") (Const 3))))"#,
+            r#"(let expr (Sub (Const 10) (Add (ISym "x") (Const 3))))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sub (Const 7) (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (Sub (Const 7) (ISym "x")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -1054,11 +1054,11 @@ fn test_const_sub_sub() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expr (Sub (Const 10) (Sub (Sym "x") (Const 3))))"#,
+            r#"(let expr (Sub (Const 10) (Sub (ISym "x") (Const 3))))"#,
         )
         .unwrap();
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sub (Const 13) (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (Sub (Const 13) (ISym "x")))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -1077,7 +1077,7 @@ fn test_add_sub_chain_explosion_trace() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Sub (Add (Sym "x") (Const 5)) (Const 5)))"#,
+            r#"(let root (Sub (Add (ISym "x") (Const 5)) (Const 5)))"#,
         )
         .unwrap();
 
@@ -1094,7 +1094,7 @@ fn test_add_sub_chain_explosion_trace() {
         eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
 
         // If we already got x, we're done
-        if result == "(Sym \"x\")" {
+        if result == "(ISym \"x\")" {
             eprintln!("SUCCESS: Simplified to x after {} iterations", i);
             return;
         }
@@ -1114,9 +1114,9 @@ fn test_add_sub_chain_explosion_trace() {
     let result = format!("{}", results[0]);
     // Should have simplified to x
     assert!(
-        result == "(Sym \"x\")"
-            || result.contains("Sym") && !result.contains("Add") && !result.contains("Sub"),
-        "Expected (Sym \"x\"), got: {}",
+        result == "(ISym \"x\")"
+            || result.contains("ISym") && !result.contains("Add") && !result.contains("Sub"),
+        "Expected (ISym \"x\"), got: {}",
         result
     );
 }
@@ -1128,9 +1128,9 @@ fn test_add_sub_chain_with_context() {
 
     // Simulate what the FFI test does: x is a function parameter (id1), 5 is a constant (id2)
     // add = x + 5 (id3), sub = add - 5 (id4)
-    // The e-graph will have: id1 = (Sym "id1"), id2 = (Const 5), id3 = (Add id1 id2), id4 = (Sub id3 id2)
+    // The e-graph will have: id1 = (ISym "id1"), id2 = (Const 5), id3 = (Add id1 id2), id4 = (Sub id3 id2)
     egraph
-        .parse_and_run_program(None, r#"(let id1 (Sym "id1"))"#)
+        .parse_and_run_program(None, r#"(let id1 (ISym "id1"))"#)
         .unwrap();
     egraph
         .parse_and_run_program(None, r#"(let id2 (Const 5))"#)
@@ -1153,7 +1153,7 @@ fn test_add_sub_chain_with_context() {
         eprintln!("Iter {}: {} ({:?})", i, result, elapsed);
 
         // If we already got id1 (which should alias to x), we're done
-        if result.contains("Sym")
+        if result.contains("ISym")
             && result.contains("id1")
             && !result.contains("Add")
             && !result.contains("Sub")
@@ -1172,11 +1172,11 @@ fn test_add_sub_chain_with_context() {
     let result = format!("{}", results[0]);
     // Should have simplified to id1
     assert!(
-        result.contains("Sym")
+        result.contains("ISym")
             && result.contains("id1")
             && !result.contains("Add")
             && !result.contains("Sub"),
-        "Expected (Sym \"id1\"), got: {}",
+        "Expected (ISym \"id1\"), got: {}",
         result
     );
 }
@@ -1246,7 +1246,7 @@ fn test_sin_constant_fold() {
 
     // sin(0) should fold to 0
     egraph
-        .parse_and_run_program(None, "(let root (Sin (Const 0)))")
+        .parse_and_run_program(None, "(let root (Sin (FConst 0.0)))")
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -1258,7 +1258,7 @@ fn test_sin_constant_fold() {
     let result = format!("{}", results[0]);
     // Result should be a constant (sin(0) = 0)
     assert!(
-        result.contains("Const"),
+        result.contains("FConst"),
         "sin(0) should fold to a constant, got: {}",
         result
     );
@@ -1271,7 +1271,7 @@ fn test_exp_log_constant_fold() {
     // exp(0) should fold to 1 (as float bits)
     // 1.0f64.to_bits() = 4607182418800017408
     egraph
-        .parse_and_run_program(None, "(let root (Exp (Const 0)))")
+        .parse_and_run_program(None, "(let root (Exp (FConst 0.0)))")
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -1283,7 +1283,7 @@ fn test_exp_log_constant_fold() {
     let result = format!("{}", results[0]);
     // Result should be a constant
     assert!(
-        result.contains("Const"),
+        result.contains("FConst"),
         "exp(0) should fold to a constant, got: {}",
         result
     );
@@ -1295,9 +1295,9 @@ fn test_sqrt_constant_fold() {
 
     // sqrt(4.0) should fold to 2.0
     // 4.0f64.to_bits() = 4616189618054758400
-    let four_bits = 4.0_f64.to_bits() as i64;
-    let expr = format!("(let root (Sqrt (Const {})))", four_bits);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    // sqrt(4.0) should fold to 2.0
+    let expr = "(let root (Sqrt (FConst 4.0)))";
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
@@ -1308,7 +1308,7 @@ fn test_sqrt_constant_fold() {
     let result = format!("{}", results[0]);
     // Result should be a constant
     assert!(
-        result.contains("Const"),
+        result.contains("FConst"),
         "sqrt(4.0) should fold to a constant, got: {}",
         result
     );
@@ -1324,17 +1324,15 @@ fn test_pow_x_0_is_one() {
 
     // Pow(x, 0) should fold to 1.0
     // 0.0f32.to_bits() = 0
-    let zero_f32 = 0u32 as i64;
-    let one_f32 = 1.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, zero_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 0.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
-    // Check that Pow(x, 0) equals Const(1.0)
-    let expected = format!("(let expected (Const {}))", one_f32);
-    egraph.parse_and_run_program(None, &expected).unwrap();
+    // Check that Pow(x, 0) equals FConst(1.0)
+    let expected = "(let expected (FConst 1.0))";
+    egraph.parse_and_run_program(None, expected).unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, 0) should equal 1.0");
 }
@@ -1344,17 +1342,15 @@ fn test_pow_x_1_is_x() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, 1) should fold to x
-    // 1.0f32.to_bits() = 0x3f800000 = 1065353216
-    let one_f32 = 1.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, one_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 1.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
     // Check that Pow(x, 1) equals x
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sym "x"))"#)
+        .parse_and_run_program(None, r#"(let expected (FSym "x"))"#)
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, 1) should equal x");
@@ -1365,17 +1361,15 @@ fn test_pow_x_2_is_x_times_x() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, 2) should fold to x * x
-    // 2.0f32.to_bits() = 0x40000000 = 1073741824
-    let two_f32 = 2.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, two_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 2.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
     // Check that Pow(x, 2) equals FMul(x, x)
     egraph
-        .parse_and_run_program(None, r#"(let expected (FMul (Sym "x") (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (FMul (FSym "x") (FSym "x")))"#)
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, 2) should equal x * x");
@@ -1386,10 +1380,8 @@ fn test_pow_x_3_is_x_times_x_times_x() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, 3) should fold to (x * x) * x
-    // 3.0f32.to_bits() = 0x40400000 = 1077936128
-    let three_f32 = 3.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, three_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 3.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
@@ -1398,7 +1390,7 @@ fn test_pow_x_3_is_x_times_x_times_x() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (Sym "x")))"#,
+            r#"(let expected (FMul (FMul (FSym "x") (FSym "x")) (FSym "x")))"#,
         )
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
@@ -1410,10 +1402,8 @@ fn test_pow_x_4_is_x2_times_x2() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, 4) should fold to (x * x) * (x * x) - using only 2 multiplications
-    // 4.0f32.to_bits() = 0x40800000 = 1082130432
-    let four_f32 = 4.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, four_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 4.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
@@ -1422,7 +1412,7 @@ fn test_pow_x_4_is_x2_times_x2() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let expected (FMul (FMul (Sym "x") (Sym "x")) (FMul (Sym "x") (Sym "x"))))"#,
+            r#"(let expected (FMul (FMul (FSym "x") (FSym "x")) (FMul (FSym "x") (FSym "x"))))"#,
         )
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
@@ -1434,17 +1424,15 @@ fn test_pow_sqrt_optimization() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, 0.5) should fold to Sqrt(x)
-    // 0.5f32.to_bits() = 0x3f000000 = 1056964608
-    let half_f32 = 0.5f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, half_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst 0.5)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
     // Check that Pow(x, 0.5) equals Sqrt(x)
     egraph
-        .parse_and_run_program(None, r#"(let expected (Sqrt (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (Sqrt (FSym "x")))"#)
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, 0.5) should equal Sqrt(x)");
@@ -1455,17 +1443,15 @@ fn test_pow_inverse_sqrt_optimization() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, -0.5) should fold to InverseSqrt(x)
-    // -0.5f32.to_bits() = 0xbf000000 = 3204448256
-    let neg_half_f32 = (-0.5f32).to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, neg_half_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst -0.5)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
     // Check that Pow(x, -0.5) equals InverseSqrt(x)
     egraph
-        .parse_and_run_program(None, r#"(let expected (InverseSqrt (Sym "x")))"#)
+        .parse_and_run_program(None, r#"(let expected (InverseSqrt (FSym "x")))"#)
         .unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, -0.5) should equal InverseSqrt(x)");
@@ -1476,18 +1462,15 @@ fn test_pow_neg_one_is_reciprocal() {
     let mut egraph = create_spirv_egraph().unwrap();
 
     // Pow(x, -1) should fold to 1/x
-    // -1.0f32.to_bits() = 0xbf800000 = 3212836864
-    let neg_one_f32 = (-1.0f32).to_bits() as i64;
-    let one_f32 = 1.0f32.to_bits() as i64;
-    let expr = format!(r#"(let root (Pow (Sym "x") (Const {})))"#, neg_one_f32);
-    egraph.parse_and_run_program(None, &expr).unwrap();
+    let expr = r#"(let root (Pow (FSym "x") (FConst -1.0)))"#;
+    egraph.parse_and_run_program(None, expr).unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
         .unwrap();
 
     // Check that Pow(x, -1) equals FDiv(1, x)
-    let expected = format!(r#"(let expected (FDiv (Const {}) (Sym "x")))"#, one_f32);
-    egraph.parse_and_run_program(None, &expected).unwrap();
+    let expected = r#"(let expected (FDiv (FConst 1.0) (FSym "x")))"#;
+    egraph.parse_and_run_program(None, expected).unwrap();
     let check = egraph.parse_and_run_program(None, "(check (= root expected))");
     assert!(check.is_ok(), "Pow(x, -1) should equal 1/x");
 }
@@ -1504,7 +1487,7 @@ fn test_clamp_lt_lo_is_false() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FOrdLt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#,
+            r#"(let root (FOrdLt (FClamp (FSym "x") (FSym "lo") (FSym "hi")) (FSym "lo")))"#,
         )
         .unwrap();
     egraph
@@ -1516,7 +1499,7 @@ fn test_clamp_lt_lo_is_false() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("BoolConst 0"),
         "clamp(x, lo, hi) < lo should be false, got: {}",
         result
     );
@@ -1530,7 +1513,7 @@ fn test_clamp_ge_lo_is_true() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FOrdGe (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "lo")))"#,
+            r#"(let root (FOrdGe (FClamp (FSym "x") (FSym "lo") (FSym "hi")) (FSym "lo")))"#,
         )
         .unwrap();
     egraph
@@ -1542,7 +1525,7 @@ fn test_clamp_ge_lo_is_true() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 1"),
+        result.contains("BoolConst 1"),
         "clamp(x, lo, hi) >= lo should be true, got: {}",
         result
     );
@@ -1556,7 +1539,7 @@ fn test_clamp_gt_hi_is_false() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (FOrdGt (FClamp (Sym "x") (Sym "lo") (Sym "hi")) (Sym "hi")))"#,
+            r#"(let root (FOrdGt (FClamp (FSym "x") (FSym "lo") (FSym "hi")) (FSym "hi")))"#,
         )
         .unwrap();
     egraph
@@ -1568,7 +1551,7 @@ fn test_clamp_gt_hi_is_false() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("BoolConst 0"),
         "clamp(x, lo, hi) > hi should be false, got: {}",
         result
     );
@@ -1586,7 +1569,7 @@ fn test_div_mul_cancel() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Mul (SDiv (Sym "y") (Sym "x")) (Sym "x")))"#,
+            r#"(let root (Mul (SDiv (ISym "y") (ISym "x")) (ISym "x")))"#,
         )
         .unwrap();
     egraph
@@ -1599,7 +1582,7 @@ fn test_div_mul_cancel() {
     let result = format!("{}", results[0]);
     // Should simplify to just y
     assert!(
-        result.contains("Sym") && result.contains("y") && !result.contains("SDiv"),
+        result.contains("ISym") && result.contains("y") && !result.contains("SDiv"),
         "(y / x) * x should simplify to y, got: {}",
         result
     );
@@ -1613,7 +1596,7 @@ fn test_mul_div_cancel_unsigned() {
     egraph
         .parse_and_run_program(
             None,
-            r#"(let root (Mul (Sym "x") (UDiv (Sym "y") (Sym "x"))))"#,
+            r#"(let root (Mul (ISym "x") (UDiv (ISym "y") (ISym "x"))))"#,
         )
         .unwrap();
     egraph
@@ -1626,7 +1609,7 @@ fn test_mul_div_cancel_unsigned() {
     let result = format!("{}", results[0]);
     // Should simplify to just y
     assert!(
-        result.contains("Sym") && result.contains("y") && !result.contains("UDiv"),
+        result.contains("ISym") && result.contains("y") && !result.contains("UDiv"),
         "x * (y / x) should simplify to y, got: {}",
         result
     );
@@ -1674,7 +1657,7 @@ fn test_load_after_store_forwarding() {
             None,
             r#"
         (let ptr (Var "x" 0))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let mem (StoreMem ptr val (InitMem)))
         (let root (Load ptr mem))
     "#,
@@ -1706,9 +1689,9 @@ fn test_dead_store_elimination() {
             None,
             r#"
         (let ptr (Var "x" 0))
-        (let inner (StoreMem ptr (Const 10) (InitMem)))
-        (let root (StoreMem ptr (Const 20) inner))
-        (let expected (StoreMem ptr (Const 20) (InitMem)))
+        (let inner (StoreMem ptr (IntToExpr (Const 10)) (InitMem)))
+        (let root (StoreMem ptr (IntToExpr (Const 20)) inner))
+        (let expected (StoreMem ptr (IntToExpr (Const 20)) (InitMem)))
     "#,
         )
         .unwrap();
@@ -1731,7 +1714,7 @@ fn test_merge_mem_same_branches() {
             None,
             r#"
         (let mem (InitMem))
-        (let root (MergeMem (Sym "cond") mem mem))
+        (let root (MergeMem (BSym "cond") mem mem))
     "#,
         )
         .unwrap();
@@ -1759,9 +1742,9 @@ fn test_merge_mem_constant_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let then_mem (StoreMem (Var "x" 0) (Const 1) (InitMem)))
-        (let else_mem (StoreMem (Var "y" 0) (Const 2) (InitMem)))
-        (let root (MergeMem (Const 1) then_mem else_mem))
+        (let then_mem (StoreMem (Var "x" 0) (IntToExpr (Const 1)) (InitMem)))
+        (let else_mem (StoreMem (Var "y" 0) (IntToExpr (Const 2)) (InitMem)))
+        (let root (MergeMem (BoolConst 1) then_mem else_mem))
     "#,
         )
         .unwrap();
@@ -1787,7 +1770,7 @@ fn test_access_chain_load_store_forwarding() {
             r#"
         (let base (Var "arr" 0))
         (let chain (AccessChain1 base 5))
-        (let mem (StoreMem chain (Const 99) (InitMem)))
+        (let mem (StoreMem chain (IntToExpr (Const 99)) (InitMem)))
         (let root (Load chain mem))
     "#,
         )
@@ -1820,7 +1803,7 @@ fn test_subst_arg_replacement() {
         .parse_and_run_program(
             None,
             r#"
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst (Arg 0) 0 val))
     "#,
         )
@@ -1849,7 +1832,7 @@ fn test_subst_constant_unchanged() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (Subst (Const 100) 0 (Const 999)))
+        (let root (Subst (IntToExpr (Const 100)) 0 (IntToExpr (Const 999))))
     "#,
         )
         .unwrap();
@@ -1877,8 +1860,8 @@ fn test_subst_into_binary_op() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Const 5)))
-        (let root (Subst body 0 (Const 10)))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 5))))
+        (let root (Subst body 0 (IntToExpr (Const 10))))
     "#,
         )
         .unwrap();
@@ -1911,8 +1894,8 @@ fn test_bounded_theta_zero_iterations() {
         .parse_and_run_program(
             None,
             r#"
-        (let init (Const 42))
-        (let body (Add (Arg 0) (Const 1)))
+        (let init (IntToExpr (Const 42)))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 1))))
         (let root (BoundedTheta 0 body init))
     "#,
         )
@@ -1941,8 +1924,8 @@ fn test_theta_constant_false_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let init (Const 100))
-        (let root (Theta (Const 0) (Add (LoopVar) (Const 1)) init))
+        (let init (IntToExpr (Const 100)))
+        (let root (Theta (BoolConst 0) (IntToExpr (Add (LoopVarI) (Const 1))) init))
     "#,
         )
         .unwrap();
@@ -1970,8 +1953,8 @@ fn test_loop_strength_reduction_mul_to_shift() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (Mul (LoopVar) (Const 4)))
-        (let expected (Shl (LoopVar) (Const 2)))
+        (let root (Mul (LoopVarI) (Const 4)))
+        (let expected (Shl (LoopVarI) (Const 2)))
     "#,
         )
         .unwrap();
@@ -1992,10 +1975,10 @@ fn test_loop_invariant_propagation_extended() {
         .parse_and_run_program(
             None,
             r#"
-        (let a (LoopInvariant (Const 10)))
-        (let b (LoopInvariant (Const 20)))
+        (let a (LoopInvariantI (Const 10)))
+        (let b (LoopInvariantI (Const 20)))
         (let root (Add a b))
-        (let expected (LoopInvariant (Add (Const 10) (Const 20))))
+        (let expected (LoopInvariantI (Add (Const 10) (Const 20))))
     "#,
         )
         .unwrap();
@@ -2019,7 +2002,7 @@ fn test_loop_iter_zero() {
         .parse_and_run_program(
             None,
             r#"
-        (let val (Const 77))
+        (let val (IntToExpr (Const 77)))
         (let root (LoopIter 0 val))
     "#,
         )
@@ -2053,7 +2036,7 @@ fn test_spec_add_zero() {
             None,
             r#"
         (let spec (SpecConst 0 42))
-        (let root (SpecAdd spec (Const 0)))
+        (let root (SpecAdd spec (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -2082,7 +2065,7 @@ fn test_spec_mul_zero() {
             None,
             r#"
         (let spec (SpecConst 0 42))
-        (let root (SpecMul spec (Const 0)))
+        (let root (SpecMul spec (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -2110,9 +2093,9 @@ fn test_spec_select_constant_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let a (Const 10))
-        (let b (Const 20))
-        (let root (SpecSelect (Const 1) a b))
+        (let a (IntToExpr (Const 10)))
+        (let b (IntToExpr (Const 20)))
+        (let root (SpecSelect (IntToExpr (Const 1)) a b))
     "#,
         )
         .unwrap();
@@ -2170,8 +2153,8 @@ fn test_spec_strength_reduction() {
             None,
             r#"
         (let spec (SpecConst 0 42))
-        (let root (SpecMul spec (Const 4)))
-        (let expected (SpecShl spec (Const 2)))
+        (let root (SpecMul spec (IntToExpr (Const 4))))
+        (let expected (SpecShl spec (IntToExpr (Const 2))))
     "#,
         )
         .unwrap();
@@ -2196,7 +2179,7 @@ fn test_derivative_of_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (DPdx (Const 42)))
+        (let root (DPdx (FConst 42.0)))
     "#,
         )
         .unwrap();
@@ -2209,7 +2192,7 @@ fn test_derivative_of_constant() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("FConst 0"),
         "DPdx of constant should be 0, got: {}",
         result
     );
@@ -2224,7 +2207,7 @@ fn test_fwidth_of_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (Fwidth (Const 42)))
+        (let root (Fwidth (FConst 42.0)))
     "#,
         )
         .unwrap();
@@ -2237,7 +2220,7 @@ fn test_fwidth_of_constant() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("FConst 0"),
         "Fwidth of constant should be 0, got: {}",
         result
     );
@@ -2256,7 +2239,7 @@ fn test_group_broadcast_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (GroupBroadcast (Const 42) (Const 0)))
+        (let root (GroupBroadcast (IntToExpr (Const 42)) (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -2284,7 +2267,7 @@ fn test_group_broadcast_first_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (GroupBroadcastFirst (Const 123)))
+        (let root (GroupBroadcastFirst (IntToExpr (Const 123))))
     "#,
         )
         .unwrap();
@@ -2312,7 +2295,7 @@ fn test_group_all_constant_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (GroupAll (Const 1)))
+        (let root (GroupAll (BoolConst 1)))
     "#,
         )
         .unwrap();
@@ -2325,7 +2308,7 @@ fn test_group_all_constant_true() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 1") && !result.contains("GroupAll"),
+        result.contains("BoolConst 1") && !result.contains("GroupAll"),
         "GroupAll(true) should be true, got: {}",
         result
     );
@@ -2340,7 +2323,7 @@ fn test_group_any_constant_false() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (GroupAny (Const 0)))
+        (let root (GroupAny (BoolConst 0)))
     "#,
         )
         .unwrap();
@@ -2353,7 +2336,7 @@ fn test_group_any_constant_false() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0") && !result.contains("GroupAny"),
+        result.contains("BoolConst 0") && !result.contains("GroupAny"),
         "GroupAny(false) should be false, got: {}",
         result
     );
@@ -2368,7 +2351,7 @@ fn test_group_all_equal_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (GroupAllEqual (Const 42)))
+        (let root (GroupAllEqual (IntToExpr (Const 42))))
     "#,
         )
         .unwrap();
@@ -2397,7 +2380,7 @@ fn test_group_shuffle_xor_zero() {
             None,
             r#"
         (let val (Sym "x"))
-        (let root (GroupShuffleXor val (Const 0)))
+        (let root (GroupShuffleXor val (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -2559,7 +2542,7 @@ fn test_dynamic_access_chain_const() {
             None,
             r#"
         (let base (Var "arr" 0))
-        (let root (AccessChainDyn base (Const 5)))
+        (let root (AccessChainDyn base (IntToExpr (Const 5))))
         (let expected (AccessChain1 base 5))
     "#,
         )
@@ -2613,14 +2596,14 @@ fn test_dead_store_across_branches() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let cond (Sym "c"))
+        (let cond (BSym "c"))
         (let prev (InitMem))
-        (let inner (StoreMem ptr (Const 0) prev))
-        (let branch1 (StoreMem ptr (Const 1) inner))
-        (let branch2 (StoreMem ptr (Const 2) inner))
+        (let inner (StoreMem ptr (IntToExpr (Const 0)) prev))
+        (let branch1 (StoreMem ptr (IntToExpr (Const 1)) inner))
+        (let branch2 (StoreMem ptr (IntToExpr (Const 2)) inner))
         (let root (MergeMem cond branch1 branch2))
-        (let expected_b1 (StoreMem ptr (Const 1) prev))
-        (let expected_b2 (StoreMem ptr (Const 2) prev))
+        (let expected_b1 (StoreMem ptr (IntToExpr (Const 1)) prev))
+        (let expected_b2 (StoreMem ptr (IntToExpr (Const 2)) prev))
         (let expected (MergeMem cond expected_b1 expected_b2))
     "#,
         )
@@ -2649,8 +2632,8 @@ fn test_dpdx_sum_linearity() {
         .parse_and_run_program(
             None,
             r#"
-        (let a (Sym "a"))
-        (let b (Sym "b"))
+        (let a (FSym "a"))
+        (let b (FSym "b"))
         (let root (DPdx (FAdd a b)))
         (let expected (FAdd (DPdx a) (DPdx b)))
     "#,
@@ -2673,7 +2656,7 @@ fn test_dpdx_negation() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (FSym "x"))
         (let root (DPdx (FNeg x)))
         (let expected (FNeg (DPdx x)))
     "#,
@@ -2696,7 +2679,7 @@ fn test_fwidth_negation_invariant() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (FSym "x"))
         (let root (Fwidth (FNeg x)))
         (let expected (Fwidth x))
     "#,
@@ -2753,7 +2736,7 @@ fn test_bitfield_extract_full_word() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (BitFieldUExtract x (Const 0) (Const 32)))
     "#,
         )
@@ -2778,7 +2761,7 @@ fn test_bitfield_extract_zero_count() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (BitFieldUExtract x (Const 5) (Const 0)))
     "#,
         )
@@ -2807,8 +2790,8 @@ fn test_bitfield_insert_zero_count() {
         .parse_and_run_program(
             None,
             r#"
-        (let base (Sym "base"))
-        (let val (Sym "val"))
+        (let base (ISym "base"))
+        (let val (ISym "val"))
         (let root (BitFieldInsert base val (Const 5) (Const 0)))
     "#,
         )
@@ -2833,7 +2816,7 @@ fn test_bit_reverse_double() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (BitReverse (BitReverse x)))
     "#,
         )
@@ -2939,7 +2922,7 @@ fn test_bit_count_invariant_to_reverse() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (BitCount (BitReverse x)))
         (let expected (BitCount x))
     "#,
@@ -2962,7 +2945,7 @@ fn test_bitfield_extract_low_byte() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (BitFieldUExtract x (Const 0) (Const 8)))
         (let expected (BitAnd x (Const 255)))
     "#,
@@ -2992,10 +2975,10 @@ fn test_logand_gamma_same_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let b (Sym "b"))
-        (let root (LogAnd c (Gamma c a b)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let b (BSym "b"))
+        (let root (LogAnd c (GammaB c a b)))
         (let expected (LogAnd c a))
     "#,
         )
@@ -3020,10 +3003,10 @@ fn test_logor_gamma_same_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let b (Sym "b"))
-        (let root (LogOr c (Gamma c a b)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let b (BSym "b"))
+        (let root (LogOr c (GammaB c a b)))
         (let expected (LogOr c b))
     "#,
         )
@@ -3048,10 +3031,10 @@ fn test_logand_gamma_negated_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let b (Sym "b"))
-        (let root (LogAnd (LogNot c) (Gamma c a b)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let b (BSym "b"))
+        (let root (LogAnd (LogNot c) (GammaB c a b)))
         (let expected (LogAnd (LogNot c) b))
     "#,
         )
@@ -3076,13 +3059,13 @@ fn test_logand_gamma_fusion() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let b (Sym "b"))
-        (let x (Sym "x"))
-        (let y (Sym "y"))
-        (let root (LogAnd (Gamma c a b) (Gamma c x y)))
-        (let expected (Gamma c (LogAnd a x) (LogAnd b y)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let b (BSym "b"))
+        (let x (BSym "x"))
+        (let y (BSym "y"))
+        (let root (LogAnd (GammaB c a b) (GammaB c x y)))
+        (let expected (GammaB c (LogAnd a x) (LogAnd b y)))
     "#,
         )
         .unwrap();
@@ -3106,13 +3089,13 @@ fn test_logor_gamma_fusion() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let b (Sym "b"))
-        (let x (Sym "x"))
-        (let y (Sym "y"))
-        (let root (LogOr (Gamma c a b) (Gamma c x y)))
-        (let expected (Gamma c (LogOr a x) (LogOr b y)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let b (BSym "b"))
+        (let x (BSym "x"))
+        (let y (BSym "y"))
+        (let root (LogOr (GammaB c a b) (GammaB c x y)))
+        (let expected (GammaB c (LogOr a x) (LogOr b y)))
     "#,
         )
         .unwrap();
@@ -3136,9 +3119,9 @@ fn test_gamma_logand_condition_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "c"))
-        (let a (Sym "a"))
-        (let root (Gamma c (LogAnd c a) (Const 0)))
+        (let c (BSym "c"))
+        (let a (BSym "a"))
+        (let root (GammaB c (LogAnd c a) (BoolConst 0)))
         (let expected (LogAnd c a))
     "#,
         )
@@ -3163,7 +3146,7 @@ fn test_masked_value_comparison_byte() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (ULt (BitAnd x (Const 255)) (Const 256)))
     "#,
         )
@@ -3177,7 +3160,7 @@ fn test_masked_value_comparison_byte() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 1"),
+        result.contains("BoolConst 1"),
         "Byte mask comparison should be true, got: {}",
         result
     );
@@ -3192,7 +3175,7 @@ fn test_bit_mask_equality_contradiction() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (LogAnd (Eq (BitAnd x (Const 1)) (Const 0))
                          (Eq (BitAnd x (Const 1)) (Const 1))))
     "#,
@@ -3207,7 +3190,7 @@ fn test_bit_mask_equality_contradiction() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("BoolConst 0"),
         "Bit mask contradiction should be false, got: {}",
         result
     );
@@ -3226,7 +3209,7 @@ fn test_mul_undef_by_zero() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (Mul (Const 0) (Undef)))
+        (let root (Mul (Const 0) (ExprToInt (Undef))))
     "#,
         )
         .unwrap();
@@ -3254,7 +3237,7 @@ fn test_bitand_undef_with_zero() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (BitAnd (Undef) (Const 0)))
+        (let root (BitAnd (ExprToInt (Undef)) (Const 0)))
     "#,
         )
         .unwrap();
@@ -3282,7 +3265,7 @@ fn test_bitor_undef_with_all_ones() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (BitOr (Undef) (Const -1)))
+        (let root (BitOr (ExprToInt (Undef)) (Const -1)))
     "#,
         )
         .unwrap();
@@ -3310,7 +3293,7 @@ fn test_logand_undef_with_false() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (LogAnd (Const 0) (Undef)))
+        (let root (LogAnd (BoolConst 0) (ExprToBool (Undef))))
     "#,
         )
         .unwrap();
@@ -3323,7 +3306,7 @@ fn test_logand_undef_with_false() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 0"),
+        result.contains("BoolConst 0"),
         "false && Undef should be false, got: {}",
         result
     );
@@ -3338,7 +3321,7 @@ fn test_logor_undef_with_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let root (LogOr (Const 1) (Undef)))
+        (let root (LogOr (BoolConst 1) (ExprToBool (Undef))))
     "#,
         )
         .unwrap();
@@ -3351,7 +3334,7 @@ fn test_logor_undef_with_true() {
         .unwrap();
     let result = format!("{}", results[0]);
     assert!(
-        result.contains("Const 1"),
+        result.contains("BoolConst 1"),
         "true || Undef should be true, got: {}",
         result
     );
@@ -3420,9 +3403,9 @@ fn test_nclamp_idempotence() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
-        (let lo (Sym "lo"))
-        (let hi (Sym "hi"))
+        (let x (FSym "x"))
+        (let lo (FSym "lo"))
+        (let hi (FSym "hi"))
         (let inner (NClamp x lo hi))
         (let root (NClamp inner lo hi))
     "#,
@@ -3562,8 +3545,8 @@ fn test_sroa_vec2_store_decomposition() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "vec2_ptr" 0))
-        (let a (Const 10))
-        (let b (Const 20))
+        (let a (IntToExpr (Const 10)))
+        (let b (IntToExpr (Const 20)))
         (let whole_store (StoreMem ptr (Vec2 a b) mem))
         (let field_stores (StoreMem (AccessChain1 ptr 1) b
                           (StoreMem (AccessChain1 ptr 0) a mem)))
@@ -3592,10 +3575,10 @@ fn test_sroa_vec4_store_decomposition() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "vec4_ptr" 0))
-        (let a (Const 1))
-        (let b (Const 2))
-        (let c (Const 3))
-        (let d (Const 4))
+        (let a (IntToExpr (Const 1)))
+        (let b (IntToExpr (Const 2)))
+        (let c (IntToExpr (Const 3)))
+        (let d (IntToExpr (Const 4)))
         (let whole_store (StoreMem ptr (Vec4 a b c d) mem))
         (let field_stores (StoreMem (AccessChain1 ptr 3) d
                           (StoreMem (AccessChain1 ptr 2) c
@@ -3627,8 +3610,8 @@ fn test_sroa_field_dead_store_elimination() {
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
         (let field0 (AccessChain1 ptr 0))
-        (let v1 (Const 100))
-        (let v2 (Const 200))
+        (let v1 (IntToExpr (Const 100)))
+        (let v2 (IntToExpr (Const 200)))
         (let double_store (StoreMem field0 v2 (StoreMem field0 v1 mem)))
         (let single_store (StoreMem field0 v2 mem))
     "#,
@@ -3657,7 +3640,7 @@ fn test_sroa_field_load_after_store_forwarding() {
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
         (let field0 (AccessChain1 ptr 0))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let stored (StoreMem field0 val mem))
         (let loaded (Load field0 stored))
     "#,
@@ -3687,7 +3670,7 @@ fn test_sroa_different_field_load_passes_through() {
         (let ptr (Var "struct_ptr" 0))
         (let field0 (AccessChain1 ptr 0))
         (let field1 (AccessChain1 ptr 1))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let stored (StoreMem field1 val mem))
         (let loaded (Load field0 stored))
         (let original (Load field0 mem))
@@ -3717,7 +3700,7 @@ fn test_sroa_read_modify_write_to_field_store() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
-        (let val (Const 99))
+        (let val (IntToExpr (Const 99)))
         (let loaded (Load ptr mem))
         (let modified (VecInsert loaded val 1))
         (let rmw (StoreMem ptr modified mem))
@@ -3863,8 +3846,8 @@ fn test_sroa_conditional_same_field_store() {
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
         (let field0 (AccessChain1 ptr 0))
-        (let cond (Sym "cond"))
-        (let val (Const 42))
+        (let cond (BSym "cond"))
+        (let val (IntToExpr (Const 42)))
         (let then_mem (StoreMem field0 val mem))
         (let else_mem (StoreMem field0 val mem))
         (let merged (MergeMem cond then_mem else_mem))
@@ -3897,8 +3880,8 @@ fn test_sroa_composite_construct_store_decomposition() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
-        (let a (Const 10))
-        (let b (Const 20))
+        (let a (IntToExpr (Const 10)))
+        (let b (IntToExpr (Const 20)))
         (let whole_store (StoreMem ptr (Vec2 a b) mem))
         (let field_stores (StoreMem (AccessChain1 ptr 1) b
                           (StoreMem (AccessChain1 ptr 0) a mem)))
@@ -3928,9 +3911,9 @@ fn test_sroa_end_to_end_optimization() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "struct_ptr" 0))
-        (let a (Const 10))
-        (let b (Const 20))
-        (let new_b (Const 30))
+        (let a (IntToExpr (Const 10)))
+        (let b (IntToExpr (Const 20)))
+        (let new_b (IntToExpr (Const 30)))
 
         ; Store initial struct
         (let m1 (StoreMem ptr (Vec2 a b) mem))
@@ -3974,8 +3957,8 @@ fn test_sroa_triple_access_chain_dead_store() {
         (let mem (InitMem))
         (let ptr (Var "deep_struct_ptr" 0))
         (let field (AccessChain3 ptr 0 1 2))
-        (let v1 (Const 100))
-        (let v2 (Const 200))
+        (let v1 (IntToExpr (Const 100)))
+        (let v2 (IntToExpr (Const 200)))
         (let double_store (StoreMem field v2 (StoreMem field v1 mem)))
         (let single_store (StoreMem field v2 mem))
     "#,
@@ -4003,7 +3986,7 @@ fn test_sroa_vec_insert_to_field_store() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "vec_ptr" 0))
-        (let val (Const 99))
+        (let val (IntToExpr (Const 99)))
         (let loaded (Load ptr mem))
         (let modified (VecInsert loaded val 2))
         (let rmw (StoreMem ptr modified mem))
@@ -4038,8 +4021,8 @@ fn test_dce_dead_store_elimination() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "x" 0))
-        (let v1 (Const 10))
-        (let v2 (Const 20))
+        (let v1 (IntToExpr (Const 10)))
+        (let v2 (IntToExpr (Const 20)))
         (let double_store (StoreMem ptr v2 (StoreMem ptr v1 mem)))
         (let single_store (StoreMem ptr v2 mem))
     "#,
@@ -4088,9 +4071,9 @@ fn test_dce_dead_branch_gamma_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let t (Const 42))
-        (let f (Const 99))
-        (let result (Gamma (Const 1) t f))
+        (let t (IntToExpr (Const 42)))
+        (let f (IntToExpr (Const 99)))
+        (let result (Gamma (BoolConst 1) t f))
     "#,
         )
         .unwrap();
@@ -4114,9 +4097,9 @@ fn test_dce_dead_branch_gamma_false() {
         .parse_and_run_program(
             None,
             r#"
-        (let t (Const 42))
-        (let f (Const 99))
-        (let result (Gamma (Const 0) t f))
+        (let t (IntToExpr (Const 42)))
+        (let f (IntToExpr (Const 99)))
+        (let result (Gamma (BoolConst 0) t f))
     "#,
         )
         .unwrap();
@@ -4140,8 +4123,8 @@ fn test_dce_gamma_same_branches() {
         .parse_and_run_program(
             None,
             r#"
-        (let cond (Sym "unknown"))
-        (let val (Const 42))
+        (let cond (BSym "unknown"))
+        (let val (IntToExpr (Const 42)))
         (let result (Gamma cond val val))
     "#,
         )
@@ -4166,9 +4149,9 @@ fn test_dce_dead_loop_false_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let init (Const 42))
-        (let body (Add (LoopVar) (Const 1)))
-        (let result (Theta (Const 0) body init))
+        (let init (IntToExpr (Const 42)))
+        (let body (IntToExpr (Add (LoopVarI) (Const 1))))
+        (let result (Theta (BoolConst 0) body init))
     "#,
         )
         .unwrap();
@@ -4192,8 +4175,8 @@ fn test_dce_dead_loop_identity_body() {
         .parse_and_run_program(
             None,
             r#"
-        (let cond (Sym "continue"))
-        (let init (Const 42))
+        (let cond (BSym "continue"))
+        (let init (IntToExpr (Const 42)))
         (let result (Theta cond (LoopVar) init))
     "#,
         )
@@ -4215,8 +4198,8 @@ fn test_dce_bounded_theta_zero_iterations() {
         .parse_and_run_program(
             None,
             r#"
-        (let init (Const 42))
-        (let body (Add (LoopVar) (Const 1)))
+        (let init (IntToExpr (Const 42)))
+        (let body (IntToExpr (Add (LoopVarI) (Const 1))))
         (let result (BoundedTheta 0 body init))
     "#,
         )
@@ -4288,8 +4271,8 @@ fn test_dce_whole_struct_store_kills_field_store() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "struct" 0))
-        (let field_val (Const 10))
-        (let whole_val (Vec2 (Const 20) (Const 30)))
+        (let field_val (IntToExpr (Const 10)))
+        (let whole_val (Vec2 (IntToExpr (Const 20)) (IntToExpr (Const 30))))
         (let with_field (StoreMem (AccessChain1 ptr 0) field_val mem))
         (let then_whole (StoreMem ptr whole_val with_field))
         (let just_whole (StoreMem ptr whole_val mem))
@@ -4318,9 +4301,9 @@ fn test_dce_image_write_after_image_write() {
             r#"
         (let mem (InitMem))
         (let img (Sym "image"))
-        (let coord (Vec2 (Const 0) (Const 0)))
-        (let data1 (Vec4 (Const 1) (Const 0) (Const 0) (Const 1)))
-        (let data2 (Vec4 (Const 0) (Const 1) (Const 0) (Const 1)))
+        (let coord (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+        (let data1 (Vec4 (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 1))))
+        (let data2 (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 1)) (IntToExpr (Const 0)) (IntToExpr (Const 1))))
         (let double_write (ImageWrite img coord data2 (ImageWrite img coord data1 mem)))
         (let single_write (ImageWrite img coord data2 mem))
     "#,
@@ -4348,8 +4331,8 @@ fn test_dce_atomic_store_after_atomic_store() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "atomic_var" 0))
-        (let v1 (Const 10))
-        (let v2 (Const 20))
+        (let v1 (IntToExpr (Const 10)))
+        (let v2 (IntToExpr (Const 20)))
         (let double_atomic (AtomicStore ptr v2 (AtomicStore ptr v1 mem)))
         (let single_atomic (AtomicStore ptr v2 mem))
     "#,
@@ -4375,7 +4358,7 @@ fn test_dce_group_all_constant_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (GroupAll (Const 1)))
+        (let result (GroupAll (BoolConst 1)))
     "#,
         )
         .unwrap();
@@ -4383,7 +4366,7 @@ fn test_dce_group_all_constant_true() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 1)))");
     assert!(check.is_ok(), "GroupAll(true) should be true");
 }
 
@@ -4396,7 +4379,7 @@ fn test_dce_group_all_constant_false() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (GroupAll (Const 0)))
+        (let result (GroupAll (BoolConst 0)))
     "#,
         )
         .unwrap();
@@ -4404,7 +4387,7 @@ fn test_dce_group_all_constant_false() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 0)))");
     assert!(check.is_ok(), "GroupAll(false) should be false");
 }
 
@@ -4417,7 +4400,7 @@ fn test_dce_group_any_constant_true() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (GroupAny (Const 1)))
+        (let result (GroupAny (BoolConst 1)))
     "#,
         )
         .unwrap();
@@ -4425,7 +4408,7 @@ fn test_dce_group_any_constant_true() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 1)))");
     assert!(check.is_ok(), "GroupAny(true) should be true");
 }
 
@@ -4438,7 +4421,7 @@ fn test_dce_group_any_constant_false() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (GroupAny (Const 0)))
+        (let result (GroupAny (BoolConst 0)))
     "#,
         )
         .unwrap();
@@ -4446,7 +4429,7 @@ fn test_dce_group_any_constant_false() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 0)))");
     assert!(check.is_ok(), "GroupAny(false) should be false");
 }
 
@@ -4459,7 +4442,7 @@ fn test_dce_group_all_equal_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (GroupAllEqual (Const 42)))
+        (let result (GroupAllEqual (IntToExpr (Const 42))))
     "#,
         )
         .unwrap();
@@ -4467,7 +4450,7 @@ fn test_dce_group_all_equal_constant() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 1)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 1)))");
     assert!(check.is_ok(), "GroupAllEqual(const) should be true");
 }
 
@@ -4482,9 +4465,9 @@ fn test_dce_merge_mem_same_stores() {
             None,
             r#"
         (let mem (InitMem))
-        (let cond (Sym "cond"))
+        (let cond (BSym "cond"))
         (let ptr (Var "x" 0))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let then_store (StoreMem ptr val mem))
         (let else_store (StoreMem ptr val mem))
         (let merged (MergeMem cond then_store else_store))
@@ -4518,9 +4501,9 @@ fn test_dce_end_to_end_dead_computation() {
 
         ; Complex dead code: store v1, then v2, then v3 to same location
         ; Only v3 matters
-        (let v1 (Const 10))
-        (let v2 (Const 20))
-        (let v3 (Const 30))
+        (let v1 (IntToExpr (Const 10)))
+        (let v2 (IntToExpr (Const 20)))
+        (let v3 (IntToExpr (Const 30)))
         (let m1 (StoreMem ptr v1 mem))
         (let m2 (StoreMem ptr v2 m1))
         (let m3 (StoreMem ptr v3 m2))
@@ -4551,10 +4534,10 @@ fn test_dce_nested_gamma_dead_branch() {
         .parse_and_run_program(
             None,
             r#"
-        (let cond (Sym "c"))
-        (let a (Const 1))
-        (let b (Const 2))
-        (let d (Const 4))
+        (let cond (BSym "c"))
+        (let a (IntToExpr (Const 1)))
+        (let b (IntToExpr (Const 2)))
+        (let d (IntToExpr (Const 4)))
         (let nested (Gamma cond (Gamma cond a b) d))
         (let simplified (Gamma cond a d))
     "#,
@@ -4601,7 +4584,7 @@ fn test_dce_derivative_of_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (DPdx (Const 42)))
+        (let result (DPdx (FConst 42.0)))
     "#,
         )
         .unwrap();
@@ -4609,7 +4592,7 @@ fn test_dce_derivative_of_constant() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (FConst 0.0)))");
     assert!(check.is_ok(), "DPdx of constant should be 0");
 }
 
@@ -4622,7 +4605,7 @@ fn test_dce_fwidth_of_constant() {
         .parse_and_run_program(
             None,
             r#"
-        (let result (Fwidth (Const 42)))
+        (let result (Fwidth (FConst 42.0)))
     "#,
         )
         .unwrap();
@@ -4630,7 +4613,7 @@ fn test_dce_fwidth_of_constant() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= result (Const 0)))");
+    let check = egraph.parse_and_run_program(None, "(check (= result (FConst 0.0)))");
     assert!(check.is_ok(), "Fwidth of constant should be 0");
 }
 
@@ -4644,9 +4627,9 @@ fn test_dce_undef_arithmetic_propagation() {
         .parse_and_run_program(
             None,
             r#"
-        (let add_undef (Add (Undef) (Undef)))
-        (let sub_undef (Sub (Undef) (Undef)))
-        (let neg_undef (Neg (Undef)))
+        (let add_undef (Add (ExprToInt (Undef)) (ExprToInt (Undef))))
+        (let sub_undef (Sub (ExprToInt (Undef)) (ExprToInt (Undef))))
+        (let neg_undef (Neg (ExprToInt (Undef))))
     "#,
         )
         .unwrap();
@@ -4655,13 +4638,13 @@ fn test_dce_undef_arithmetic_propagation() {
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= add_undef (Undef)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= add_undef (ExprToInt (Undef))))");
     assert!(check1.is_ok(), "Add(Undef, Undef) should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= sub_undef (Undef)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= sub_undef (ExprToInt (Undef))))");
     assert!(check2.is_ok(), "Sub(Undef, Undef) should be Undef");
 
-    let check3 = egraph.parse_and_run_program(None, "(check (= neg_undef (Undef)))");
+    let check3 = egraph.parse_and_run_program(None, "(check (= neg_undef (ExprToInt (Undef))))");
     assert!(check3.is_ok(), "Neg of Undef should be Undef");
 }
 
@@ -4675,10 +4658,10 @@ fn test_dce_undef_float_propagation() {
         .parse_and_run_program(
             None,
             r#"
-        (let fadd_undef (FAdd (Undef) (Undef)))
-        (let fmul_undef (FMul (Undef) (Undef)))
-        (let fneg_undef (FNeg (Undef)))
-        (let fabs_undef (FAbs (Undef)))
+        (let fadd_undef (FAdd (ExprToFloat (Undef)) (ExprToFloat (Undef))))
+        (let fmul_undef (FMul (ExprToFloat (Undef)) (ExprToFloat (Undef))))
+        (let fneg_undef (FNeg (ExprToFloat (Undef))))
+        (let fabs_undef (FAbs (ExprToFloat (Undef))))
     "#,
         )
         .unwrap();
@@ -4687,16 +4670,16 @@ fn test_dce_undef_float_propagation() {
         .parse_and_run_program(None, "(run-schedule (repeat 3 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= fadd_undef (Undef)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= fadd_undef (ExprToFloat (Undef))))");
     assert!(check1.is_ok(), "FAdd(Undef, Undef) should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= fmul_undef (Undef)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= fmul_undef (ExprToFloat (Undef))))");
     assert!(check2.is_ok(), "FMul(Undef, Undef) should be Undef");
 
-    let check3 = egraph.parse_and_run_program(None, "(check (= fneg_undef (Undef)))");
+    let check3 = egraph.parse_and_run_program(None, "(check (= fneg_undef (ExprToFloat (Undef))))");
     assert!(check3.is_ok(), "FNeg of Undef should be Undef");
 
-    let check4 = egraph.parse_and_run_program(None, "(check (= fabs_undef (Undef)))");
+    let check4 = egraph.parse_and_run_program(None, "(check (= fabs_undef (ExprToFloat (Undef))))");
     assert!(check4.is_ok(), "FAbs of Undef should be Undef");
 }
 
@@ -4709,8 +4692,8 @@ fn test_dce_undef_comparison_propagation() {
         .parse_and_run_program(
             None,
             r#"
-        (let eq_undef (Eq (Undef) (Undef)))
-        (let ne_undef (Ne (Undef) (Undef)))
+        (let eq_undef (Eq (ExprToInt (Undef)) (ExprToInt (Undef))))
+        (let ne_undef (Ne (ExprToInt (Undef)) (ExprToInt (Undef))))
     "#,
         )
         .unwrap();
@@ -4718,10 +4701,10 @@ fn test_dce_undef_comparison_propagation() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= eq_undef (Undef)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= eq_undef (ExprToBool (Undef))))");
     assert!(check1.is_ok(), "Eq(Undef, Undef) should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= ne_undef (Undef)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= ne_undef (ExprToBool (Undef))))");
     assert!(check2.is_ok(), "Ne(Undef, Undef) should be Undef");
 }
 
@@ -4734,9 +4717,9 @@ fn test_dce_gamma_undef_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let t (Const 1))
-        (let f (Const 0))
-        (let result (Gamma (Undef) t f))
+        (let t (IntToExpr (Const 1)))
+        (let f (IntToExpr (Const 0)))
+        (let result (Gamma (ExprToBool (Undef)) t f))
     "#,
         )
         .unwrap();
@@ -4758,7 +4741,7 @@ fn test_dce_store_to_undef_pointer() {
             None,
             r#"
         (let mem (InitMem))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let store_undef_ptr (StoreMem (Undef) val mem))
     "#,
         )
@@ -4782,9 +4765,9 @@ fn test_dce_triple_store_elimination() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "x" 0))
-        (let v1 (Const 1))
-        (let v2 (Const 2))
-        (let v3 (Const 3))
+        (let v1 (IntToExpr (Const 1)))
+        (let v2 (IntToExpr (Const 2)))
+        (let v3 (IntToExpr (Const 3)))
         (let triple_store (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 mem))))
         (let single_store (StoreMem ptr v3 mem))
     "#,
@@ -4812,10 +4795,10 @@ fn test_dce_quadruple_store_elimination() {
             r#"
         (let mem (InitMem))
         (let ptr (Var "x" 0))
-        (let v1 (Const 1))
-        (let v2 (Const 2))
-        (let v3 (Const 3))
-        (let v4 (Const 4))
+        (let v1 (IntToExpr (Const 1)))
+        (let v2 (IntToExpr (Const 2)))
+        (let v3 (IntToExpr (Const 3)))
+        (let v4 (IntToExpr (Const 4)))
         (let quad_store (StoreMem ptr v4 (StoreMem ptr v3 (StoreMem ptr v2 (StoreMem ptr v1 mem)))))
         (let single_store (StoreMem ptr v4 mem))
     "#,
@@ -4841,7 +4824,7 @@ fn test_dce_nested_effgamma_same_condition() {
         .parse_and_run_program(
             None,
             r#"
-        (let cond (Sym "c"))
+        (let cond (BSym "c"))
         (let a (Pure))
         (let b (Unreachable))
         (let d (Pure))
@@ -4870,9 +4853,9 @@ fn test_dce_derivative_of_undef() {
         .parse_and_run_program(
             None,
             r#"
-        (let dpdx_undef (DPdx (Undef)))
-        (let dpdy_undef (DPdy (Undef)))
-        (let fwidth_undef (Fwidth (Undef)))
+        (let dpdx_undef (DPdx (ExprToFloat (Undef))))
+        (let dpdy_undef (DPdy (ExprToFloat (Undef))))
+        (let fwidth_undef (Fwidth (ExprToFloat (Undef))))
     "#,
         )
         .unwrap();
@@ -4880,13 +4863,13 @@ fn test_dce_derivative_of_undef() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= dpdx_undef (Const 0)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= dpdx_undef (FConst 0.0)))");
     assert!(check1.is_ok(), "DPdx of Undef should be 0");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= dpdy_undef (Const 0)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= dpdy_undef (FConst 0.0)))");
     assert!(check2.is_ok(), "DPdy of Undef should be 0");
 
-    let check3 = egraph.parse_and_run_program(None, "(check (= fwidth_undef (Const 0)))");
+    let check3 = egraph.parse_and_run_program(None, "(check (= fwidth_undef (FConst 0.0)))");
     assert!(check3.is_ok(), "Fwidth of Undef should be 0");
 }
 
@@ -4899,8 +4882,8 @@ fn test_dce_subgroup_ops_on_undef() {
         .parse_and_run_program(
             None,
             r#"
-        (let group_all_undef (GroupAll (Undef)))
-        (let group_any_undef (GroupAny (Undef)))
+        (let group_all_undef (GroupAll (ExprToBool (Undef))))
+        (let group_any_undef (GroupAny (ExprToBool (Undef))))
         (let broadcast_undef (GroupBroadcastFirst (Undef)))
     "#,
         )
@@ -4909,10 +4892,10 @@ fn test_dce_subgroup_ops_on_undef() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= group_all_undef (Undef)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= group_all_undef (ExprToBool (Undef))))");
     assert!(check1.is_ok(), "GroupAll of Undef should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= group_any_undef (Undef)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= group_any_undef (ExprToBool (Undef))))");
     assert!(check2.is_ok(), "GroupAny of Undef should be Undef");
 
     let check3 = egraph.parse_and_run_program(None, "(check (= broadcast_undef (Undef)))");
@@ -4931,8 +4914,8 @@ fn test_dce_undef_type_conversions() {
         .parse_and_run_program(
             None,
             r#"
-        (let ftos (ConvertFToS (Undef)))
-        (let stof (ConvertSToF (Undef)))
+        (let ftos (ConvertFToS (ExprToFloat (Undef))))
+        (let stof (ConvertSToF (ExprToInt (Undef))))
         (let bitcast (Bitcast (Undef)))
     "#,
         )
@@ -4941,10 +4924,10 @@ fn test_dce_undef_type_conversions() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= ftos (Undef)))");
+    let check1 = egraph.parse_and_run_program(None, "(check (= ftos (ExprToInt (Undef))))");
     assert!(check1.is_ok(), "ConvertFToS of Undef should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= stof (Undef)))");
+    let check2 = egraph.parse_and_run_program(None, "(check (= stof (ExprToFloat (Undef))))");
     assert!(check2.is_ok(), "ConvertSToF of Undef should be Undef");
 
     let check3 = egraph.parse_and_run_program(None, "(check (= bitcast (Undef)))");
@@ -5022,7 +5005,7 @@ fn test_subst_arg_match() {
         .parse_and_run_program(
             None,
             r#"
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst (Arg 0) 0 val))
     "#,
         )
@@ -5044,7 +5027,7 @@ fn test_subst_arg_no_match() {
         .parse_and_run_program(
             None,
             r#"
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let arg1 (Arg 1))
         (let root (Subst arg1 0 val))
     "#,
@@ -5068,8 +5051,8 @@ fn test_subst_const() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Const 100))
-        (let val (Const 42))
+        (let c (IntToExpr (Const 100)))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst c 0 val))
     "#,
         )
@@ -5095,7 +5078,7 @@ fn test_subst_sym() {
             None,
             r#"
         (let s (Sym "x"))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst s 0 val))
     "#,
         )
@@ -5118,7 +5101,7 @@ fn test_subst_undef() {
             None,
             r#"
         (let u (Undef))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst u 0 val))
     "#,
         )
@@ -5140,10 +5123,10 @@ fn test_subst_add() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Const 1)))
-        (let val (Const 5))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 1))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Add (Const 5) (Const 1)))
+        (let expected (IntToExpr (Add (Const 5) (Const 1))))
     "#,
         )
         .unwrap();
@@ -5168,10 +5151,10 @@ fn test_subst_add_fold() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Const 1)))
-        (let val (Const 5))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 1))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Const 6))
+        (let expected (IntToExpr (Const 6)))
     "#,
         )
         .unwrap();
@@ -5195,10 +5178,10 @@ fn test_subst_mul() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Mul (Arg 0) (Arg 0)))
-        (let val (Const 3))
+        (let body (IntToExpr (Mul (ExprToInt (Arg 0)) (ExprToInt (Arg 0)))))
+        (let val (IntToExpr (Const 3)))
         (let root (Subst body 0 val))
-        (let expected (Const 9))
+        (let expected (IntToExpr (Const 9)))
     "#,
         )
         .unwrap();
@@ -5225,10 +5208,10 @@ fn test_subst_nested() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Mul (Arg 0) (Const 2)) (Arg 0)))
-        (let val (Const 3))
+        (let body (IntToExpr (Add (Mul (ExprToInt (Arg 0)) (Const 2)) (ExprToInt (Arg 0)))))
+        (let val (IntToExpr (Const 3)))
         (let root (Subst body 0 val))
-        (let expected (Const 9))
+        (let expected (IntToExpr (Const 9)))
     "#,
         )
         .unwrap();
@@ -5249,11 +5232,11 @@ fn test_subst_gamma() {
         .parse_and_run_program(
             None,
             r#"
-        (let cond (Sym "cond"))
-        (let body (Gamma cond (Arg 0) (Const 0)))
-        (let val (Const 42))
+        (let cond (BSym "cond"))
+        (let body (Gamma cond (Arg 0) (IntToExpr (Const 0))))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst body 0 val))
-        (let expected (Gamma cond (Const 42) (Const 0)))
+        (let expected (Gamma cond (IntToExpr (Const 42)) (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -5274,10 +5257,10 @@ fn test_subst_bitwise() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (BitAnd (Arg 0) (Const 255)))
-        (let val (Const 291))
+        (let body (IntToExpr (BitAnd (ExprToInt (Arg 0)) (Const 255))))
+        (let val (IntToExpr (Const 291)))
         (let root (Subst body 0 val))
-        (let expected (Const 35))
+        (let expected (IntToExpr (Const 35)))
     "#,
         )
         .unwrap();
@@ -5302,10 +5285,10 @@ fn test_subst_comparison() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (SLt (Arg 0) (Const 10)))
-        (let val (Const 5))
+        (let body (BoolToExpr (SLt (ExprToInt (Arg 0)) (Const 10))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (BoolConst 1))
+        (let expected (BoolToExpr (BoolConst 1)))
     "#,
         )
         .unwrap();
@@ -5330,9 +5313,9 @@ fn test_subst2_basic() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Arg 1)))
-        (let root (Subst2 body (Const 3) (Const 4)))
-        (let expected (Const 7))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (ExprToInt (Arg 1)))))
+        (let root (Subst2 body (IntToExpr (Const 3)) (IntToExpr (Const 4))))
+        (let expected (IntToExpr (Const 7)))
     "#,
         )
         .unwrap();
@@ -5357,9 +5340,9 @@ fn test_subst3_basic() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Add (Arg 0) (Arg 1)) (Arg 2)))
-        (let root (Subst3 body (Const 1) (Const 2) (Const 3)))
-        (let expected (Const 6))
+        (let body (IntToExpr (Add (Add (ExprToInt (Arg 0)) (ExprToInt (Arg 1))) (ExprToInt (Arg 2)))))
+        (let root (Subst3 body (IntToExpr (Const 1)) (IntToExpr (Const 2)) (IntToExpr (Const 3))))
+        (let expected (IntToExpr (Const 6)))
     "#,
         )
         .unwrap();
@@ -5383,9 +5366,9 @@ fn test_subst4_basic() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Add (Arg 0) (Arg 1)) (Add (Arg 2) (Arg 3))))
-        (let root (Subst4 body (Const 1) (Const 2) (Const 3) (Const 4)))
-        (let expected (Const 10))
+        (let body (IntToExpr (Add (Add (ExprToInt (Arg 0)) (ExprToInt (Arg 1))) (Add (ExprToInt (Arg 2)) (ExprToInt (Arg 3))))))
+        (let root (Subst4 body (IntToExpr (Const 1)) (IntToExpr (Const 2)) (IntToExpr (Const 3)) (IntToExpr (Const 4))))
+        (let expected (IntToExpr (Const 10)))
     "#,
         )
         .unwrap();
@@ -5410,10 +5393,10 @@ fn test_subst_with_symbolic() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Const 1)))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 1))))
         (let val (Sym "x"))
         (let root (Subst body 0 val))
-        (let expected (Add (Sym "x") (Const 1)))
+        (let expected (IntToExpr (Add (ExprToInt (Sym "x")) (Const 1))))
     "#,
         )
         .unwrap();
@@ -5437,10 +5420,10 @@ fn test_subst_preserves_multiple_args() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Arg 1)))
-        (let val (Const 5))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (ExprToInt (Arg 1)))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Add (Const 5) (Arg 1)))
+        (let expected (IntToExpr (Add (Const 5) (ExprToInt (Arg 1)))))
     "#,
         )
         .unwrap();
@@ -5461,10 +5444,10 @@ fn test_subst_neg() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Neg (Arg 0)))
-        (let val (Const 5))
+        (let body (IntToExpr (Neg (ExprToInt (Arg 0)))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Const -5))
+        (let expected (IntToExpr (Const -5)))
     "#,
         )
         .unwrap();
@@ -5485,10 +5468,10 @@ fn test_subst_sub() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Sub (Arg 0) (Const 3)))
-        (let val (Const 10))
+        (let body (IntToExpr (Sub (ExprToInt (Arg 0)) (Const 3))))
+        (let val (IntToExpr (Const 10)))
         (let root (Subst body 0 val))
-        (let expected (Const 7))
+        (let expected (IntToExpr (Const 7)))
     "#,
         )
         .unwrap();
@@ -5509,10 +5492,10 @@ fn test_subst_shift() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Shl (Arg 0) (Const 2)))
-        (let val (Const 3))
+        (let body (IntToExpr (Shl (ExprToInt (Arg 0)) (Const 2))))
+        (let val (IntToExpr (Const 3)))
         (let root (Subst body 0 val))
-        (let expected (Const 12))
+        (let expected (IntToExpr (Const 12)))
     "#,
         )
         .unwrap();
@@ -5536,10 +5519,10 @@ fn test_subst_min_max() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (SMin (Arg 0) (Const 10)))
-        (let val (Const 5))
+        (let body (IntToExpr (SMin (ExprToInt (Arg 0)) (Const 10))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Const 5))
+        (let expected (IntToExpr (Const 5)))
     "#,
         )
         .unwrap();
@@ -5562,10 +5545,10 @@ fn test_subst_deeply_nested() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Sub (Mul (Add (Arg 0) (Const 1)) (Const 2)) (Arg 0)))
-        (let val (Const 5))
+        (let body (IntToExpr (Sub (Mul (Add (ExprToInt (Arg 0)) (Const 1)) (Const 2)) (ExprToInt (Arg 0)))))
+        (let val (IntToExpr (Const 5)))
         (let root (Subst body 0 val))
-        (let expected (Const 7))
+        (let expected (IntToExpr (Const 7)))
     "#,
         )
         .unwrap();
@@ -5586,7 +5569,7 @@ fn test_liveness_through_subst() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (Add (Arg 0) (Const 1)))
+        (let body (IntToExpr (Add (ExprToInt (Arg 0)) (Const 1))))
         (let val (Sym "x"))
         (let root (Subst body 0 val))
         (Live root)
@@ -5615,7 +5598,7 @@ fn test_subst_copy_object() {
             None,
             r#"
         (let body (CopyObject (Arg 0)))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let root (Subst body 0 val))
     "#,
         )
@@ -5640,10 +5623,10 @@ fn test_subst_abs() {
         .parse_and_run_program(
             None,
             r#"
-        (let body (SAbs (Arg 0)))
-        (let val (Const -5))
+        (let body (IntToExpr (SAbs (ExprToInt (Arg 0)))))
+        (let val (IntToExpr (Const -5)))
         (let root (Subst body 0 val))
-        (let expected (Const 5))
+        (let expected (IntToExpr (Const 5)))
     "#,
         )
         .unwrap();
@@ -5672,7 +5655,7 @@ fn test_dead_insert_matching_index() {
             None,
             r#"
         (let v (Sym "vec"))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let inserted (VecInsert v val 0))
         (let extracted (VecExtract inserted 0))
     "#,
@@ -5700,7 +5683,7 @@ fn test_dead_insert_nonmatching_index() {
             None,
             r#"
         (let v (Sym "vec"))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let inserted (VecInsert v val 0))
         (let extracted (VecExtract inserted 1))
         (let expected (VecExtract v 1))
@@ -5729,8 +5712,8 @@ fn test_dead_insert_chain() {
             None,
             r#"
         (let v (Sym "vec"))
-        (let v1 (Const 1))
-        (let v2 (Const 2))
+        (let v1 (IntToExpr (Const 1)))
+        (let v2 (IntToExpr (Const 2)))
         (let ins1 (VecInsert v v1 0))
         (let ins2 (VecInsert ins1 v2 1))
         (let extracted (VecExtract ins2 2))
@@ -5838,7 +5821,7 @@ fn test_load_after_store_basic() {
             None,
             r#"
         (let ptr (Sym "ptr"))
-        (let val (Const 42))
+        (let val (IntToExpr (Const 42)))
         (let prev (Sym "initial_mem"))
         (let mem_after_store (StoreMem ptr val prev))
         (let loaded (Load ptr mem_after_store))
@@ -5867,8 +5850,8 @@ fn test_store_after_store() {
             None,
             r#"
         (let ptr (Sym "ptr"))
-        (let v1 (Const 1))
-        (let v2 (Const 2))
+        (let v1 (IntToExpr (Const 1)))
+        (let v2 (IntToExpr (Const 2)))
         (let prev (Sym "initial_mem"))
         (let mem1 (StoreMem ptr v1 prev))
         (let mem2 (StoreMem ptr v2 mem1))
@@ -5991,7 +5974,7 @@ fn test_vec_insert_extract_nonmatching() {
             None,
             r#"
         (let v (Sym "vec"))
-        (let x (Const 99))
+        (let x (IntToExpr (Const 99)))
         (let inserted (VecInsert v x 0))
         (let extracted (VecExtract inserted 1))
         (let expected (VecExtract v 1))
@@ -6019,7 +6002,7 @@ fn test_vec_insert_extract_matching() {
             None,
             r#"
         (let v (Sym "vec"))
-        (let x (Const 99))
+        (let x (IntToExpr (Const 99)))
         (let inserted (VecInsert v x 0))
         (let extracted (VecExtract inserted 0))
     "#,
@@ -6073,7 +6056,7 @@ fn test_load_through_access_chain_store() {
             None,
             r#"
         (let ptr (Sym "struct_ptr"))
-        (let val (Const 123))
+        (let val (IntToExpr (Const 123)))
         (let prev (Sym "mem"))
         (let field_ptr (AccessChain1 ptr 0))
         (let mem_after_store (StoreMem field_ptr val prev))
@@ -6103,8 +6086,8 @@ fn test_vec_insert_chain_to_construct() {
             None,
             r#"
         (let dummy (Undef))
-        (let v0 (Const 10))
-        (let v1 (Const 20))
+        (let v0 (IntToExpr (Const 10)))
+        (let v1 (IntToExpr (Const 20)))
         (let ins1 (VecInsert dummy v0 0))
         (let ins2 (VecInsert ins1 v1 1))
         (let expected (Vec2 v0 v1))
@@ -6152,8 +6135,8 @@ fn test_field_store_decomposition() {
             None,
             r#"
         (let ptr (Sym "ptr"))
-        (let a (Const 1))
-        (let b (Const 2))
+        (let a (IntToExpr (Const 1)))
+        (let b (IntToExpr (Const 2)))
         (let prev (Sym "mem"))
         (let vec_store (StoreMem ptr (Vec2 a b) prev))
         (let expected (StoreMem (AccessChain1 ptr 1) b
@@ -6208,7 +6191,7 @@ fn test_matrix_times_scalar_identity() {
             None,
             r#"
         (let m (Sym "matrix"))
-        (let root (MatTimesScalar m (Const 1)))
+        (let root (MatTimesScalar m (IntToExpr (Const 1))))
     "#,
         )
         .unwrap();
@@ -6378,8 +6361,8 @@ fn test_matrix_scalar_multiply_chain() {
             None,
             r#"
         (let m (Sym "matrix"))
-        (let root (MatTimesScalar (MatTimesScalar m (Const 2)) (Const 3)))
-        (let expected (MatTimesScalar m (Const 6)))
+        (let root (MatTimesScalar (MatTimesScalar m (IntToExpr (Const 2))) (IntToExpr (Const 3))))
+        (let expected (MatTimesScalar m (IntToExpr (Const 6))))
     "#,
         )
         .unwrap();
@@ -6449,7 +6432,7 @@ fn test_matrix_determinant_of_inverse() {
             r#"
         (let m (Sym "matrix"))
         (let root (Determinant (MatInverse m)))
-        (let expected (FDiv (Const 1) (Determinant m)))
+        (let expected (FDiv (FConst 1.0) (Determinant m)))
     "#,
         )
         .unwrap();
@@ -6571,7 +6554,7 @@ fn test_matrix_gamma_vector_distribution() {
         (let m (Sym "matrix"))
         (let v1 (Sym "vec1"))
         (let v2 (Sym "vec2"))
-        (let c (Sym "cond"))
+        (let c (BSym "cond"))
         (let root (Gamma c (MatTimesVec m v1) (MatTimesVec m v2)))
         (let expected (MatTimesVec m (Gamma c v1 v2)))
     "#,
@@ -6598,9 +6581,9 @@ fn test_matrix_gamma_scalar_distribution() {
             None,
             r#"
         (let m (Sym "matrix"))
-        (let s1 (Const 2))
-        (let s2 (Const 3))
-        (let c (Sym "cond"))
+        (let s1 (IntToExpr (Const 2)))
+        (let s2 (IntToExpr (Const 3)))
+        (let c (BSym "cond"))
         (let root (Gamma c (MatTimesScalar m s1) (MatTimesScalar m s2)))
         (let expected (MatTimesScalar m (Gamma c s1 s2)))
     "#,
@@ -6658,9 +6641,9 @@ fn test_mem2reg_merge_mem_both_branches_store() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let cond (Sym "c"))
-        (let val1 (Const 10))
-        (let val2 (Const 20))
+        (let cond (BSym "c"))
+        (let val1 (IntToExpr (Const 10)))
+        (let val2 (IntToExpr (Const 20)))
         (let prev_mem (InitMem))
         (let true_mem (StoreMem ptr val1 prev_mem))
         (let false_mem (StoreMem ptr val2 prev_mem))
@@ -6691,8 +6674,8 @@ fn test_mem2reg_merge_mem_true_branch_stores() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let cond (Sym "c"))
-        (let new_val (Const 42))
+        (let cond (BSym "c"))
+        (let new_val (IntToExpr (Const 42)))
         (let prev_mem (InitMem))
         (let true_mem (StoreMem ptr new_val prev_mem))
         ; false branch doesn't modify ptr
@@ -6723,8 +6706,8 @@ fn test_mem2reg_merge_mem_false_branch_stores() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let cond (Sym "c"))
-        (let new_val (Const 42))
+        (let cond (BSym "c"))
+        (let new_val (IntToExpr (Const 42)))
         (let prev_mem (InitMem))
         (let false_mem (StoreMem ptr new_val prev_mem))
         ; true branch doesn't modify ptr
@@ -6755,7 +6738,7 @@ fn test_mem2reg_loop_variable_promotion() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let loop_cond (Sym "continue"))
+        (let loop_cond (BSym "continue"))
         (let loop_val (Sym "x"))
         (let init_mem (InitMem))
         (let body_mem (StoreMem ptr loop_val init_mem))
@@ -6786,14 +6769,14 @@ fn test_mem2reg_loop_invariant_hoist() {
             None,
             r#"
         (let ptr (Var "p" 0))
-        (let loop_cond (Sym "continue"))
-        (let invariant_val (LoopInvariant (Const 100)))
+        (let loop_cond (BSym "continue"))
+        (let invariant_val (LoopInvariant (IntToExpr (Const 100))))
         (let init_mem (InitMem))
         (let body_mem (StoreMem ptr invariant_val init_mem))
         (let loop_mem (LoopMem loop_cond body_mem init_mem))
         (let root (Load ptr loop_mem))
         ; Expected: the loop-invariant value itself
-        (let expected (LoopInvariant (Const 100)))
+        (let expected (LoopInvariant (IntToExpr (Const 100))))
     "#,
         )
         .unwrap();
@@ -6871,10 +6854,10 @@ fn test_licm_fmod_invariant() {
         .parse_and_run_program(
             None,
             r#"
-        (let a (LoopInvariant (Sym "a")))
-        (let b (LoopInvariant (Sym "b")))
+        (let a (LoopInvariantF (FSym "a")))
+        (let b (LoopInvariantF (FSym "b")))
         (let root (FMod a b))
-        (let expected (LoopInvariant (FMod (Sym "a") (Sym "b"))))
+        (let expected (LoopInvariantF (FMod (FSym "a") (FSym "b"))))
     "#,
         )
         .unwrap();
@@ -7004,11 +6987,11 @@ fn test_licm_gamma_all_invariant() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (LoopInvariant (Sym "cond")))
-        (let t (LoopInvariant (Const 1)))
-        (let f (LoopInvariant (Const 0)))
+        (let c (LoopInvariantB (BSym "cond")))
+        (let t (LoopInvariant (IntToExpr (Const 1))))
+        (let f (LoopInvariant (IntToExpr (Const 0))))
         (let root (Gamma c t f))
-        (let expected (LoopInvariant (Gamma (Sym "cond") (Const 1) (Const 0))))
+        (let expected (LoopInvariant (Gamma (BSym "cond") (IntToExpr (Const 1)) (IntToExpr (Const 0)))))
     "#,
         )
         .unwrap();
@@ -7138,7 +7121,7 @@ fn test_boolconst_reflexive_eq() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (Eq x x))
         (let expected (BoolConst 1))
     "#,
@@ -7161,7 +7144,7 @@ fn test_boolconst_reflexive_ne() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (ISym "x"))
         (let root (Ne x x))
         (let expected (BoolConst 0))
     "#,
@@ -7186,9 +7169,9 @@ fn test_boolconst_gamma_logand_type_safety() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
+        (let c (BSym "cond"))
         (let x (Sym "x"))
-        (let root (Gamma c x (Const 0)))
+        (let root (Gamma c x (IntToExpr (Const 0))))
     "#,
         )
         .unwrap();
@@ -7213,10 +7196,9 @@ fn test_boolconst_gamma_logand_allowed() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
+        (let c (BSym "cond"))
         (let x (Sym "x"))
-        (set (ExprType x) (BoolType))
-        (let root (Gamma c x (BoolConst 0)))
+        (let root (Gamma c x (BoolToExpr (BoolConst 0))))
     "#,
         )
         .unwrap();
@@ -7224,7 +7206,7 @@ fn test_boolconst_gamma_logand_allowed() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root (LogAnd c x)))");
+    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr (LogAnd c (ExprToBool x)))))");
     assert!(
         check.is_ok(),
         "Gamma(c, x, BoolConst(0)) should simplify to LogAnd(c, x) when x is BoolType"
@@ -7240,9 +7222,9 @@ fn test_boolconst_gamma_logor_type_safety() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
+        (let c (BSym "cond"))
         (let x (Sym "x"))
-        (let root (Gamma c (Const 1) x))
+        (let root (Gamma c (IntToExpr (Const 1)) x))
     "#,
         )
         .unwrap();
@@ -7266,10 +7248,9 @@ fn test_boolconst_gamma_logor_allowed() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
+        (let c (BSym "cond"))
         (let x (Sym "x"))
-        (set (ExprType x) (BoolType))
-        (let root (Gamma c (BoolConst 1) x))
+        (let root (Gamma c (BoolToExpr (BoolConst 1)) x))
     "#,
         )
         .unwrap();
@@ -7277,7 +7258,7 @@ fn test_boolconst_gamma_logor_allowed() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root (LogOr c x)))");
+    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr (LogOr c (ExprToBool x)))))");
     assert!(
         check.is_ok(),
         "Gamma(c, BoolConst(1), x) should simplify to LogOr(c, x)"
@@ -7293,8 +7274,8 @@ fn test_boolconst_gamma_bool_identity() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
-        (let root (Gamma c (BoolConst 1) (BoolConst 0)))
+        (let c (BSym "cond"))
+        (let root (Gamma c (BoolToExpr (BoolConst 1)) (BoolToExpr (BoolConst 0))))
     "#,
         )
         .unwrap();
@@ -7302,7 +7283,7 @@ fn test_boolconst_gamma_bool_identity() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root c))");
+    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr c)))");
     assert!(
         check.is_ok(),
         "Gamma(c, BoolConst(1), BoolConst(0)) should simplify to c"
@@ -7318,8 +7299,8 @@ fn test_boolconst_gamma_bool_negation() {
         .parse_and_run_program(
             None,
             r#"
-        (let c (Sym "cond"))
-        (let root (Gamma c (BoolConst 0) (BoolConst 1)))
+        (let c (BSym "cond"))
+        (let root (Gamma c (BoolToExpr (BoolConst 0)) (BoolToExpr (BoolConst 1))))
     "#,
         )
         .unwrap();
@@ -7327,7 +7308,7 @@ fn test_boolconst_gamma_bool_negation() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root (LogNot c)))");
+    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr (LogNot c))))");
     assert!(
         check.is_ok(),
         "Gamma(c, BoolConst(0), BoolConst(1)) should simplify to LogNot(c)"
@@ -7343,7 +7324,7 @@ fn test_boolconst_logical_complement() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (BSym "x"))
         (let root (LogAnd x (LogNot x)))
         (let expected (BoolConst 0))
     "#,
@@ -7366,7 +7347,7 @@ fn test_boolconst_logical_tautology() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "x"))
+        (let x (BSym "x"))
         (let root (LogOr x (LogNot x)))
         (let expected (BoolConst 1))
     "#,
@@ -7389,7 +7370,7 @@ fn test_boolconst_float_comparison_reflexive() {
         .parse_and_run_program(
             None,
             r#"
-        (let x (Sym "f"))
+        (let x (FSym "f"))
         (let root (FOrdEq x x))
         (let expected (BoolConst 1))
     "#,

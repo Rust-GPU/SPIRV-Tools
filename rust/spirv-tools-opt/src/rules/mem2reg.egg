@@ -39,6 +39,8 @@
 ; Load from merged memory state = Gamma of values from both branches
 ; If we stored v1 in true branch and v2 in false branch to same ptr,
 ; loading after merge gives Gamma(cond, v1, v2)
+; Note: MergeMem(BoolExpr, Expr, Expr) - condition is BoolExpr
+; Note: Gamma(BoolExpr, Expr, Expr) -> Expr - condition is BoolExpr
 (rule ((= e (Load ptr (MergeMem cond (StoreMem ptr v1 s1) (StoreMem ptr v2 s2)))))
       ((union e (Gamma cond v1 v2))))
 
@@ -57,6 +59,8 @@
 
 ; Load from loop memory state = loop variable (initial value + update)
 ; LoopMem represents the memory state after each loop iteration
+; Note: LoopMem(BoolExpr, Expr, Expr) - condition is BoolExpr
+; Note: Theta(BoolExpr, Expr, Expr) -> Expr - condition is BoolExpr
 (rule ((= e (Load ptr (LoopMem cond (StoreMem ptr val body_mem) init_mem))))
       ((union e (Theta cond val (Load ptr init_mem)))))
 

@@ -6,6 +6,10 @@
 ; - Gamma nodes: Conditional selection (replaces if-then-else + phi)
 ; - Theta nodes: Tail-controlled loops (replaces while loops + phi)
 ; - Effects: Side effects and control flow
+;
+; Uses typed sorts: Gamma/GammaI/GammaF/GammaB, Select/SelectI/SelectF/SelectB,
+; If/IfI/IfF/IfB, Theta/ThetaI/ThetaF/ThetaB, LoopInvariant/LoopInvariantI/
+; LoopInvariantF/LoopInvariantB, LoopVar/LoopVarI/LoopVarF/LoopVarB.
 
 ; =============================================================================
 ; Gamma/Select Equivalence
@@ -15,55 +19,125 @@
 ; ONE-DIRECTIONAL: Convert Select/If to Gamma (canonical form), never the reverse
 (rule ((= e (Select c t f)))
       ((union e (Gamma c t f))))
+(rule ((= e (SelectI c t f)))
+      ((union e (GammaI c t f))))
+(rule ((= e (SelectF c t f)))
+      ((union e (GammaF c t f))))
+(rule ((= e (SelectB c t f)))
+      ((union e (GammaB c t f))))
 (rule ((= e (If c t f)))
       ((union e (Gamma c t f))))
+(rule ((= e (IfI c t f)))
+      ((union e (GammaI c t f))))
+(rule ((= e (IfF c t f)))
+      ((union e (GammaF c t f))))
+(rule ((= e (IfB c t f)))
+      ((union e (GammaB c t f))))
 
 ; =============================================================================
 ; RVSDG Gamma (Conditional) Rewrite Rules
 ; =============================================================================
 
 ; Gamma with constant condition - ONE-DIRECTIONAL
-; Accept both Const and BoolConst since conditions are always boolean
-; but may be represented as either through constant folding
-(rule ((= e (Gamma (Const 0) t f)))
-      ((union e f)))
-(rule ((= e (Gamma (Const 1) t f)))
-      ((union e t)))
+; BoolConst is the only valid constant for BoolExpr conditions
 (rule ((= e (Gamma (BoolConst 0) t f)))
       ((union e f)))
 (rule ((= e (Gamma (BoolConst 1) t f)))
       ((union e t)))
+(rule ((= e (GammaI (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (GammaI (BoolConst 1) t f)))
+      ((union e t)))
+(rule ((= e (GammaF (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (GammaF (BoolConst 1) t f)))
+      ((union e t)))
+(rule ((= e (GammaB (BoolConst 0) t f)))
+      ((union e f)))
+(rule ((= e (GammaB (BoolConst 1) t f)))
+      ((union e t)))
+
+; Push Gamma through bridge constructors into typed Gamma variants.
+; When both arms have the same bridge type, convert to the typed Gamma.
+; This enables typed Gamma rules (GammaB/GammaI/GammaF) to fire.
+(rule ((= e (Gamma c (IntToExpr t) (IntToExpr f))))
+      ((union e (IntToExpr (GammaI c t f)))))
+(rule ((= e (Gamma c (FloatToExpr t) (FloatToExpr f))))
+      ((union e (FloatToExpr (GammaF c t f)))))
+(rule ((= e (Gamma c (BoolToExpr t) (BoolToExpr f))))
+      ((union e (BoolToExpr (GammaB c t f)))))
+
+; When one arm is BoolToExpr, the result must be boolean - convert other arm too
+(rule ((= e (Gamma c x (BoolToExpr f))))
+      ((union e (BoolToExpr (GammaB c (ExprToBool x) f)))))
+(rule ((= e (Gamma c (BoolToExpr t) x)))
+      ((union e (BoolToExpr (GammaB c t (ExprToBool x))))))
 
 ; Gamma with same true/false values - ONE-DIRECTIONAL
 (rule ((= e (Gamma c x x)))
+      ((union e x)))
+(rule ((= e (GammaI c x x)))
+      ((union e x)))
+(rule ((= e (GammaF c x x)))
+      ((union e x)))
+(rule ((= e (GammaB c x x)))
       ((union e x)))
 
 ; Gamma with negated condition - ONE-DIRECTIONAL
 ; Only simplify LogNot out of condition, never put it back
 (rule ((= e (Gamma (LogNot c) t f)))
       ((union e (Gamma c f t))))
+(rule ((= e (GammaI (LogNot c) t f)))
+      ((union e (GammaI c f t))))
+(rule ((= e (GammaF (LogNot c) t f)))
+      ((union e (GammaF c f t))))
+(rule ((= e (GammaB (LogNot c) t f)))
+      ((union e (GammaB c f t))))
 
 ; Nested Gamma simplification (same condition) - ONE-DIRECTIONAL
 (rule ((= e (Gamma c (Gamma c a b) d)))
       ((union e (Gamma c a d))))
 (rule ((= e (Gamma c d (Gamma c a b))))
       ((union e (Gamma c d b))))
+(rule ((= e (GammaI c (GammaI c a b) d)))
+      ((union e (GammaI c a d))))
+(rule ((= e (GammaI c d (GammaI c a b))))
+      ((union e (GammaI c d b))))
+(rule ((= e (GammaF c (GammaF c a b) d)))
+      ((union e (GammaF c a d))))
+(rule ((= e (GammaF c d (GammaF c a b))))
+      ((union e (GammaF c d b))))
+(rule ((= e (GammaB c (GammaB c a b) d)))
+      ((union e (GammaB c a d))))
+(rule ((= e (GammaB c d (GammaB c a b))))
+      ((union e (GammaB c d b))))
 
 ; Gamma with BoolConst condition and negated condition
 (rule ((= e (Gamma (LogNot (BoolConst 0)) t f)))
       ((union e t)))
 (rule ((= e (Gamma (LogNot (BoolConst 1)) t f)))
       ((union e f)))
+(rule ((= e (GammaI (LogNot (BoolConst 0)) t f)))
+      ((union e t)))
+(rule ((= e (GammaI (LogNot (BoolConst 1)) t f)))
+      ((union e f)))
+(rule ((= e (GammaF (LogNot (BoolConst 0)) t f)))
+      ((union e t)))
+(rule ((= e (GammaF (LogNot (BoolConst 1)) t f)))
+      ((union e f)))
+(rule ((= e (GammaB (LogNot (BoolConst 0)) t f)))
+      ((union e t)))
+(rule ((= e (GammaB (LogNot (BoolConst 1)) t f)))
+      ((union e f)))
 
 ; =============================================================================
 ; Additional Phi/Gamma Redundancy Patterns (C++ RedundantPhi)
 ; =============================================================================
-; Note: Most Gamma constant patterns are defined later in this file (around line 215)
 
 ; Gamma where condition appears as one branch (boolean patterns)
 ; select(c, c, false) = c (identity for boolean c)
-; IMPORTANT: Use BoolConst to ensure this only matches boolean contexts
-(rule ((= e (Gamma c c (BoolConst 0))))
+; c is BoolExpr, branches are BoolExpr, so this is GammaB
+(rule ((= e (GammaB c c (BoolConst 0))))
       ((union e c)))
 ; select(c, true, c) = c | true = true when c is boolean
 ; But this is the same as select(c, 1, c) = c ? 1 : c which is just 1 when c is true, c when false
@@ -71,38 +145,40 @@
 ; Gamma distributes over operations (hoisting) - ONE-DIRECTIONAL
 ; Push operations INTO Gamma, not out (pulling out creates Op(Gamma, Gamma) which explodes)
 ; These rules combine two Gammas with same condition into a single Gamma
-(rule ((= e (Add (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (Add a x) (Add b y)))))
-(rule ((= e (Sub (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (Sub a x) (Sub b y)))))
-(rule ((= e (Mul (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (Mul a x) (Mul b y)))))
-(rule ((= e (BitAnd (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (BitAnd a x) (BitAnd b y)))))
-(rule ((= e (BitOr (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (BitOr a x) (BitOr b y)))))
-(rule ((= e (BitXor (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (BitXor a x) (BitXor b y)))))
+; Integer operations use GammaI
+(rule ((= e (Add (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (Add a x) (Add b y)))))
+(rule ((= e (Sub (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (Sub a x) (Sub b y)))))
+(rule ((= e (Mul (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (Mul a x) (Mul b y)))))
+(rule ((= e (BitAnd (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (BitAnd a x) (BitAnd b y)))))
+(rule ((= e (BitOr (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (BitOr a x) (BitOr b y)))))
+(rule ((= e (BitXor (GammaI c a b) (GammaI c x y))))
+      ((union e (GammaI c (BitXor a x) (BitXor b y)))))
 
 ; Hoist common operations out of Gamma - ONE-DIRECTIONAL
 ; (c ? (x + a) : (x + b)) => x + (c ? a : b)
 ; Hoist the common factor OUT (simplifies branching)
-(rule ((= e (Gamma c (Add x a) (Add x b))))
-      ((union e (Add x (Gamma c a b)))))
-(rule ((= e (Gamma c (Add a x) (Add b x))))
-      ((union e (Add (Gamma c a b) x))))
-(rule ((= e (Gamma c (Sub x a) (Sub x b))))
-      ((union e (Sub x (Gamma c a b)))))
-(rule ((= e (Gamma c (Mul x a) (Mul x b))))
-      ((union e (Mul x (Gamma c a b)))))
-(rule ((= e (Gamma c (Mul a x) (Mul b x))))
-      ((union e (Mul (Gamma c a b) x))))
-(rule ((= e (Gamma c (BitAnd x a) (BitAnd x b))))
-      ((union e (BitAnd x (Gamma c a b)))))
-(rule ((= e (Gamma c (BitOr x a) (BitOr x b))))
-      ((union e (BitOr x (Gamma c a b)))))
-(rule ((= e (Gamma c (BitXor x a) (BitXor x b))))
-      ((union e (BitXor x (Gamma c a b)))))
+; Integer operations use GammaI
+(rule ((= e (GammaI c (Add x a) (Add x b))))
+      ((union e (Add x (GammaI c a b)))))
+(rule ((= e (GammaI c (Add a x) (Add b x))))
+      ((union e (Add (GammaI c a b) x))))
+(rule ((= e (GammaI c (Sub x a) (Sub x b))))
+      ((union e (Sub x (GammaI c a b)))))
+(rule ((= e (GammaI c (Mul x a) (Mul x b))))
+      ((union e (Mul x (GammaI c a b)))))
+(rule ((= e (GammaI c (Mul a x) (Mul b x))))
+      ((union e (Mul (GammaI c a b) x))))
+(rule ((= e (GammaI c (BitAnd x a) (BitAnd x b))))
+      ((union e (BitAnd x (GammaI c a b)))))
+(rule ((= e (GammaI c (BitOr x a) (BitOr x b))))
+      ((union e (BitOr x (GammaI c a b)))))
+(rule ((= e (GammaI c (BitXor x a) (BitXor x b))))
+      ((union e (BitXor x (GammaI c a b)))))
 
 ; =============================================================================
 ; RVSDG Theta (Loop) Rewrite Rules - Loop Invariant Code Motion
@@ -111,73 +187,83 @@
 ; LoopInvariant is idempotent - ONE-DIRECTIONAL
 (rule ((= e (LoopInvariant (LoopInvariant x))))
       ((union e (LoopInvariant x))))
+(rule ((= e (LoopInvariantI (LoopInvariantI x))))
+      ((union e (LoopInvariantI x))))
+(rule ((= e (LoopInvariantF (LoopInvariantF x))))
+      ((union e (LoopInvariantF x))))
+(rule ((= e (LoopInvariantB (LoopInvariantB x))))
+      ((union e (LoopInvariantB x))))
 
 ; Constants and symbols are inherently loop-invariant (they don't depend on LoopVar)
 ; NOTE: These rules are DISABLED because combined with the LoopInvariant stripping rule
-; at line ~113, they create cycles: Const(5) ↔ LoopInvariant(Const(5))
-; The stripping rule (LoopInvariant x) → x is bidirectional, so it also adds
-; LoopInvariant to everything, creating x ↔ LoopInvariant(x) for ALL nodes.
-; (rewrite (Const n) (LoopInvariant (Const n)))
-; (rewrite (Const64 n) (LoopInvariant (Const64 n)))
+; they create cycles: Const(5) <-> LoopInvariant(Const(5))
+; The stripping rule (LoopInvariant x) -> x is bidirectional, so it also adds
+; LoopInvariant to everything, creating x <-> LoopInvariant(x) for ALL nodes.
+; (rewrite (Const n) (LoopInvariantI (Const n)))
+; (rewrite (Const64 n) (LoopInvariantI (Const64 n)))
 ; (rewrite (Sym s) (LoopInvariant (Sym s)))
 
 ; LoopVar is NOT loop-invariant (it changes each iteration)
 ; No rule to mark LoopVar as LoopInvariant
 
 ; Operations on loop invariants produce loop invariants - ONE-DIRECTIONAL
-; Using rule/union to prevent LoopInvariant(Add a b) → Add(LI a, LI b) cycles
-(rule ((= e (Add (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Add a b)))))
-(rule ((= e (Sub (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Sub a b)))))
-(rule ((= e (Mul (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Mul a b)))))
-(rule ((= e (SDiv (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SDiv a b)))))
-(rule ((= e (UDiv (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (UDiv a b)))))
-(rule ((= e (BitAnd (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (BitAnd a b)))))
-(rule ((= e (BitOr (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (BitOr a b)))))
-(rule ((= e (BitXor (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (BitXor a b)))))
-(rule ((= e (Shl (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Shl a b)))))
-(rule ((= e (ShrS (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (ShrS a b)))))
-(rule ((= e (ShrU (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (ShrU a b)))))
+; Integer operations use LoopInvariantI
+; Using rule/union to prevent LoopInvariantI(Add a b) -> Add(LI a, LI b) cycles
+(rule ((= e (Add (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (Add a b)))))
+(rule ((= e (Sub (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (Sub a b)))))
+(rule ((= e (Mul (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (Mul a b)))))
+(rule ((= e (SDiv (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (SDiv a b)))))
+(rule ((= e (UDiv (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (UDiv a b)))))
+(rule ((= e (BitAnd (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (BitAnd a b)))))
+(rule ((= e (BitOr (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (BitOr a b)))))
+(rule ((= e (BitXor (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (BitXor a b)))))
+(rule ((= e (Shl (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (Shl a b)))))
+(rule ((= e (ShrS (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (ShrS a b)))))
+(rule ((= e (ShrU (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (ShrU a b)))))
 
 ; Unary operations on loop invariants - ONE-DIRECTIONAL
-(rule ((= e (Neg (LoopInvariant a))))
-      ((union e (LoopInvariant (Neg a)))))
-(rule ((= e (BitNot (LoopInvariant a))))
-      ((union e (LoopInvariant (BitNot a)))))
-(rule ((= e (LogNot (LoopInvariant a))))
-      ((union e (LoopInvariant (LogNot a)))))
+; Integer unary ops use LoopInvariantI
+(rule ((= e (Neg (LoopInvariantI a))))
+      ((union e (LoopInvariantI (Neg a)))))
+(rule ((= e (BitNot (LoopInvariantI a))))
+      ((union e (LoopInvariantI (BitNot a)))))
+; Boolean unary op uses LoopInvariantB
+(rule ((= e (LogNot (LoopInvariantB a))))
+      ((union e (LoopInvariantB (LogNot a)))))
 
-; Comparisons on loop invariants - ONE-DIRECTIONAL
-(rule ((= e (Eq (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Eq a b)))))
-(rule ((= e (Ne (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Ne a b)))))
-(rule ((= e (SLt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SLt a b)))))
-(rule ((= e (SLe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SLe a b)))))
-(rule ((= e (SGt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SGt a b)))))
-(rule ((= e (SGe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SGe a b)))))
-(rule ((= e (ULt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (ULt a b)))))
-(rule ((= e (ULe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (ULe a b)))))
-(rule ((= e (UGt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (UGt a b)))))
-(rule ((= e (UGe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (UGe a b)))))
+; Comparisons on loop invariants produce loop-invariant booleans - ONE-DIRECTIONAL
+; Integer comparisons: LoopInvariantI inputs, LoopInvariantB output
+(rule ((= e (Eq (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (Eq a b)))))
+(rule ((= e (Ne (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (Ne a b)))))
+(rule ((= e (SLt (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (SLt a b)))))
+(rule ((= e (SLe (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (SLe a b)))))
+(rule ((= e (SGt (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (SGt a b)))))
+(rule ((= e (SGe (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (SGe a b)))))
+(rule ((= e (ULt (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (ULt a b)))))
+(rule ((= e (ULe (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (ULe a b)))))
+(rule ((= e (UGt (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (UGt a b)))))
+(rule ((= e (UGe (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantB (UGe a b)))))
 
 ; =============================================================================
 ; Theta LICM: Hoist loop-invariant expressions out of Theta
@@ -190,8 +276,14 @@
 
 ; Strip LoopInvariant wrapper (it's just an annotation for optimization)
 ; After optimization, we extract the inner value
-; ONE-DIRECTIONAL: Using (rule ... union) to prevent x → LoopInvariant(x) for every x
+; ONE-DIRECTIONAL: Using (rule ... union) to prevent x -> LoopInvariant(x) for every x
 (rule ((= e (LoopInvariant x)))
+      ((union e x)))
+(rule ((= e (LoopInvariantI x)))
+      ((union e x)))
+(rule ((= e (LoopInvariantF x)))
+      ((union e x)))
+(rule ((= e (LoopInvariantB x)))
       ((union e x)))
 
 ; =============================================================================
@@ -209,11 +301,7 @@
       ((union result (Unreachable))))
 
 ; Effect Gamma with constant condition - ONE-DIRECTIONAL to prevent explosion
-; Accept both Const and BoolConst since conditions may be either
-(rule ((= e (EffGamma (Const 0) t f)))
-      ((union e f)))
-(rule ((= e (EffGamma (Const 1) t f)))
-      ((union e t)))
+; BoolConst is the only valid constant for BoolExpr conditions
 (rule ((= e (EffGamma (BoolConst 0) t f)))
       ((union e f)))
 (rule ((= e (EffGamma (BoolConst 1) t f)))
@@ -252,30 +340,28 @@
 ; Additional Gamma Simplifications (C++ Parity)
 ; =============================================================================
 
-; NOTE: The rule (Gamma c c x) → c was REMOVED because it assumes boolean
+; NOTE: The rule (Gamma c c x) -> c was REMOVED because it assumes boolean
 ; context. In integer context, select(c, c, x) where c is 0/1 would give wrong
 ; results if c is not boolean. The BoolConst rules above handle the boolean case.
 ; select(c, x, false) = LogAnd(c, x) - ONLY for boolean contexts
-; IMPORTANT: Use BoolConst (not Const) to prevent type confusion.
-; Integer (Const 0) must NOT be converted to LogAnd since LogAnd requires boolean operands.
-; ONE-DIRECTIONAL: Convert Gamma to LogAnd/LogOr, never reverse (prevents explosion)
-; Guard with ExprType to prevent converting non-bool x into LogAnd/LogOr operand
-(rule ((= e (Gamma c x (BoolConst 0))) (= (ExprType x) (BoolType)))
+; With typed sorts, GammaB guarantees boolean context for branches
+; ONE-DIRECTIONAL: Convert GammaB to LogAnd/LogOr, never reverse (prevents explosion)
+(rule ((= e (GammaB c x (BoolConst 0))))
       ((union e (LogAnd c x))))
-(rule ((= e (Gamma c (BoolConst 1) x)) (= (ExprType x) (BoolType)))
+(rule ((= e (GammaB c (BoolConst 1) x)))
       ((union e (LogOr c x))))
-(rule ((= e (Gamma c (BoolConst 0) x)) (= (ExprType x) (BoolType)))
+(rule ((= e (GammaB c (BoolConst 0) x)))
       ((union e (LogAnd (LogNot c) x))))
-(rule ((= e (Gamma c x (BoolConst 1))) (= (ExprType x) (BoolType)))
+(rule ((= e (GammaB c x (BoolConst 1))))
       ((union e (LogOr (LogNot c) x))))
 
 ; Gamma with boolean constants 0/1 and variable
 ; select(c, false, true) = !c
 ; select(c, true, false) = c - ONE-DIRECTIONAL to prevent explosion
-; IMPORTANT: Use BoolConst to ensure this only matches boolean contexts
-(rule ((= e (Gamma c (BoolConst 0) (BoolConst 1))))
+; GammaB since both branches are BoolExpr constants
+(rule ((= e (GammaB c (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot c))))
-(rule ((= e (Gamma c (BoolConst 1) (BoolConst 0))))
+(rule ((= e (GammaB c (BoolConst 1) (BoolConst 0))))
       ((union e c)))
 
 ; Chained Gamma with opposite conditions - ONE-DIRECTIONAL
@@ -284,6 +370,18 @@
       ((union e (Gamma c b x))))
 (rule ((= e (Gamma c x (Gamma (LogNot c) a b))))
       ((union e (Gamma c x a))))
+(rule ((= e (GammaI c (GammaI (LogNot c) a b) x)))
+      ((union e (GammaI c b x))))
+(rule ((= e (GammaI c x (GammaI (LogNot c) a b))))
+      ((union e (GammaI c x a))))
+(rule ((= e (GammaF c (GammaF (LogNot c) a b) x)))
+      ((union e (GammaF c b x))))
+(rule ((= e (GammaF c x (GammaF (LogNot c) a b))))
+      ((union e (GammaF c x a))))
+(rule ((= e (GammaB c (GammaB (LogNot c) a b) x)))
+      ((union e (GammaB c b x))))
+(rule ((= e (GammaB c x (GammaB (LogNot c) a b))))
+      ((union e (GammaB c x a))))
 
 ; Gamma selecting between x and operation on x
 ; select(c, x, x + 1) can't be simplified generally, but
@@ -293,46 +391,51 @@
 ; Floating-Point Loop Invariant Rules - ONE-DIRECTIONAL
 ; =============================================================================
 
-(rule ((= e (FAdd (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FAdd a b)))))
-(rule ((= e (FSub (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FSub a b)))))
-(rule ((= e (FMul (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FMul a b)))))
-(rule ((= e (FDiv (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FDiv a b)))))
-(rule ((= e (FNeg (LoopInvariant a))))
-      ((union e (LoopInvariant (FNeg a)))))
-(rule ((= e (FAbs (LoopInvariant a))))
-      ((union e (LoopInvariant (FAbs a)))))
-(rule ((= e (Sqrt (LoopInvariant a))))
-      ((union e (LoopInvariant (Sqrt a)))))
+(rule ((= e (FAdd (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FAdd a b)))))
+(rule ((= e (FSub (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FSub a b)))))
+(rule ((= e (FMul (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FMul a b)))))
+(rule ((= e (FDiv (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FDiv a b)))))
+(rule ((= e (FNeg (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FNeg a)))))
+(rule ((= e (FAbs (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FAbs a)))))
+(rule ((= e (Sqrt (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Sqrt a)))))
 
 ; =============================================================================
 ; Floating-Point Gamma Distribution - ONE-DIRECTIONAL
 ; =============================================================================
-; Distribution INTO Gamma (combining two conditional values)
-(rule ((= e (FAdd (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (FAdd a x) (FAdd b y)))))
-(rule ((= e (FSub (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (FSub a x) (FSub b y)))))
-(rule ((= e (FMul (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (FMul a x) (FMul b y)))))
+; Distribution INTO GammaF (combining two conditional float values)
+(rule ((= e (FAdd (GammaF c a b) (GammaF c x y))))
+      ((union e (GammaF c (FAdd a x) (FAdd b y)))))
+(rule ((= e (FSub (GammaF c a b) (GammaF c x y))))
+      ((union e (GammaF c (FSub a x) (FSub b y)))))
+(rule ((= e (FMul (GammaF c a b) (GammaF c x y))))
+      ((union e (GammaF c (FMul a x) (FMul b y)))))
 
-; Hoisting common factors OUT of Gamma - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (FAdd x a) (FAdd x b))))
-      ((union e (FAdd x (Gamma c a b)))))
-(rule ((= e (Gamma c (FMul x a) (FMul x b))))
-      ((union e (FMul x (Gamma c a b)))))
+; Hoisting common factors OUT of GammaF - ONE-DIRECTIONAL
+(rule ((= e (GammaF c (FAdd x a) (FAdd x b))))
+      ((union e (FAdd x (GammaF c a b)))))
+(rule ((= e (GammaF c (FMul x a) (FMul x b))))
+      ((union e (FMul x (GammaF c a b)))))
 
 ; =============================================================================
 ; Theta (Loop) Optimization Rules - ONE-DIRECTIONAL
 ; =============================================================================
 
 ; Theta with false condition never executes - return initial value
-(rule ((= e (Theta (Const 0) body init)))
-      ((union e init)))
+; BoolConst is the only valid constant for BoolExpr conditions
 (rule ((= e (Theta (BoolConst 0) body init)))
+      ((union e init)))
+(rule ((= e (ThetaI (BoolConst 0) body init)))
+      ((union e init)))
+(rule ((= e (ThetaF (BoolConst 0) body init)))
+      ((union e init)))
+(rule ((= e (ThetaB (BoolConst 0) body init)))
       ((union e init)))
 
 ; Theta with constant true condition would loop forever
@@ -342,62 +445,68 @@
 ; (Theta cond (LoopVar) init) = init when loop doesn't modify state
 (rule ((= e (Theta cond (LoopVar) init)))
       ((union e init)))
+(rule ((= e (ThetaI cond (LoopVarI) init)))
+      ((union e init)))
+(rule ((= e (ThetaF cond (LoopVarF) init)))
+      ((union e init)))
+(rule ((= e (ThetaB cond (LoopVarB) init)))
+      ((union e init)))
 
 ; =============================================================================
 ; More Loop Invariant Propagation - ONE-DIRECTIONAL
 ; =============================================================================
 
-; Comparison of loop invariants
-(rule ((= e (FOrdEq (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdEq a b)))))
-(rule ((= e (FOrdNe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdNe a b)))))
-(rule ((= e (FOrdLt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdLt a b)))))
-(rule ((= e (FOrdLe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdLe a b)))))
-(rule ((= e (FOrdGt (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdGt a b)))))
-(rule ((= e (FOrdGe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FOrdGe a b)))))
+; Float comparison of loop invariants produces loop-invariant booleans
+(rule ((= e (FOrdEq (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdEq a b)))))
+(rule ((= e (FOrdNe (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdNe a b)))))
+(rule ((= e (FOrdLt (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdLt a b)))))
+(rule ((= e (FOrdLe (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdLe a b)))))
+(rule ((= e (FOrdGt (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdGt a b)))))
+(rule ((= e (FOrdGe (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantB (FOrdGe a b)))))
 
-; GLSL extended instructions on loop invariants
-(rule ((= e (FMin (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FMin a b)))))
-(rule ((= e (FMax (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FMax a b)))))
-(rule ((= e (FFloor (LoopInvariant a))))
-      ((union e (LoopInvariant (FFloor a)))))
-(rule ((= e (FCeil (LoopInvariant a))))
-      ((union e (LoopInvariant (FCeil a)))))
-(rule ((= e (FRound (LoopInvariant a))))
-      ((union e (LoopInvariant (FRound a)))))
-(rule ((= e (FTrunc (LoopInvariant a))))
-      ((union e (LoopInvariant (FTrunc a)))))
+; GLSL extended instructions on loop invariants (float)
+(rule ((= e (FMin (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FMin a b)))))
+(rule ((= e (FMax (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FMax a b)))))
+(rule ((= e (FFloor (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FFloor a)))))
+(rule ((= e (FCeil (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FCeil a)))))
+(rule ((= e (FRound (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FRound a)))))
+(rule ((= e (FTrunc (LoopInvariantF a))))
+      ((union e (LoopInvariantF (FTrunc a)))))
 
-; Exp/Log on loop invariants
-(rule ((= e (Exp (LoopInvariant a))))
-      ((union e (LoopInvariant (Exp a)))))
-(rule ((= e (Log (LoopInvariant a))))
-      ((union e (LoopInvariant (Log a)))))
-(rule ((= e (Exp2 (LoopInvariant a))))
-      ((union e (LoopInvariant (Exp2 a)))))
-(rule ((= e (Log2 (LoopInvariant a))))
-      ((union e (LoopInvariant (Log2 a)))))
-(rule ((= e (Pow (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Pow a b)))))
+; Exp/Log on loop invariants (float)
+(rule ((= e (Exp (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Exp a)))))
+(rule ((= e (Log (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Log a)))))
+(rule ((= e (Exp2 (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Exp2 a)))))
+(rule ((= e (Log2 (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Log2 a)))))
+(rule ((= e (Pow (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (Pow a b)))))
 
-; Trig functions on loop invariants
-(rule ((= e (Sin (LoopInvariant a))))
-      ((union e (LoopInvariant (Sin a)))))
-(rule ((= e (Cos (LoopInvariant a))))
-      ((union e (LoopInvariant (Cos a)))))
-(rule ((= e (Tan (LoopInvariant a))))
-      ((union e (LoopInvariant (Tan a)))))
+; Trig functions on loop invariants (float)
+(rule ((= e (Sin (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Sin a)))))
+(rule ((= e (Cos (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Cos a)))))
+(rule ((= e (Tan (LoopInvariantF a))))
+      ((union e (LoopInvariantF (Tan a)))))
 
 ; InverseSqrt on loop invariant - ONE-DIRECTIONAL
-(rule ((= e (InverseSqrt (LoopInvariant a))))
-      ((union e (LoopInvariant (InverseSqrt a)))))
+(rule ((= e (InverseSqrt (LoopInvariantF a))))
+      ((union e (LoopInvariantF (InverseSqrt a)))))
 
 ; =============================================================================
 ; Gamma Inside Theta (Loop-conditional code motion)
@@ -413,32 +522,35 @@
 ; =============================================================================
 
 ; Min/Max loop invariant rules - ONE-DIRECTIONAL
-(rule ((= e (SMin (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SMin a b)))))
-(rule ((= e (SMax (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (SMax a b)))))
-(rule ((= e (UMin (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (UMin a b)))))
-(rule ((= e (UMax (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (UMax a b)))))
+; Integer min/max use LoopInvariantI
+(rule ((= e (SMin (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (SMin a b)))))
+(rule ((= e (SMax (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (SMax a b)))))
+(rule ((= e (UMin (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (UMin a b)))))
+(rule ((= e (UMax (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (UMax a b)))))
 
 ; =============================================================================
 ; Additional Gamma with Min/Max
 ; =============================================================================
 
 ; select(c, min(a, b), min(a, d)) = min(a, select(c, b, d)) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SMin a b) (SMin a d))))
-      ((union e (SMin a (Gamma c b d)))))
-(rule ((= e (Gamma c (SMax a b) (SMax a d))))
-      ((union e (SMax a (Gamma c b d)))))
-(rule ((= e (Gamma c (UMin a b) (UMin a d))))
-      ((union e (UMin a (Gamma c b d)))))
-(rule ((= e (Gamma c (UMax a b) (UMax a d))))
-      ((union e (UMax a (Gamma c b d)))))
-(rule ((= e (Gamma c (FMin a b) (FMin a d))))
-      ((union e (FMin a (Gamma c b d)))))
-(rule ((= e (Gamma c (FMax a b) (FMax a d))))
-      ((union e (FMax a (Gamma c b d)))))
+; Integer min/max use GammaI
+(rule ((= e (GammaI c (SMin a b) (SMin a d))))
+      ((union e (SMin a (GammaI c b d)))))
+(rule ((= e (GammaI c (SMax a b) (SMax a d))))
+      ((union e (SMax a (GammaI c b d)))))
+(rule ((= e (GammaI c (UMin a b) (UMin a d))))
+      ((union e (UMin a (GammaI c b d)))))
+(rule ((= e (GammaI c (UMax a b) (UMax a d))))
+      ((union e (UMax a (GammaI c b d)))))
+; Float min/max use GammaF
+(rule ((= e (GammaF c (FMin a b) (FMin a d))))
+      ((union e (FMin a (GammaF c b d)))))
+(rule ((= e (GammaF c (FMax a b) (FMax a d))))
+      ((union e (FMax a (GammaF c b d)))))
 
 ; =============================================================================
 ; Gamma with Comparisons (comparison absorption)
@@ -446,46 +558,48 @@
 
 ; select(a < b, a, b) = min(a, b) - ONE-DIRECTIONAL
 ; select(a < b, b, a) = max(a, b)
-(rule ((= e (Gamma (SLt a b) a b)))
+; Integer comparisons select IntExpr values -> GammaI
+(rule ((= e (GammaI (SLt a b) a b)))
       ((union e (SMin a b))))
-(rule ((= e (Gamma (SLt a b) b a)))
+(rule ((= e (GammaI (SLt a b) b a)))
       ((union e (SMax a b))))
-(rule ((= e (Gamma (ULt a b) a b)))
+(rule ((= e (GammaI (ULt a b) a b)))
       ((union e (UMin a b))))
-(rule ((= e (Gamma (ULt a b) b a)))
+(rule ((= e (GammaI (ULt a b) b a)))
       ((union e (UMax a b))))
-(rule ((= e (Gamma (FOrdLt a b) a b)))
+; Float comparisons select FloatExpr values -> GammaF
+(rule ((= e (GammaF (FOrdLt a b) a b)))
       ((union e (FMin a b))))
-(rule ((= e (Gamma (FOrdLt a b) b a)))
+(rule ((= e (GammaF (FOrdLt a b) b a)))
       ((union e (FMax a b))))
 
 ; select(a > b, a, b) = max(a, b) - ONE-DIRECTIONAL
 ; select(a > b, b, a) = min(a, b)
-(rule ((= e (Gamma (SGt a b) a b)))
+(rule ((= e (GammaI (SGt a b) a b)))
       ((union e (SMax a b))))
-(rule ((= e (Gamma (SGt a b) b a)))
+(rule ((= e (GammaI (SGt a b) b a)))
       ((union e (SMin a b))))
-(rule ((= e (Gamma (UGt a b) a b)))
+(rule ((= e (GammaI (UGt a b) a b)))
       ((union e (UMax a b))))
-(rule ((= e (Gamma (UGt a b) b a)))
+(rule ((= e (GammaI (UGt a b) b a)))
       ((union e (UMin a b))))
-(rule ((= e (Gamma (FOrdGt a b) a b)))
+(rule ((= e (GammaF (FOrdGt a b) a b)))
       ((union e (FMax a b))))
-(rule ((= e (Gamma (FOrdGt a b) b a)))
+(rule ((= e (GammaF (FOrdGt a b) b a)))
       ((union e (FMin a b))))
 
 ; select(a <= b, a, b) = min(a, b) - ONE-DIRECTIONAL
-(rule ((= e (Gamma (SLe a b) a b)))
+(rule ((= e (GammaI (SLe a b) a b)))
       ((union e (SMin a b))))
-(rule ((= e (Gamma (SLe a b) b a)))
+(rule ((= e (GammaI (SLe a b) b a)))
       ((union e (SMax a b))))
-(rule ((= e (Gamma (ULe a b) a b)))
+(rule ((= e (GammaI (ULe a b) a b)))
       ((union e (UMin a b))))
-(rule ((= e (Gamma (ULe a b) b a)))
+(rule ((= e (GammaI (ULe a b) b a)))
       ((union e (UMax a b))))
-(rule ((= e (Gamma (FOrdLe a b) a b)))
+(rule ((= e (GammaF (FOrdLe a b) a b)))
       ((union e (FMin a b))))
-(rule ((= e (Gamma (FOrdLe a b) b a)))
+(rule ((= e (GammaF (FOrdLe a b) b a)))
       ((union e (FMax a b))))
 
 ; =============================================================================
@@ -493,17 +607,17 @@
 ; =============================================================================
 
 ; select(a >= b, a, b) = max(a, b) - ONE-DIRECTIONAL
-(rule ((= e (Gamma (SGe a b) a b)))
+(rule ((= e (GammaI (SGe a b) a b)))
       ((union e (SMax a b))))
-(rule ((= e (Gamma (SGe a b) b a)))
+(rule ((= e (GammaI (SGe a b) b a)))
       ((union e (SMin a b))))
-(rule ((= e (Gamma (UGe a b) a b)))
+(rule ((= e (GammaI (UGe a b) a b)))
       ((union e (UMax a b))))
-(rule ((= e (Gamma (UGe a b) b a)))
+(rule ((= e (GammaI (UGe a b) b a)))
       ((union e (UMin a b))))
-(rule ((= e (Gamma (FOrdGe a b) a b)))
+(rule ((= e (GammaF (FOrdGe a b) a b)))
       ((union e (FMax a b))))
-(rule ((= e (Gamma (FOrdGe a b) b a)))
+(rule ((= e (GammaF (FOrdGe a b) b a)))
       ((union e (FMin a b))))
 
 ; Gamma with equality: select(a == b, x, x) already handled
@@ -538,7 +652,7 @@
 
 ; If the condition is a comparison that's always true/false based on analysis,
 ; the branch can be eliminated. This is complex without value analysis.
-; The constant condition rules (EffGamma (Const 0) t f) = f etc. are already covered.
+; The constant condition rules (EffGamma (BoolConst 0) t f) = f etc. are already covered.
 
 ; =============================================================================
 ; Theta Loop Unrolling Patterns
@@ -563,24 +677,28 @@
 
 ; Select absorption with arithmetic: - ONE-DIRECTIONAL
 ; select(c, x + y, x) = x + select(c, y, 0) - hoist common term OUT
-(rule ((= e (Gamma c (Add x y) x)))
-      ((union e (Add x (Gamma c y (Const 0))))))
-(rule ((= e (Gamma c x (Add x y))))
-      ((union e (Add x (Gamma c (Const 0) y)))))
-(rule ((= e (Gamma c (FAdd x y) x)))
-      ((union e (FAdd x (Gamma c y (Const 0))))))
-(rule ((= e (Gamma c x (FAdd x y))))
-      ((union e (FAdd x (Gamma c (Const 0) y)))))
+; Integer ops use GammaI and Const
+(rule ((= e (GammaI c (Add x y) x)))
+      ((union e (Add x (GammaI c y (Const 0))))))
+(rule ((= e (GammaI c x (Add x y))))
+      ((union e (Add x (GammaI c (Const 0) y)))))
+; Float ops use GammaF and FConst
+(rule ((= e (GammaF c (FAdd x y) x)))
+      ((union e (FAdd x (GammaF c y (FConst 0.0))))))
+(rule ((= e (GammaF c x (FAdd x y))))
+      ((union e (FAdd x (GammaF c (FConst 0.0) y)))))
 
 ; select(c, x * y, x) = x * select(c, y, 1) (when y could be 1) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Mul x y) x)))
-      ((union e (Mul x (Gamma c y (Const 1))))))
-(rule ((= e (Gamma c x (Mul x y))))
-      ((union e (Mul x (Gamma c (Const 1) y)))))
-(rule ((= e (Gamma c (FMul x y) x)))
-      ((union e (FMul x (Gamma c y (Const 1))))))
-(rule ((= e (Gamma c x (FMul x y))))
-      ((union e (FMul x (Gamma c (Const 1) y)))))
+; Integer ops use GammaI and Const
+(rule ((= e (GammaI c (Mul x y) x)))
+      ((union e (Mul x (GammaI c y (Const 1))))))
+(rule ((= e (GammaI c x (Mul x y))))
+      ((union e (Mul x (GammaI c (Const 1) y)))))
+; Float ops use GammaF and FConst
+(rule ((= e (GammaF c (FMul x y) x)))
+      ((union e (FMul x (GammaF c y (FConst 1.0))))))
+(rule ((= e (GammaF c x (FMul x y))))
+      ((union e (FMul x (GammaF c (FConst 1.0) y)))))
 
 ; Nested Gamma flattening (when inner condition relates to outer)
 ; select(c, select(c, a, b), d) = select(c, a, d) - already have
@@ -594,8 +712,8 @@
 ; =============================================================================
 
 ; NOTE: The inverse rules for "x op select(c, y, 0) -> select(c, x op y, x)" are REMOVED
-; because they form a cycle with the rules at lines 422-439.
-; The select absorption rules above (420-439) are the canonical simplifying direction.
+; because they form a cycle with the select absorption rules above.
+; The select absorption rules are the canonical simplifying direction.
 
 ; =============================================================================
 ; Min/Max with Select Patterns
@@ -607,13 +725,15 @@
 ; max(x, 0) when x is known non-negative = x
 ; This requires value analysis we don't have, but the pattern is:
 ; select(x >= 0, x, -x) = abs(x) - ONE-DIRECTIONAL
-(rule ((= e (Gamma (SGe x (Const 0)) x (Neg x))))
+; Integer abs: condition compares IntExpr, selects IntExpr -> GammaI
+(rule ((= e (GammaI (SGe x (Const 0)) x (Neg x))))
       ((union e (SAbs x))))
-(rule ((= e (Gamma (SLt x (Const 0)) (Neg x) x)))
+(rule ((= e (GammaI (SLt x (Const 0)) (Neg x) x)))
       ((union e (SAbs x))))
-(rule ((= e (Gamma (FOrdGe x (Const 0)) x (FNeg x))))
+; Float abs: condition compares FloatExpr, selects FloatExpr -> GammaF
+(rule ((= e (GammaF (FOrdGe x (FConst 0.0)) x (FNeg x))))
       ((union e (FAbs x))))
-(rule ((= e (Gamma (FOrdLt x (Const 0)) (FNeg x) x)))
+(rule ((= e (GammaF (FOrdLt x (FConst 0.0)) (FNeg x) x)))
       ((union e (FAbs x))))
 
 ; =============================================================================
@@ -621,20 +741,18 @@
 ; =============================================================================
 
 ; select(c, c && x, false) = c && x (boolean contexts)
-; Guard Const variant with ExprType to prevent int→bool domain crossing
-(rule ((= e (Gamma c (LogAnd c x) (BoolConst 0))))
-      ((union e (LogAnd c x))))
-(rule ((= e (Gamma c (LogAnd c x) (Const 0))) (= (ExprType e) (BoolType)))
+; All boolean: GammaB with BoolConst
+(rule ((= e (GammaB c (LogAnd c x) (BoolConst 0))))
       ((union e (LogAnd c x))))
 
 ; select(c, c || x, true) = true (when c is true, c||x is true; when false, true)
 ; Actually: select(c, c || x, y) - if c then (true || x)=true, else y
-(rule ((= e (Gamma c (LogOr c x) y)))
+; c is BoolExpr, LogOr returns BoolExpr, y is BoolExpr -> GammaB
+(rule ((= e (GammaB c (LogOr c x) y)))
       ((union e (LogOr c y))))
 
 ; select(c, true, c || x) = c || x
 ; NOTE: This rule was REMOVED because it creates new Gamma nodes that cause cycles
-; (rewrite (Gamma c (Const 1) (LogOr c x)) (LogOr c (Gamma c (Const 1) x)))
 
 ; =============================================================================
 ; Gamma Distribution over Division Operations (C++ Parity)
@@ -643,36 +761,42 @@
 ; Note: Shift Gamma distribution rules are in bitwise.egg
 
 ; Division operations: select(c, a / x, b / x) = select(c, a, b) / x - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SDiv a x) (SDiv b x))))
-      ((union e (SDiv (Gamma c a b) x))))
-(rule ((= e (Gamma c (UDiv a x) (UDiv b x))))
-      ((union e (UDiv (Gamma c a b) x))))
-(rule ((= e (Gamma c (FDiv a x) (FDiv b x))))
-      ((union e (FDiv (Gamma c a b) x))))
+; Integer division uses GammaI
+(rule ((= e (GammaI c (SDiv a x) (SDiv b x))))
+      ((union e (SDiv (GammaI c a b) x))))
+(rule ((= e (GammaI c (UDiv a x) (UDiv b x))))
+      ((union e (UDiv (GammaI c a b) x))))
+; Float division uses GammaF
+(rule ((= e (GammaF c (FDiv a x) (FDiv b x))))
+      ((union e (FDiv (GammaF c a b) x))))
 
 ; Division with common dividend: select(c, x / a, x / b) = x / select(c, a, b) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SDiv x a) (SDiv x b))))
-      ((union e (SDiv x (Gamma c a b)))))
-(rule ((= e (Gamma c (UDiv x a) (UDiv x b))))
-      ((union e (UDiv x (Gamma c a b)))))
-(rule ((= e (Gamma c (FDiv x a) (FDiv x b))))
-      ((union e (FDiv x (Gamma c a b)))))
+(rule ((= e (GammaI c (SDiv x a) (SDiv x b))))
+      ((union e (SDiv x (GammaI c a b)))))
+(rule ((= e (GammaI c (UDiv x a) (UDiv x b))))
+      ((union e (UDiv x (GammaI c a b)))))
+(rule ((= e (GammaF c (FDiv x a) (FDiv x b))))
+      ((union e (FDiv x (GammaF c a b)))))
 
 ; Remainder/modulo operations - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SRem a x) (SRem b x))))
-      ((union e (SRem (Gamma c a b) x))))
-(rule ((= e (Gamma c (SMod a x) (SMod b x))))
-      ((union e (SMod (Gamma c a b) x))))
-(rule ((= e (Gamma c (UMod a x) (UMod b x))))
-      ((union e (UMod (Gamma c a b) x))))
-(rule ((= e (Gamma c (FRem a x) (FRem b x))))
-      ((union e (FRem (Gamma c a b) x))))
+; Integer remainder/modulo uses GammaI
+(rule ((= e (GammaI c (SRem a x) (SRem b x))))
+      ((union e (SRem (GammaI c a b) x))))
+(rule ((= e (GammaI c (SMod a x) (SMod b x))))
+      ((union e (SMod (GammaI c a b) x))))
+(rule ((= e (GammaI c (UMod a x) (UMod b x))))
+      ((union e (UMod (GammaI c a b) x))))
+; Float remainder uses GammaF
+(rule ((= e (GammaF c (FRem a x) (FRem b x))))
+      ((union e (FRem (GammaF c a b) x))))
 
 ; Negation: select(c, -a, -b) = -(select(c, a, b)) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Neg a) (Neg b))))
-      ((union e (Neg (Gamma c a b)))))
-(rule ((= e (Gamma c (FNeg a) (FNeg b))))
-      ((union e (FNeg (Gamma c a b)))))
+; Integer negation uses GammaI
+(rule ((= e (GammaI c (Neg a) (Neg b))))
+      ((union e (Neg (GammaI c a b)))))
+; Float negation uses GammaF
+(rule ((= e (GammaF c (FNeg a) (FNeg b))))
+      ((union e (FNeg (GammaF c a b)))))
 
 ; Note: BitNot Gamma distribution is in bitwise.egg
 
@@ -680,89 +804,99 @@
 ; Gamma Distribution over Comparison Operations
 ; =============================================================================
 ; select(c, a < x, b < x) = select(c, a, b) < x - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SLt a x) (SLt b x))))
-      ((union e (SLt (Gamma c a b) x))))
-(rule ((= e (Gamma c (SLe a x) (SLe b x))))
-      ((union e (SLe (Gamma c a b) x))))
-(rule ((= e (Gamma c (SGt a x) (SGt b x))))
-      ((union e (SGt (Gamma c a b) x))))
-(rule ((= e (Gamma c (SGe a x) (SGe b x))))
-      ((union e (SGe (Gamma c a b) x))))
-(rule ((= e (Gamma c (ULt a x) (ULt b x))))
-      ((union e (ULt (Gamma c a b) x))))
-(rule ((= e (Gamma c (ULe a x) (ULe b x))))
-      ((union e (ULe (Gamma c a b) x))))
-(rule ((= e (Gamma c (UGt a x) (UGt b x))))
-      ((union e (UGt (Gamma c a b) x))))
-(rule ((= e (Gamma c (UGe a x) (UGe b x))))
-      ((union e (UGe (Gamma c a b) x))))
-(rule ((= e (Gamma c (Eq a x) (Eq b x))))
-      ((union e (Eq (Gamma c a b) x))))
-(rule ((= e (Gamma c (Ne a x) (Ne b x))))
-      ((union e (Ne (Gamma c a b) x))))
+; Comparisons take IntExpr operands and return BoolExpr
+; The outer Gamma selects BoolExpr (comparison results) -> GammaB
+; The inner Gamma selects IntExpr (comparison operands) -> GammaI
+(rule ((= e (GammaB c (SLt a x) (SLt b x))))
+      ((union e (SLt (GammaI c a b) x))))
+(rule ((= e (GammaB c (SLe a x) (SLe b x))))
+      ((union e (SLe (GammaI c a b) x))))
+(rule ((= e (GammaB c (SGt a x) (SGt b x))))
+      ((union e (SGt (GammaI c a b) x))))
+(rule ((= e (GammaB c (SGe a x) (SGe b x))))
+      ((union e (SGe (GammaI c a b) x))))
+(rule ((= e (GammaB c (ULt a x) (ULt b x))))
+      ((union e (ULt (GammaI c a b) x))))
+(rule ((= e (GammaB c (ULe a x) (ULe b x))))
+      ((union e (ULe (GammaI c a b) x))))
+(rule ((= e (GammaB c (UGt a x) (UGt b x))))
+      ((union e (UGt (GammaI c a b) x))))
+(rule ((= e (GammaB c (UGe a x) (UGe b x))))
+      ((union e (UGe (GammaI c a b) x))))
+(rule ((= e (GammaB c (Eq a x) (Eq b x))))
+      ((union e (Eq (GammaI c a b) x))))
+(rule ((= e (GammaB c (Ne a x) (Ne b x))))
+      ((union e (Ne (GammaI c a b) x))))
 
 ; Floating-point comparisons - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (FOrdLt a x) (FOrdLt b x))))
-      ((union e (FOrdLt (Gamma c a b) x))))
-(rule ((= e (Gamma c (FOrdLe a x) (FOrdLe b x))))
-      ((union e (FOrdLe (Gamma c a b) x))))
-(rule ((= e (Gamma c (FOrdGt a x) (FOrdGt b x))))
-      ((union e (FOrdGt (Gamma c a b) x))))
-(rule ((= e (Gamma c (FOrdGe a x) (FOrdGe b x))))
-      ((union e (FOrdGe (Gamma c a b) x))))
-(rule ((= e (Gamma c (FOrdEq a x) (FOrdEq b x))))
-      ((union e (FOrdEq (Gamma c a b) x))))
-(rule ((= e (Gamma c (FOrdNe a x) (FOrdNe b x))))
-      ((union e (FOrdNe (Gamma c a b) x))))
+; Float comparisons take FloatExpr operands -> inner Gamma is GammaF
+; Results are BoolExpr -> outer Gamma is GammaB
+(rule ((= e (GammaB c (FOrdLt a x) (FOrdLt b x))))
+      ((union e (FOrdLt (GammaF c a b) x))))
+(rule ((= e (GammaB c (FOrdLe a x) (FOrdLe b x))))
+      ((union e (FOrdLe (GammaF c a b) x))))
+(rule ((= e (GammaB c (FOrdGt a x) (FOrdGt b x))))
+      ((union e (FOrdGt (GammaF c a b) x))))
+(rule ((= e (GammaB c (FOrdGe a x) (FOrdGe b x))))
+      ((union e (FOrdGe (GammaF c a b) x))))
+(rule ((= e (GammaB c (FOrdEq a x) (FOrdEq b x))))
+      ((union e (FOrdEq (GammaF c a b) x))))
+(rule ((= e (GammaB c (FOrdNe a x) (FOrdNe b x))))
+      ((union e (FOrdNe (GammaF c a b) x))))
 
 ; =============================================================================
 ; Gamma Distribution over GLSL Functions
 ; =============================================================================
 
 ; select(c, sqrt(a), sqrt(b)) = sqrt(select(c, a, b)) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Sqrt a) (Sqrt b))))
-      ((union e (Sqrt (Gamma c a b)))))
-(rule ((= e (Gamma c (InverseSqrt a) (InverseSqrt b))))
-      ((union e (InverseSqrt (Gamma c a b)))))
+; Float functions use GammaF
+(rule ((= e (GammaF c (Sqrt a) (Sqrt b))))
+      ((union e (Sqrt (GammaF c a b)))))
+(rule ((= e (GammaF c (InverseSqrt a) (InverseSqrt b))))
+      ((union e (InverseSqrt (GammaF c a b)))))
 
 ; Exponential functions - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Exp a) (Exp b))))
-      ((union e (Exp (Gamma c a b)))))
-(rule ((= e (Gamma c (Exp2 a) (Exp2 b))))
-      ((union e (Exp2 (Gamma c a b)))))
-(rule ((= e (Gamma c (Log a) (Log b))))
-      ((union e (Log (Gamma c a b)))))
-(rule ((= e (Gamma c (Log2 a) (Log2 b))))
-      ((union e (Log2 (Gamma c a b)))))
+(rule ((= e (GammaF c (Exp a) (Exp b))))
+      ((union e (Exp (GammaF c a b)))))
+(rule ((= e (GammaF c (Exp2 a) (Exp2 b))))
+      ((union e (Exp2 (GammaF c a b)))))
+(rule ((= e (GammaF c (Log a) (Log b))))
+      ((union e (Log (GammaF c a b)))))
+(rule ((= e (GammaF c (Log2 a) (Log2 b))))
+      ((union e (Log2 (GammaF c a b)))))
 
 ; Trigonometric functions - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Sin a) (Sin b))))
-      ((union e (Sin (Gamma c a b)))))
-(rule ((= e (Gamma c (Cos a) (Cos b))))
-      ((union e (Cos (Gamma c a b)))))
-(rule ((= e (Gamma c (Tan a) (Tan b))))
-      ((union e (Tan (Gamma c a b)))))
+(rule ((= e (GammaF c (Sin a) (Sin b))))
+      ((union e (Sin (GammaF c a b)))))
+(rule ((= e (GammaF c (Cos a) (Cos b))))
+      ((union e (Cos (GammaF c a b)))))
+(rule ((= e (GammaF c (Tan a) (Tan b))))
+      ((union e (Tan (GammaF c a b)))))
 
 ; Rounding functions - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (FFloor a) (FFloor b))))
-      ((union e (FFloor (Gamma c a b)))))
-(rule ((= e (Gamma c (FCeil a) (FCeil b))))
-      ((union e (FCeil (Gamma c a b)))))
-(rule ((= e (Gamma c (FRound a) (FRound b))))
-      ((union e (FRound (Gamma c a b)))))
-(rule ((= e (Gamma c (FTrunc a) (FTrunc b))))
-      ((union e (FTrunc (Gamma c a b)))))
+(rule ((= e (GammaF c (FFloor a) (FFloor b))))
+      ((union e (FFloor (GammaF c a b)))))
+(rule ((= e (GammaF c (FCeil a) (FCeil b))))
+      ((union e (FCeil (GammaF c a b)))))
+(rule ((= e (GammaF c (FRound a) (FRound b))))
+      ((union e (FRound (GammaF c a b)))))
+(rule ((= e (GammaF c (FTrunc a) (FTrunc b))))
+      ((union e (FTrunc (GammaF c a b)))))
 
 ; Absolute value - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (FAbs a) (FAbs b))))
-      ((union e (FAbs (Gamma c a b)))))
-(rule ((= e (Gamma c (SAbs a) (SAbs b))))
-      ((union e (SAbs (Gamma c a b)))))
+; Float abs uses GammaF
+(rule ((= e (GammaF c (FAbs a) (FAbs b))))
+      ((union e (FAbs (GammaF c a b)))))
+; Integer abs uses GammaI
+(rule ((= e (GammaI c (SAbs a) (SAbs b))))
+      ((union e (SAbs (GammaI c a b)))))
 
 ; Normalize and Length - ONE-DIRECTIONAL
+; Normalize takes/returns Expr, so uses Gamma
 (rule ((= e (Gamma c (Normalize a) (Normalize b))))
       ((union e (Normalize (Gamma c a b)))))
-(rule ((= e (Gamma c (Length a) (Length b))))
+; Length takes Expr, returns FloatExpr -> outer GammaF, inner Gamma
+(rule ((= e (GammaF c (Length a) (Length b))))
       ((union e (Length (Gamma c a b)))))
 
 ; =============================================================================
@@ -770,30 +904,35 @@
 ; =============================================================================
 
 ; select(c, pow(a, x), pow(b, x)) = pow(select(c, a, b), x) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Pow a x) (Pow b x))))
-      ((union e (Pow (Gamma c a b) x))))
-(rule ((= e (Gamma c (Pow x a) (Pow x b))))
-      ((union e (Pow x (Gamma c a b)))))
+; Pow takes FloatExpr, returns FloatExpr -> GammaF
+(rule ((= e (GammaF c (Pow a x) (Pow b x))))
+      ((union e (Pow (GammaF c a b) x))))
+(rule ((= e (GammaF c (Pow x a) (Pow x b))))
+      ((union e (Pow x (GammaF c a b)))))
 
 ; Distance with common point - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Distance a x) (Distance b x))))
+; Distance takes Expr, returns FloatExpr -> outer GammaF, inner Gamma
+(rule ((= e (GammaF c (Distance a x) (Distance b x))))
       ((union e (Distance (Gamma c a b) x))))
-(rule ((= e (Gamma c (Distance x a) (Distance x b))))
+(rule ((= e (GammaF c (Distance x a) (Distance x b))))
       ((union e (Distance x (Gamma c a b)))))
 
 ; Dot product with common vector - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Dot a x) (Dot b x))))
+; Dot takes Expr, returns FloatExpr -> outer GammaF, inner Gamma
+(rule ((= e (GammaF c (Dot a x) (Dot b x))))
       ((union e (Dot (Gamma c a b) x))))
-(rule ((= e (Gamma c (Dot x a) (Dot x b))))
+(rule ((= e (GammaF c (Dot x a) (Dot x b))))
       ((union e (Dot x (Gamma c a b)))))
 
 ; Cross product with common vector - ONE-DIRECTIONAL
+; Cross takes/returns Expr -> Gamma
 (rule ((= e (Gamma c (Cross a x) (Cross b x))))
       ((union e (Cross (Gamma c a b) x))))
 (rule ((= e (Gamma c (Cross x a) (Cross x b))))
       ((union e (Cross x (Gamma c a b)))))
 
 ; Reflect with common normal - ONE-DIRECTIONAL
+; Reflect takes/returns Expr -> Gamma
 (rule ((= e (Gamma c (Reflect a x) (Reflect b x))))
       ((union e (Reflect (Gamma c a b) x))))
 (rule ((= e (Gamma c (Reflect x a) (Reflect x b))))

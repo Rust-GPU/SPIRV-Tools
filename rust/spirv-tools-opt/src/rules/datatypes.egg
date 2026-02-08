@@ -2,1042 +2,641 @@
 ; SPIR-V RVSDG Expression Language Definition for egglog
 ; =============================================================================
 ;
-; This uses RVSDG (Regionalized Value State Dependence Graph) to represent
-; control flow in a structured way that enables powerful optimizations.
+; Uses typed sorts (IntExpr, FloatExpr, BoolExpr) for scalar operations
+; to prevent cross-domain type merging. Type-agnostic operations (vectors,
+; memory, images, etc.) remain in the general Expr sort.
+;
+; Key design:
+; - Sorts declared with (sort ...) + constructors with (constructor ...)
+;   to enable mutual recursion between typed sorts
+; - Cross-domain merging is impossible by construction: IntExpr values
+;   can never be in the same e-class as FloatExpr or BoolExpr values
+; - All sorts participate in ONE BIG SATURATION
+; - Bridge constructors (IntToExpr, FloatToExpr, BoolToExpr) connect
+;   typed sorts to the general Expr sort for vectors, memory, effects
 ;
 ; Key types:
-; - Expr: Pure value computations (arithmetic, bitwise, etc.)
-; - Region: A sequence of operations with outputs (replaces basic blocks)
-; - Gamma: Conditional selection node (replaces if-then-else + phi)
-; - Theta: Loop node (replaces while loops + phi)
+; - IntExpr: Integer scalar computations
+; - FloatExpr: Float scalar computations
+; - BoolExpr: Boolean computations (comparisons, logical)
+; - Expr: Type-agnostic (vectors, matrices, memory, images, etc.)
 ; - Effect: Side effects and control flow (return, store, etc.)
 
 ; =============================================================================
-; Pure Expression Sort (no side effects)
+; Sort Declarations (all declared upfront to allow mutual recursion)
 ; =============================================================================
 
-(datatype Expr
-    ; Arithmetic operations
-    (Add Expr Expr)
-    (Sub Expr Expr)
-    (Mul Expr Expr)
-    (Neg Expr)
-    (SDiv Expr Expr)
-    (UDiv Expr Expr)
-    (SRem Expr Expr)
-    (SMod Expr Expr)
-    (UMod Expr Expr)
-
-    ; Bitwise operations
-    (Shl Expr Expr)
-    (ShrS Expr Expr)
-    (ShrU Expr Expr)
-    (BitAnd Expr Expr)
-    (BitOr Expr Expr)
-    (BitXor Expr Expr)
-    (BitNot Expr)
-    (BitReverse Expr)
-    (RotL Expr Expr)
-    (RotR Expr Expr)
-
-    ; Comparison operations
-    (Eq Expr Expr)
-    (Ne Expr Expr)
-    (SLt Expr Expr)
-    (SLe Expr Expr)
-    (SGt Expr Expr)
-    (SGe Expr Expr)
-    (ULt Expr Expr)
-    (ULe Expr Expr)
-    (UGt Expr Expr)
-    (UGe Expr Expr)
-
-    ; Min/Max operations
-    (SMin Expr Expr)
-    (SMax Expr Expr)
-    (UMin Expr Expr)
-    (UMax Expr Expr)
-
-    ; Logical operations (on boolean values)
-    (LogNot Expr)
-    (LogAnd Expr Expr)
-    (LogOr Expr Expr)
-    (LogEq Expr Expr)
-    (LogNe Expr Expr)
-
-    ; Gamma node: structured conditional (RVSDG)
-    ; (Gamma cond then_val else_val) - selects then_val if cond is true
-    ; This is the RVSDG way to represent conditional values without phi nodes
-    (Gamma Expr Expr Expr)
-
-    ; Legacy Select (alias for Gamma for backward compatibility)
-    (Select Expr Expr Expr)
-    (If Expr Expr Expr)
-
-    ; Theta node: tail-controlled loop (RVSDG)
-    ; (Theta cond body_result loop_var_init)
-    ;   - cond: continue condition (evaluated each iteration)
-    ;   - body_result: the value computed in the loop body
-    ;   - loop_var_init: initial value of loop-carried variable
-    ; The loop continues while cond is true, and body_result becomes the next loop_var
-    (Theta Expr Expr Expr)
-
-    ; Loop variable reference - refers to the current iteration's loop variable
-    ; Used inside Theta body to reference the loop-carried state
-    (LoopVar)
-
-    ; LoopInvariant wrapper - marks an expression as loop-invariant
-    ; An expression that doesn't depend on LoopVar can be hoisted out of Theta
-    (LoopInvariant Expr)
-
-    ; Floating-point operations
-    (FAdd Expr Expr)
-    (FSub Expr Expr)
-    (FMul Expr Expr)
-    (FDiv Expr Expr)
-    (FNeg Expr)
-    (FRem Expr Expr)
-    (FMin Expr Expr)
-    (FMax Expr Expr)
-    (FAbs Expr)
-    (FFloor Expr)
-    (FCeil Expr)
-    (FRound Expr)
-    (FTrunc Expr)
-
-    ; Floating-point comparison operations (ordered)
-    (FOrdEq Expr Expr)
-    (FOrdNe Expr Expr)
-    (FOrdLt Expr Expr)
-    (FOrdLe Expr Expr)
-    (FOrdGt Expr Expr)
-    (FOrdGe Expr Expr)
-
-    ; Floating-point comparison operations (unordered - true if NaN)
-    (FUnordEq Expr Expr)
-    (FUnordNe Expr Expr)
-    (FUnordLt Expr Expr)
-    (FUnordLe Expr Expr)
-    (FUnordGt Expr Expr)
-    (FUnordGe Expr Expr)
-
-    ; FP predicates
-    (IsNan Expr)
-    (IsInf Expr)
-
-    ; Vector construction and extraction
-    ; Vec2/3/4 build vectors from scalars
-    (Vec2 Expr Expr)
-    (Vec3 Expr Expr Expr)
-    (Vec4 Expr Expr Expr Expr)
-
-    ; Extract scalar from vector (index is compile-time constant)
-    (VecExtract Expr i64)
-
-    ; Insert scalar into vector at index
-    (VecInsert Expr Expr i64)
-
-    ; VectorShuffle - specialized by output vector size
-    ; Indices reference v1 (0..n-1) or v2 (n..2n-1) where n is input vector size
-    (VecShuffle2 Expr Expr i64 i64)
-    (VecShuffle3 Expr Expr i64 i64 i64)
-    (VecShuffle4 Expr Expr i64 i64 i64 i64)
-
-    ; Broadcast scalar to all components
-    (VecBroadcast2 Expr)
-    (VecBroadcast3 Expr)
-    (VecBroadcast4 Expr)
-
-    ; Vector arithmetic (component-wise)
-    (VecAdd Expr Expr)
-    (VecSub Expr Expr)
-    (VecMul Expr Expr)
-    (VecDiv Expr Expr)
-    (VecNeg Expr)
-    (VecFAdd Expr Expr)
-    (VecFSub Expr Expr)
-    (VecFMul Expr Expr)
-    (VecFDiv Expr Expr)
-    (VecFNeg Expr)
-
-    ; Dot product
-    (Dot Expr Expr)
-
-    ; Vector times scalar
-    (VecTimesScalar Expr Expr)
-
-    ; Matrix operations
-    ; MatrixTimesScalar (matrix, scalar)
-    (MatTimesScalar Expr Expr)
-    ; MatrixTimesVector (matrix, vector) -> vector
-    (MatTimesVec Expr Expr)
-    ; VectorTimesMatrix (vector, matrix) -> vector
-    (VecTimesMat Expr Expr)
-    ; MatrixTimesMatrix (matrix, matrix) -> matrix
-    (MatTimesMat Expr Expr)
-    ; Transpose
-    (Transpose Expr)
-    ; OuterProduct (vec, vec) -> matrix
-    (OuterProduct Expr Expr)
-    ; Determinant
-    (Determinant Expr)
-    ; Inverse
-    (MatInverse Expr)
-
-    ; GLSL extended instructions commonly optimized
-    (FMix Expr Expr Expr)
-    (SmoothStep Expr Expr Expr)
-    (FClamp Expr Expr Expr)
-    (SClamp Expr Expr Expr)
-    (UClamp Expr Expr Expr)
-    (Cross Expr Expr)
-    (Normalize Expr)
-    (Length Expr)
-    (Distance Expr Expr)
-    (Reflect Expr Expr)
-    (Refract Expr Expr Expr)
-    (FaceForward Expr Expr Expr)
-
-    ; Additional GLSL math functions
-    (Sqrt Expr)
-    (InverseSqrt Expr)
-    (Exp Expr)
-    (Exp2 Expr)
-    (Log Expr)
-    (Log2 Expr)
-    (Pow Expr Expr)
-    (Sin Expr)
-    (Cos Expr)
-    (Tan Expr)
-    (Asin Expr)
-    (Acos Expr)
-    (Atan Expr)
-    (Atan2 Expr Expr)
-    (Sinh Expr)
-    (Cosh Expr)
-    (Tanh Expr)
-    (Asinh Expr)
-    (Acosh Expr)
-    (Atanh Expr)
-    (Fma Expr Expr Expr)
-    (Fract Expr)
-    (Modf Expr)
-    (ModfStruct Expr)
-    (Ldexp Expr Expr)
-    (Frexp Expr)
-    (FrexpStruct Expr)
-    (Step Expr Expr)
-    (Sign Expr)
-    (FSign Expr)
-    (SAbs Expr)
-    (FindILsb Expr)
-    (FindSMsb Expr)
-    (FindUMsb Expr)
-    (BitCount Expr)
-
-    ; Constants - we use i64 for the value
-    ; Const is for 32-bit values, Const64 for 64-bit values
-    (Const i64)
-    (Const64 i64)
-
-    ; Boolean constants - separate from integer constants to prevent type confusion
-    ; BoolConst(1) = true, BoolConst(0) = false
-    ; This prevents rules like (Gamma c x (Const 0)) -> (LogAnd c x) from
-    ; incorrectly matching integer contexts where (Const 0) is integer zero
-    (BoolConst i64)
-
-    ; Symbols (variables / function arguments)
-    (Sym String)
-
-    ; Argument reference in a region (by index)
-    ; Used inside Gamma/Theta regions to refer to inputs
-    (Arg i64)
-
-    ; Copy operation (OpCopyObject)
-    ; CopyObject just makes a copy - it's always equal to the original
-    (CopyObject Expr)
-
-    ; Undefined value (OpUndef)
-    ; Represents an undefined value of any type
-    ; Operations on Undef have special optimization rules
-    (Undef)
-
-    ; ==========================================================================
-    ; Type Conversion Operations (SPIR-V OpConvert* and OpBitcast)
-    ; ==========================================================================
-
-    ; Float to integer conversions
-    (ConvertFToS Expr)      ; Float to signed int (OpConvertFToS)
-    (ConvertFToU Expr)      ; Float to unsigned int (OpConvertFToU)
-
-    ; Integer to float conversions
-    (ConvertSToF Expr)      ; Signed int to float (OpConvertSToF)
-    (ConvertUToF Expr)      ; Unsigned int to float (OpConvertUToF)
-
-    ; Integer width changes
-    (SConvert Expr)         ; Signed int width change (OpSConvert)
-    (UConvert Expr)         ; Unsigned int width change (OpUConvert)
-
-    ; Float precision changes
-    (FConvert Expr)         ; Float precision change (OpFConvert)
-
-    ; Bit-preserving reinterpretation
-    (Bitcast Expr)          ; Bit-preserving type reinterpretation (OpBitcast)
-
-    ; Quantization
-    (QuantizeToF16 Expr)    ; Quantize float to 16-bit precision (OpQuantizeToF16)
-
-    ; ==========================================================================
-    ; Pack/Unpack Operations (GLSL.std.450)
-    ; ==========================================================================
-
-    ; Half-float packing
-    (PackHalf2x16 Expr)     ; Pack two floats into uint (GLSLstd450PackHalf2x16)
-    (UnpackHalf2x16 Expr)   ; Unpack uint to two floats (GLSLstd450UnpackHalf2x16)
-
-    ; Snorm packing
-    (PackSnorm4x8 Expr)     ; Pack 4 floats to snorm bytes (GLSLstd450PackSnorm4x8)
-    (UnpackSnorm4x8 Expr)   ; Unpack snorm bytes to 4 floats (GLSLstd450UnpackSnorm4x8)
-    (PackSnorm2x16 Expr)    ; Pack 2 floats to snorm shorts (GLSLstd450PackSnorm2x16)
-    (UnpackSnorm2x16 Expr)  ; Unpack snorm shorts to 2 floats (GLSLstd450UnpackSnorm2x16)
-
-    ; Unorm packing
-    (PackUnorm4x8 Expr)     ; Pack 4 floats to unorm bytes (GLSLstd450PackUnorm4x8)
-    (UnpackUnorm4x8 Expr)   ; Unpack unorm bytes to 4 floats (GLSLstd450UnpackUnorm4x8)
-    (PackUnorm2x16 Expr)    ; Pack 2 floats to unorm shorts (GLSLstd450PackUnorm2x16)
-    (UnpackUnorm2x16 Expr)  ; Unpack unorm shorts to 2 floats (GLSLstd450UnpackUnorm2x16)
-
-    ; Double packing (for 64-bit doubles)
-    (PackDouble2x32 Expr)   ; Pack two uints to double (GLSLstd450PackDouble2x32)
-    (UnpackDouble2x32 Expr) ; Unpack double to two uints (GLSLstd450UnpackDouble2x32)
-
-    ; ==========================================================================
-    ; Additional GLSL Math Functions
-    ; ==========================================================================
-
-    ; Radians/Degrees conversion
-    (Radians Expr)          ; Convert degrees to radians (GLSLstd450Radians)
-    (Degrees Expr)          ; Convert radians to degrees (GLSLstd450Degrees)
-
-    ; NaN/Inf handling
-    (NMin Expr Expr)        ; NaN-ignoring minimum (GLSLstd450NMin)
-    (NMax Expr Expr)        ; NaN-ignoring maximum (GLSLstd450NMax)
-    (NClamp Expr Expr Expr) ; NaN-ignoring clamp (GLSLstd450NClamp)
-
-    ; ==========================================================================
-    ; Memory Operations (for global e-graph optimization)
-    ; ==========================================================================
-    ; Memory state is modeled as an Expr to enable state threading through the
-    ; e-graph. This allows load-after-store forwarding, dead store elimination,
-    ; and other memory optimizations in ONE pass.
-    ;
-    ; Memory state forms a chain: InitMem -> Store -> Store -> ...
-    ; Loads read from a memory state, producing a value.
-    ; The e-graph unifies equivalent memory states and values.
-
-    ; Initial memory state (function/shader entry)
-    (InitMem)
-
-    ; Memory state after a store: (StoreMem ptr value prev_state)
-    ; Returns the new memory state
-    (StoreMem Expr Expr Expr)
-
-    ; Memory state at control flow merge: (MergeMem cond then_mem else_mem)
-    (MergeMem Expr Expr Expr)
-
-    ; Memory state after a loop: (LoopMem cond body_mem init_mem)
-    (LoopMem Expr Expr Expr)
-
-    ; Load from memory: (Load ptr mem_state) -> value
-    (Load Expr Expr)
-
-    ; Variable/pointer reference: (Var name storage_class)
-    ; storage_class: 0=Function, 1=Private, 2=Workgroup, 3=Uniform, etc.
-    (Var String i64)
-
-    ; Access chain: (AccessChain1/2/3 base idx1 [idx2 [idx3]])
-    ; Specialized for common depths to avoid ExprList dependency
-    (AccessChain1 Expr i64)
-    (AccessChain2 Expr i64 i64)
-    (AccessChain3 Expr i64 i64 i64)
-
-    ; Dynamic access chain: (AccessChainDyn base index_expr)
-    (AccessChainDyn Expr Expr)
-
-    ; Image operations (pure reads)
-    (ImageSample Expr Expr)     ; (image, coord) -> color
-    (ImageFetch Expr Expr)      ; (image, coord) -> texel
-    (ImageRead Expr Expr)       ; (image, coord) -> data
-
-    ; Sampler/Image combination
-    (SampledImage Expr Expr)    ; (image, sampler) -> combined sampled_image
-    (Image Expr)                ; Extract image from sampled_image
-
-    ; Image write returns new memory state: (ImageWrite image coord data mem)
-    (ImageWrite Expr Expr Expr Expr)
-
-    ; Atomic operations: return (value, new_mem_state) encoded as pair
-    ; For simplicity, we return just the loaded value; mem state is implicit
-    (AtomicLoad Expr Expr)              ; (ptr, mem) -> value
-    (AtomicStore Expr Expr Expr)        ; (ptr, value, mem) -> new_mem
-    (AtomicExchange Expr Expr Expr)     ; (ptr, value, mem) -> old_value
-    (AtomicCompareExchange Expr Expr Expr Expr) ; (ptr, cmp, val, mem) -> old
-    (AtomicIAdd Expr Expr Expr)         ; (ptr, value, mem) -> old_value
-    (AtomicISub Expr Expr Expr)
-    (AtomicSMin Expr Expr Expr)
-    (AtomicUMin Expr Expr Expr)
-    (AtomicSMax Expr Expr Expr)
-    (AtomicUMax Expr Expr Expr)
-    (AtomicAnd Expr Expr Expr)
-    (AtomicOr Expr Expr Expr)
-    (AtomicXor Expr Expr Expr)
-
-    ; Subgroup/Wave operations for compute shaders
-    (GroupElect)                        ; Returns true for first active invocation
-    (GroupAll Expr)                     ; All predicate: all invocations true?
-    (GroupAny Expr)                     ; Any predicate: any invocation true?
-    (GroupAllEqual Expr)                ; All values equal across invocations?
-    (GroupBroadcast Expr Expr)          ; Broadcast value from specific invocation
-    (GroupBroadcastFirst Expr)          ; Broadcast from first active invocation
-    (GroupShuffle Expr Expr)            ; Shuffle by invocation ID
-    (GroupShuffleXor Expr Expr)         ; Shuffle by XOR mask
-
-    ; Subgroup arithmetic reductions
-    (GroupIAdd Expr)                    ; Integer addition reduction
-    (GroupFAdd Expr)                    ; Float addition reduction
-    (GroupIMul Expr)                    ; Integer multiplication reduction
-    (GroupFMul Expr)                    ; Float multiplication reduction
-    (GroupSMin Expr)                    ; Signed min reduction
-    (GroupUMin Expr)                    ; Unsigned min reduction
-    (GroupFMin Expr)                    ; Float min reduction
-    (GroupSMax Expr)                    ; Signed max reduction
-    (GroupUMax Expr)                    ; Unsigned max reduction
-    (GroupFMax Expr)                    ; Float max reduction
-    (GroupBitAnd Expr)                  ; Bitwise AND reduction
-    (GroupBitOr Expr)                   ; Bitwise OR reduction
-    (GroupBitXor Expr)                  ; Bitwise XOR reduction
-    (GroupLogAnd Expr)                  ; Logical AND reduction
-    (GroupLogOr Expr)                   ; Logical OR reduction
-    (GroupLogXor Expr)                  ; Logical XOR reduction
-
-    ; ==========================================================================
-    ; Function Calls and Inlining (for global optimization)
-    ; ==========================================================================
-    ; Functions are modeled in the e-graph to enable cross-function optimization.
-    ; Inlining is a rewrite: Call(f, args) = Subst(body_of_f, args)
-
-    ; Function call with 1-4 arguments (common cases)
-    (Call1 String Expr)
-    (Call2 String Expr Expr)
-    (Call3 String Expr Expr Expr)
-    (Call4 String Expr Expr Expr Expr)
-
-    ; Substitution: (Subst body arg_index value)
-    ; Replaces Arg(arg_index) with value in body
-    (Subst Expr i64 Expr)
-
-    ; Multi-argument substitution helpers for inlining
-    ; Subst2(body, v0, v1) replaces Arg(0) with v0 and Arg(1) with v1
-    (Subst2 Expr Expr Expr)
-    ; Subst3(body, v0, v1, v2) replaces Arg(0..2) with v0..v2
-    (Subst3 Expr Expr Expr Expr)
-    ; Subst4(body, v0, v1, v2, v3) replaces Arg(0..3) with v0..v3
-    (Subst4 Expr Expr Expr Expr Expr)
-
-    ; ==========================================================================
-    ; Specialization Constants
-    ; ==========================================================================
-    ; Spec constants are compile-time constants with runtime-specializable values.
-    ; Modeled as Expr to enable algebraic optimization before specialization.
-
-    ; Spec constant reference: (SpecConst spec_id default_value)
-    (SpecConst i64 i64)
-
-    ; Spec constant operations (OpSpecConstantOp)
-    ; These compute at specialization time
-    (SpecAdd Expr Expr)
-    (SpecSub Expr Expr)
-    (SpecMul Expr Expr)
-    (SpecSDiv Expr Expr)
-    (SpecUDiv Expr Expr)
-    (SpecSMod Expr Expr)
-    (SpecUMod Expr Expr)
-    (SpecShl Expr Expr)
-    (SpecShrS Expr Expr)
-    (SpecShrU Expr Expr)
-    (SpecBitAnd Expr Expr)
-    (SpecBitOr Expr Expr)
-    (SpecBitXor Expr Expr)
-    (SpecEq Expr Expr)
-    (SpecNe Expr Expr)
-    (SpecSLt Expr Expr)
-    (SpecULt Expr Expr)
-    (SpecSelect Expr Expr Expr)
-
-    ; ==========================================================================
-    ; Loop Unrolling Support
-    ; ==========================================================================
-    ; Bounded loops can be unrolled when trip count is known.
-
-    ; Bounded theta: (BoundedTheta trip_count body init)
-    ; A loop with known iteration count
-    (BoundedTheta i64 Expr Expr)
-
-    ; Loop iteration: (LoopIter iteration_number value)
-    ; Represents the value at a specific iteration (for unrolling)
-    (LoopIter i64 Expr)
-
-    ; ==========================================================================
-    ; Derivative Operations (for fragment shaders)
-    ; ==========================================================================
-    (DPdx Expr)         ; Partial derivative in x
-    (DPdy Expr)         ; Partial derivative in y
-    (DPdxFine Expr)     ; Fine partial derivative in x
-    (DPdyFine Expr)     ; Fine partial derivative in y
-    (DPdxCoarse Expr)   ; Coarse partial derivative in x
-    (DPdyCoarse Expr)   ; Coarse partial derivative in y
-    (Fwidth Expr)       ; abs(dPdx) + abs(dPdy)
-    (FwidthFine Expr)
-    (FwidthCoarse Expr)
-
-    ; ==========================================================================
-    ; Bitfield Operations (OpBitField*)
-    ; ==========================================================================
-    ; BitFieldInsert(base, insert, offset, count): Insert bits into base
-    ; Result = (base & ~mask) | ((insert << offset) & mask)
-    ; where mask = ((1 << count) - 1) << offset
-    (BitFieldInsert Expr Expr Expr Expr)  ; (base, insert, offset, count)
-
-    ; BitFieldSExtract(base, offset, count): Extract signed bits
-    ; Extracts 'count' bits starting at 'offset', sign-extended
-    (BitFieldSExtract Expr Expr Expr)     ; (base, offset, count)
-
-    ; BitFieldUExtract(base, offset, count): Extract unsigned bits
-    ; Extracts 'count' bits starting at 'offset', zero-extended
-    (BitFieldUExtract Expr Expr Expr)     ; (base, offset, count)
-
-    ; NOTE: BitReverse, BitCount, FindILsb, FindSMsb, FindUMsb are already
-    ; defined earlier in this file as core bitwise operations
-
-    ; ==========================================================================
-    ; Image Query Operations
-    ; ==========================================================================
-    (ImageQuerySize Expr)          ; Get image dimensions
-    (ImageQuerySizeLod Expr Expr)  ; Get image dimensions at LOD
-    (ImageQueryLevels Expr)        ; Get number of mip levels
-    (ImageQuerySamples Expr)       ; Get number of samples
-    (ImageQueryLod Expr Expr)      ; Query LOD for coordinates
-
-    ; ==========================================================================
-    ; Extended E-Node Definitions for Advanced Optimizations
-    ; ==========================================================================
-    ; These support mem2reg, LICM, loop fusion, merge-return,
-    ; legalization, and instrumentation passes.
-
-    ; ==========================================================================
-    ; Additional Floating-Point Operations
-    ; ==========================================================================
-
-    ; Floating-point modulo (distinct from FRem)
-    (FMod Expr Expr)
-
-    ; Float constant (for rules that need explicit float literals)
-    (FConst f64)
-
-    ; Additional floating-point comparisons
-    (FNe Expr Expr)
-    (FGe Expr Expr)
-    (FLe Expr Expr)
-    (FLt Expr Expr)
-    (FGt Expr Expr)
-    (FEq Expr Expr)
-
-    ; ==========================================================================
-    ; Memory/Register Promotion (mem2reg)
-    ; ==========================================================================
-
-    ; Stack allocation (function-local variable)
-    (Alloca String)
-
-    ; Marker for single-store optimization
-    (SingleStoreOptimized Expr Expr)
-
-    ; Memory state placeholder
-    (MemState i64)
-
-    ; ==========================================================================
-    ; Loop Transformations
-    ; ==========================================================================
-
-    ; Breakable theta - loop with early exit capability
-    (BreakableTheta Expr Expr Expr Expr Expr)
-
-    ; Check if loop was broken out of
-    (WasBroken Expr)
-
-    ; Fused loop - two loops combined into one
-    (ThetaFused Expr Expr Expr Expr Expr)
-
-    ; Parallel loop (for vectorization/GPU)
-    (ParTheta Expr Expr Expr)
-
-    ; Counted loop with known trip count
-    (CountedTheta Expr Expr Expr)
-
-    ; Strip-mined loop
-    (StripMined Expr Expr Expr Expr)
-
-    ; Loop interchange result
-    (LoopInterchange Expr)
-
-    ; Coalesced loop
-    (Coalesced Expr)
-
-    ; Tiled loop
-    (ThetaTiled Expr Expr Expr Expr)
-
-    ; 2D loop tiling
-    (LoopTile2D Expr Expr Expr Expr)
-
-    ; ==========================================================================
-    ; Control Flow (merge-return)
-    ; ==========================================================================
-
-    ; Flattened 4-way conditional
-    (FlatGamma4 Expr Expr Expr Expr Expr Expr Expr)
-
-    ; Single-exit transformation helpers
-    (SetReturn Expr)
-    (HasReturned)
-
-    ; Uniformity markers for GPU control flow
-    (Uniform Expr)
-    (UniformGamma Expr Expr Expr)
-    (WorkgroupUniform Expr)
-
-    ; Control flow statements
-    (Continue)
-    (Break Expr)
-
-    ; Barrier synchronization
-    (Barrier)
-
-    ; Generic function call (in addition to Call1-4)
-    (Call String Expr)
-
-    ; ==========================================================================
-    ; Legalization - Narrow Integer Operations
-    ; ==========================================================================
-
-    ; 8-bit integer operations
-    (Add8 Expr Expr)
-    (Sub8 Expr Expr)
-    (Mul8 Expr Expr)
-
-    ; 16-bit integer operations
-    (Add16 Expr Expr)
-    (Sub16 Expr Expr)
-    (Mul16 Expr Expr)
-
-    ; 64-bit integer operations (extended)
-    (Add64 Expr Expr)
-    (Sub64 Expr Expr)
-    (Mul64 Expr Expr)
-    (Div64 Expr Expr)
-
-    ; Truncation operations
-    (Trunc8 Expr)
-    (Trunc16 Expr)
-
-    ; Extension operations
-    (ZeroExtend8 Expr)
-    (ZeroExtend16 Expr)
-    (SignExtend8 Expr)
-    (SignExtend16 Expr)
-
-    ; Float16 operations (native)
-    (Float16Add Expr Expr)
-    (Float16Sub Expr Expr)
-    (Float16Mul Expr Expr)
-    (Float16Div Expr Expr)
-
-    ; Float16 operations (emulated)
-    (EmulatedFloat16Add Expr Expr)
-    (EmulatedFloat16Sub Expr Expr)
-    (EmulatedFloat16Mul Expr Expr)
-    (EmulatedFloat16Div Expr Expr)
-
-    ; 64-bit integer decomposition
-    (SplitI64 Expr)
-    (MergeI64 Expr Expr)
-    (I64Hi Expr)
-    (I64Lo Expr)
-
-    ; 64-bit arithmetic helpers
-    (DivMod32Hi Expr Expr)
-    (DivMod32Lo Expr Expr)
-    (AddWithCarry Expr Expr Expr)
-    (SubWithBorrow Expr Expr Expr)
-
-    ; Target legalization markers
-    (VulkanLegalized Expr)
-    (OpenCLLegalized Expr)
-
-    ; ==========================================================================
-    ; Instrumentation
-    ; ==========================================================================
-
-    ; Debug instrumentation wrappers
-    (Instrumented Expr)
-    (InstrumentedVec2 Expr)
-    (InstrumentedVec3 Expr)
-    (InstrumentedVec4 Expr)
-    (InstrumentedNamed String Expr)
-
-    ; Profiling
-    (ProfiledBlock i64 Expr)
-    (ProfiledLoop i64 Expr)
-    (ProfiledBranch i64 Expr)
-    (ProfileCounter i64)
-
-    ; Bounds checking
-    (BoundsChecked Expr Expr)
-    (BoundsChecked2D Expr Expr Expr)
-    (BufferBoundsChecked Expr Expr Expr)
-
-    ; NaN/Infinity checking
-    (NaNChecked Expr)
-    (InfChecked Expr)
-    (FiniteChecked Expr)
-    (NaNCheckedVec Expr)
-
-    ; Overflow checking
-    (OverflowCheckedAdd Expr Expr)
-    (OverflowCheckedSub Expr Expr)
-    (OverflowCheckedMul Expr Expr)
-    (AddOverflows Expr Expr)
-    (SubOverflows Expr Expr)
-    (MulOverflows Expr Expr)
-
-    ; Division by zero checking
-    (DivChecked Expr Expr)
-    (UDivChecked Expr Expr)
-    (FDivChecked Expr Expr)
-
-    ; Null pointer checking
-    (NullChecked Expr)
-    (NullCheckedLoad Expr Expr)
-    (NullPtr)
-
-    ; Shader validation
-    (ValidatedTexCoord Expr)
-    (ValidatedNormal Expr)
-    (ValidatedOrthogonal Expr)
-    (FApproxEq Expr Expr)
-
-    ; Timing instrumentation
-    (Timed i64 Expr)
-    (TimerStart i64)
-    (TimerEnd i64)
-    (ReadClock)
-
-    ; Memory access tracking
-    (TrackedLoad Expr Expr)
-    (TrackedStore Expr Expr Expr)
-    (AccessCounter Expr)
-    (StoreCounter Expr)
-    (PtrToInt Expr)
-
-    ; Debug/assert primitives
-    (DebugPrintf String Expr)
-    (Assert Expr String)
-
-    ; Conditional instrumentation
-    (DebugMode Expr)
-    (VerboseMode Expr)
-    (DebugEnabled)
-    (VerboseEnabled)
-    (SampledProfile Expr Expr)
-    (InvocationId)
-
-    ; Vector predicate operations
-    (Any Expr)
-    (All Expr)
-
-    ; ==========================================================================
-    ; Additional Conversion Operations
-    ; ==========================================================================
-
-    ; Generic conversion (type inferred from context)
-    (Convert Expr)
-
-    ; Bitcast alias
-    (BitCast Expr)
-)
+(sort IntExpr)
+(sort FloatExpr)
+(sort BoolExpr)
+(sort Expr)
 
 ; =============================================================================
-; ExprType: Type Class Tracking
+; IntExpr — Integer-valued scalar expressions
 ; =============================================================================
-; Tracks the SPIR-V type domain for each expression in the e-graph.
-; :merge old preserves the first-set type when e-classes merge across domains.
-; This enables type-aware rewrite guards and correct type inference during extraction.
-; Sym nodes are seeded from Rust code; constructors get types from rules below.
 
-(datatype TypeDomain (BoolType) (IntType) (FloatType))
-
-(function ExprType (Expr) TypeDomain :merge old)
-
-; --- Boolean-producing operations ---
-; Integer comparisons
-(rule ((= e (Eq a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (Ne a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (SLt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (SLe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (SGt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (SGe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (ULt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (ULe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (UGt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (UGe a b))) ((set (ExprType e) (BoolType))))
-; Float comparisons (ordered)
-(rule ((= e (FOrdEq a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FOrdNe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FOrdLt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FOrdLe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FOrdGt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FOrdGe a b))) ((set (ExprType e) (BoolType))))
-; Float comparisons (unordered)
-(rule ((= e (FUnordEq a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FUnordNe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FUnordLt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FUnordLe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FUnordGt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FUnordGe a b))) ((set (ExprType e) (BoolType))))
-; Additional float comparisons
-(rule ((= e (FEq a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FNe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FLt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FLe a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FGt a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (FGe a b))) ((set (ExprType e) (BoolType))))
-; Logical operations
-(rule ((= e (LogNot a))) ((set (ExprType e) (BoolType))))
-(rule ((= e (LogAnd a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (LogOr a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (LogEq a b))) ((set (ExprType e) (BoolType))))
-(rule ((= e (LogNe a b))) ((set (ExprType e) (BoolType))))
-; FP predicates
-(rule ((= e (IsNan a))) ((set (ExprType e) (BoolType))))
-(rule ((= e (IsInf a))) ((set (ExprType e) (BoolType))))
-; Boolean constant
-(rule ((= e (BoolConst v))) ((set (ExprType e) (BoolType))))
-; Subgroup boolean operations
-(rule ((= e (GroupElect))) ((set (ExprType e) (BoolType))))
-(rule ((= e (GroupAll a))) ((set (ExprType e) (BoolType))))
-(rule ((= e (GroupAny a))) ((set (ExprType e) (BoolType))))
-(rule ((= e (GroupAllEqual a))) ((set (ExprType e) (BoolType))))
-; Vector boolean predicates
-(rule ((= e (Any a))) ((set (ExprType e) (BoolType))))
-(rule ((= e (All a))) ((set (ExprType e) (BoolType))))
-
-; --- Integer-producing operations ---
 ; Arithmetic
-(rule ((= e (Add a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (Sub a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (Mul a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (Neg a))) ((set (ExprType e) (IntType))))
-(rule ((= e (SDiv a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (UDiv a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (SRem a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (SMod a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (UMod a b))) ((set (ExprType e) (IntType))))
+(constructor Add (IntExpr IntExpr) IntExpr)
+(constructor Sub (IntExpr IntExpr) IntExpr)
+(constructor Mul (IntExpr IntExpr) IntExpr)
+(constructor Neg (IntExpr) IntExpr)
+(constructor SDiv (IntExpr IntExpr) IntExpr)
+(constructor UDiv (IntExpr IntExpr) IntExpr)
+(constructor SRem (IntExpr IntExpr) IntExpr)
+(constructor SMod (IntExpr IntExpr) IntExpr)
+(constructor UMod (IntExpr IntExpr) IntExpr)
+
 ; Bitwise
-(rule ((= e (Shl a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (ShrS a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (ShrU a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitAnd a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitOr a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitXor a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitNot a))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitReverse a))) ((set (ExprType e) (IntType))))
-(rule ((= e (BitCount a))) ((set (ExprType e) (IntType))))
-(rule ((= e (RotL a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (RotR a b))) ((set (ExprType e) (IntType))))
-; Integer min/max
-(rule ((= e (SMin a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (SMax a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (UMin a b))) ((set (ExprType e) (IntType))))
-(rule ((= e (UMax a b))) ((set (ExprType e) (IntType))))
-; Integer GLSL operations
-(rule ((= e (SAbs a))) ((set (ExprType e) (IntType))))
-(rule ((= e (Sign a))) ((set (ExprType e) (IntType))))
-(rule ((= e (FindILsb a))) ((set (ExprType e) (IntType))))
-(rule ((= e (FindSMsb a))) ((set (ExprType e) (IntType))))
-(rule ((= e (FindUMsb a))) ((set (ExprType e) (IntType))))
-; Float-to-int conversions
-(rule ((= e (ConvertFToS a))) ((set (ExprType e) (IntType))))
-(rule ((= e (ConvertFToU a))) ((set (ExprType e) (IntType))))
-; Integer width conversions
-(rule ((= e (SConvert a))) ((set (ExprType e) (IntType))))
-(rule ((= e (UConvert a))) ((set (ExprType e) (IntType))))
-; Integer constants
-(rule ((= e (Const v))) ((set (ExprType e) (IntType))))
-(rule ((= e (Const64 v))) ((set (ExprType e) (IntType))))
-; Packing (int result)
-(rule ((= e (PackSnorm4x8 a))) ((set (ExprType e) (IntType))))
-(rule ((= e (PackUnorm4x8 a))) ((set (ExprType e) (IntType))))
-(rule ((= e (PackSnorm2x16 a))) ((set (ExprType e) (IntType))))
-(rule ((= e (PackUnorm2x16 a))) ((set (ExprType e) (IntType))))
-(rule ((= e (PackHalf2x16 a))) ((set (ExprType e) (IntType))))
-(rule ((= e (PackDouble2x32 a))) ((set (ExprType e) (IntType))))
+(constructor Shl (IntExpr IntExpr) IntExpr)
+(constructor ShrS (IntExpr IntExpr) IntExpr)
+(constructor ShrU (IntExpr IntExpr) IntExpr)
+(constructor BitAnd (IntExpr IntExpr) IntExpr)
+(constructor BitOr (IntExpr IntExpr) IntExpr)
+(constructor BitXor (IntExpr IntExpr) IntExpr)
+(constructor BitNot (IntExpr) IntExpr)
+(constructor BitReverse (IntExpr) IntExpr)
+(constructor RotL (IntExpr IntExpr) IntExpr)
+(constructor RotR (IntExpr IntExpr) IntExpr)
+
+; Min/Max
+(constructor SMin (IntExpr IntExpr) IntExpr)
+(constructor SMax (IntExpr IntExpr) IntExpr)
+(constructor UMin (IntExpr IntExpr) IntExpr)
+(constructor UMax (IntExpr IntExpr) IntExpr)
+
+; Abs/Sign
+(constructor SAbs (IntExpr) IntExpr)
+(constructor Sign (IntExpr) IntExpr)
+
+; Bit queries
+(constructor FindILsb (IntExpr) IntExpr)
+(constructor FindSMsb (IntExpr) IntExpr)
+(constructor FindUMsb (IntExpr) IntExpr)
+(constructor BitCount (IntExpr) IntExpr)
+
+; Bitfield operations
+(constructor BitFieldInsert (IntExpr IntExpr IntExpr IntExpr) IntExpr)
+(constructor BitFieldSExtract (IntExpr IntExpr IntExpr) IntExpr)
+(constructor BitFieldUExtract (IntExpr IntExpr IntExpr) IntExpr)
+
+; Constants
+(constructor Const (i64) IntExpr)
+(constructor Const64 (i64) IntExpr)
+
+; Conversions (to int)
+(constructor ConvertFToS (FloatExpr) IntExpr)
+(constructor ConvertFToU (FloatExpr) IntExpr)
+(constructor SConvert (IntExpr) IntExpr)
+(constructor UConvert (IntExpr) IntExpr)
+
+; Clamp
+(constructor SClamp (IntExpr IntExpr IntExpr) IntExpr)
+(constructor UClamp (IntExpr IntExpr IntExpr) IntExpr)
+
+; Typed control flow
+(constructor ISym (String) IntExpr)
+(constructor GammaI (BoolExpr IntExpr IntExpr) IntExpr)
+(constructor SelectI (BoolExpr IntExpr IntExpr) IntExpr)
+(constructor IfI (BoolExpr IntExpr IntExpr) IntExpr)
+(constructor ThetaI (BoolExpr IntExpr IntExpr) IntExpr)
+(constructor LoopVarI () IntExpr)
+(constructor LoopInvariantI (IntExpr) IntExpr)
+(constructor CopyI (IntExpr) IntExpr)
+
 ; Subgroup integer reductions
-(rule ((= e (GroupIAdd a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupIMul a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupSMin a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupUMin a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupSMax a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupUMax a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupBitAnd a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupBitOr a))) ((set (ExprType e) (IntType))))
-(rule ((= e (GroupBitXor a))) ((set (ExprType e) (IntType))))
+(constructor GroupIAdd (IntExpr) IntExpr)
+(constructor GroupIMul (IntExpr) IntExpr)
+(constructor GroupSMin (IntExpr) IntExpr)
+(constructor GroupUMin (IntExpr) IntExpr)
+(constructor GroupSMax (IntExpr) IntExpr)
+(constructor GroupUMax (IntExpr) IntExpr)
+(constructor GroupBitAnd (IntExpr) IntExpr)
+(constructor GroupBitOr (IntExpr) IntExpr)
+(constructor GroupBitXor (IntExpr) IntExpr)
 
-; --- Float-producing operations ---
+; Packing (vector/float input → int result)
+(constructor PackHalf2x16 (Expr) IntExpr)
+(constructor PackSnorm4x8 (Expr) IntExpr)
+(constructor PackSnorm2x16 (Expr) IntExpr)
+(constructor PackUnorm4x8 (Expr) IntExpr)
+(constructor PackUnorm2x16 (Expr) IntExpr)
+(constructor PackDouble2x32 (Expr) IntExpr)
+
+; =============================================================================
+; FloatExpr — Float-valued scalar expressions
+; =============================================================================
+
 ; Arithmetic
-(rule ((= e (FAdd a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FSub a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FMul a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FDiv a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FNeg a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FRem a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FMod a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FMin a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FMax a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FAbs a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FFloor a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FCeil a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FRound a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FTrunc a))) ((set (ExprType e) (FloatType))))
-; Int-to-float conversions
-(rule ((= e (ConvertSToF a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (ConvertUToF a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FConvert a))) ((set (ExprType e) (FloatType))))
-; Trigonometric
-(rule ((= e (Sin a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Cos a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Tan a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Asin a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Acos a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Atan a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Atan2 a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Sinh a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Cosh a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Tanh a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Asinh a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Acosh a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Atanh a))) ((set (ExprType e) (FloatType))))
-; Exponential / logarithmic
-(rule ((= e (Sqrt a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (InverseSqrt a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Exp a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Exp2 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Log a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Log2 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Pow a b))) ((set (ExprType e) (FloatType))))
-; GLSL math
-(rule ((= e (Fma a b c))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Fract a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Modf a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Ldexp a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Frexp a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Step a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FSign a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Radians a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Degrees a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FMix a b c))) ((set (ExprType e) (FloatType))))
-(rule ((= e (SmoothStep a b c))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FClamp a b c))) ((set (ExprType e) (FloatType))))
-(rule ((= e (NMin a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (NMax a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (NClamp a b c))) ((set (ExprType e) (FloatType))))
-; Geometry
-(rule ((= e (Length a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Distance a b))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Dot a b))) ((set (ExprType e) (FloatType))))
-; Derivatives
-(rule ((= e (DPdx a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (DPdy a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (Fwidth a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (DPdxFine a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (DPdyFine a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FwidthFine a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (DPdxCoarse a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (DPdyCoarse a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (FwidthCoarse a))) ((set (ExprType e) (FloatType))))
-; Unpacking (float result)
-(rule ((= e (UnpackSnorm2x16 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (UnpackUnorm2x16 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (UnpackHalf2x16 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (UnpackSnorm4x8 a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (UnpackUnorm4x8 a))) ((set (ExprType e) (FloatType))))
-; Float constant
-(rule ((= e (FConst v))) ((set (ExprType e) (FloatType))))
-; Subgroup float reductions
-(rule ((= e (GroupFAdd a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (GroupFMul a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (GroupFMin a))) ((set (ExprType e) (FloatType))))
-(rule ((= e (GroupFMax a))) ((set (ExprType e) (FloatType))))
-; Quantization
-(rule ((= e (QuantizeToF16 a))) ((set (ExprType e) (FloatType))))
+(constructor FAdd (FloatExpr FloatExpr) FloatExpr)
+(constructor FSub (FloatExpr FloatExpr) FloatExpr)
+(constructor FMul (FloatExpr FloatExpr) FloatExpr)
+(constructor FDiv (FloatExpr FloatExpr) FloatExpr)
+(constructor FNeg (FloatExpr) FloatExpr)
+(constructor FRem (FloatExpr FloatExpr) FloatExpr)
+(constructor FMod (FloatExpr FloatExpr) FloatExpr)
 
-; --- Type-preserving operations (inherit ExprType from operands) ---
-; Gamma/Select/If inherit from branches
-(rule ((= e (Gamma c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
-(rule ((= e (Gamma c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
-(rule ((= e (Select c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
-(rule ((= e (Select c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
-(rule ((= e (If c t f)) (= ty (ExprType t))) ((set (ExprType e) ty)))
-(rule ((= e (If c t f)) (= ty (ExprType f))) ((set (ExprType e) ty)))
-; CopyObject inherits from operand
-(rule ((= e (CopyObject x)) (= ty (ExprType x))) ((set (ExprType e) ty)))
-; Loop constructs inherit from body/init
-(rule ((= e (LoopInvariant x)) (= ty (ExprType x))) ((set (ExprType e) ty)))
-(rule ((= e (Theta c body init)) (= ty (ExprType init))) ((set (ExprType e) ty)))
+; Precision
+(constructor FAbs (FloatExpr) FloatExpr)
+(constructor FFloor (FloatExpr) FloatExpr)
+(constructor FCeil (FloatExpr) FloatExpr)
+(constructor FRound (FloatExpr) FloatExpr)
+(constructor FTrunc (FloatExpr) FloatExpr)
+(constructor QuantizeToF16 (FloatExpr) FloatExpr)
+
+; Min/Max
+(constructor FMin (FloatExpr FloatExpr) FloatExpr)
+(constructor FMax (FloatExpr FloatExpr) FloatExpr)
+(constructor NMin (FloatExpr FloatExpr) FloatExpr)
+(constructor NMax (FloatExpr FloatExpr) FloatExpr)
+
+; GLSL math (unary)
+(constructor Sqrt (FloatExpr) FloatExpr)
+(constructor InverseSqrt (FloatExpr) FloatExpr)
+(constructor Exp (FloatExpr) FloatExpr)
+(constructor Exp2 (FloatExpr) FloatExpr)
+(constructor Log (FloatExpr) FloatExpr)
+(constructor Log2 (FloatExpr) FloatExpr)
+(constructor Sin (FloatExpr) FloatExpr)
+(constructor Cos (FloatExpr) FloatExpr)
+(constructor Tan (FloatExpr) FloatExpr)
+(constructor Asin (FloatExpr) FloatExpr)
+(constructor Acos (FloatExpr) FloatExpr)
+(constructor Atan (FloatExpr) FloatExpr)
+(constructor Sinh (FloatExpr) FloatExpr)
+(constructor Cosh (FloatExpr) FloatExpr)
+(constructor Tanh (FloatExpr) FloatExpr)
+(constructor Asinh (FloatExpr) FloatExpr)
+(constructor Acosh (FloatExpr) FloatExpr)
+(constructor Atanh (FloatExpr) FloatExpr)
+(constructor Fract (FloatExpr) FloatExpr)
+(constructor FSign (FloatExpr) FloatExpr)
+(constructor Radians (FloatExpr) FloatExpr)
+(constructor Degrees (FloatExpr) FloatExpr)
+(constructor Modf (FloatExpr) FloatExpr)
+
+; GLSL math (binary)
+(constructor Pow (FloatExpr FloatExpr) FloatExpr)
+(constructor Atan2 (FloatExpr FloatExpr) FloatExpr)
+(constructor Step (FloatExpr FloatExpr) FloatExpr)
+(constructor Ldexp (FloatExpr IntExpr) FloatExpr)
+(constructor Distance (Expr Expr) FloatExpr)
+
+; GLSL math (ternary)
+(constructor Fma (FloatExpr FloatExpr FloatExpr) FloatExpr)
+(constructor FMix (FloatExpr FloatExpr FloatExpr) FloatExpr)
+(constructor SmoothStep (FloatExpr FloatExpr FloatExpr) FloatExpr)
+(constructor FClamp (FloatExpr FloatExpr FloatExpr) FloatExpr)
+(constructor NClamp (FloatExpr FloatExpr FloatExpr) FloatExpr)
+
+; Geometry (scalar results from vector inputs)
+(constructor Length (Expr) FloatExpr)
+(constructor Dot (Expr Expr) FloatExpr)
+(constructor Determinant (Expr) FloatExpr)
+
+; Derivatives
+(constructor DPdx (FloatExpr) FloatExpr)
+(constructor DPdy (FloatExpr) FloatExpr)
+(constructor DPdxFine (FloatExpr) FloatExpr)
+(constructor DPdyFine (FloatExpr) FloatExpr)
+(constructor DPdxCoarse (FloatExpr) FloatExpr)
+(constructor DPdyCoarse (FloatExpr) FloatExpr)
+(constructor Fwidth (FloatExpr) FloatExpr)
+(constructor FwidthFine (FloatExpr) FloatExpr)
+(constructor FwidthCoarse (FloatExpr) FloatExpr)
+
+; Constants
+(constructor FConst (f64) FloatExpr)
+
+; Conversions (to float)
+(constructor ConvertSToF (IntExpr) FloatExpr)
+(constructor ConvertUToF (IntExpr) FloatExpr)
+(constructor FConvert (FloatExpr) FloatExpr)
+
+; Unpacking (int input → vector/float result kept in Expr for vec returns)
+; Note: Unpack ops return vectors, so they stay in Expr via cross-sort constructors below
+
+; Typed control flow
+(constructor FSym (String) FloatExpr)
+(constructor GammaF (BoolExpr FloatExpr FloatExpr) FloatExpr)
+(constructor SelectF (BoolExpr FloatExpr FloatExpr) FloatExpr)
+(constructor IfF (BoolExpr FloatExpr FloatExpr) FloatExpr)
+(constructor ThetaF (BoolExpr FloatExpr FloatExpr) FloatExpr)
+(constructor LoopVarF () FloatExpr)
+(constructor LoopInvariantF (FloatExpr) FloatExpr)
+(constructor CopyF (FloatExpr) FloatExpr)
+
+; Subgroup float reductions
+(constructor GroupFAdd (FloatExpr) FloatExpr)
+(constructor GroupFMul (FloatExpr) FloatExpr)
+(constructor GroupFMin (FloatExpr) FloatExpr)
+(constructor GroupFMax (FloatExpr) FloatExpr)
+
+; =============================================================================
+; BoolExpr — Boolean-valued expressions
+; =============================================================================
+
+; Integer comparisons
+(constructor Eq (IntExpr IntExpr) BoolExpr)
+(constructor Ne (IntExpr IntExpr) BoolExpr)
+(constructor SLt (IntExpr IntExpr) BoolExpr)
+(constructor SLe (IntExpr IntExpr) BoolExpr)
+(constructor SGt (IntExpr IntExpr) BoolExpr)
+(constructor SGe (IntExpr IntExpr) BoolExpr)
+(constructor ULt (IntExpr IntExpr) BoolExpr)
+(constructor ULe (IntExpr IntExpr) BoolExpr)
+(constructor UGt (IntExpr IntExpr) BoolExpr)
+(constructor UGe (IntExpr IntExpr) BoolExpr)
+
+; Float comparisons (ordered)
+(constructor FOrdEq (FloatExpr FloatExpr) BoolExpr)
+(constructor FOrdNe (FloatExpr FloatExpr) BoolExpr)
+(constructor FOrdLt (FloatExpr FloatExpr) BoolExpr)
+(constructor FOrdLe (FloatExpr FloatExpr) BoolExpr)
+(constructor FOrdGt (FloatExpr FloatExpr) BoolExpr)
+(constructor FOrdGe (FloatExpr FloatExpr) BoolExpr)
+
+; Float comparisons (unordered)
+(constructor FUnordEq (FloatExpr FloatExpr) BoolExpr)
+(constructor FUnordNe (FloatExpr FloatExpr) BoolExpr)
+(constructor FUnordLt (FloatExpr FloatExpr) BoolExpr)
+(constructor FUnordLe (FloatExpr FloatExpr) BoolExpr)
+(constructor FUnordGt (FloatExpr FloatExpr) BoolExpr)
+(constructor FUnordGe (FloatExpr FloatExpr) BoolExpr)
+
+; Additional float comparisons (aliases for generic ordered comparisons)
+(constructor FEq (FloatExpr FloatExpr) BoolExpr)
+(constructor FNe (FloatExpr FloatExpr) BoolExpr)
+(constructor FLt (FloatExpr FloatExpr) BoolExpr)
+(constructor FLe (FloatExpr FloatExpr) BoolExpr)
+(constructor FGt (FloatExpr FloatExpr) BoolExpr)
+(constructor FGe (FloatExpr FloatExpr) BoolExpr)
+
+; FP predicates
+(constructor IsNan (FloatExpr) BoolExpr)
+(constructor IsInf (FloatExpr) BoolExpr)
+
+; Logical
+(constructor LogNot (BoolExpr) BoolExpr)
+(constructor LogAnd (BoolExpr BoolExpr) BoolExpr)
+(constructor LogOr (BoolExpr BoolExpr) BoolExpr)
+(constructor LogEq (BoolExpr BoolExpr) BoolExpr)
+(constructor LogNe (BoolExpr BoolExpr) BoolExpr)
+
+; Constants
+(constructor BoolConst (i64) BoolExpr)
+
+; Typed control flow
+(constructor BSym (String) BoolExpr)
+(constructor GammaB (BoolExpr BoolExpr BoolExpr) BoolExpr)
+(constructor SelectB (BoolExpr BoolExpr BoolExpr) BoolExpr)
+(constructor IfB (BoolExpr BoolExpr BoolExpr) BoolExpr)
+(constructor ThetaB (BoolExpr BoolExpr BoolExpr) BoolExpr)
+(constructor LoopVarB () BoolExpr)
+(constructor LoopInvariantB (BoolExpr) BoolExpr)
+(constructor CopyB (BoolExpr) BoolExpr)
+
+; Subgroup boolean operations
+(constructor GroupElect () BoolExpr)
+(constructor GroupAll (BoolExpr) BoolExpr)
+(constructor GroupAny (BoolExpr) BoolExpr)
+(constructor GroupAllEqual (Expr) BoolExpr)
+(constructor GroupLogAnd (BoolExpr) BoolExpr)
+(constructor GroupLogOr (BoolExpr) BoolExpr)
+(constructor GroupLogXor (BoolExpr) BoolExpr)
+
+; Vector boolean predicates
+(constructor Any (Expr) BoolExpr)
+(constructor All (Expr) BoolExpr)
+
+; Overflow/comparison predicates (return bool from int ops)
+(constructor AddOverflows (IntExpr IntExpr) BoolExpr)
+(constructor SubOverflows (IntExpr IntExpr) BoolExpr)
+(constructor MulOverflows (IntExpr IntExpr) BoolExpr)
+(constructor FApproxEq (FloatExpr FloatExpr) BoolExpr)
+
+; =============================================================================
+; Bridge Constructors — Connect typed sorts to Expr
+; =============================================================================
+; Used when typed scalar values need to participate in type-agnostic
+; operations (vectors, memory, effects).
+
+(constructor IntToExpr (IntExpr) Expr)
+(constructor FloatToExpr (FloatExpr) Expr)
+(constructor BoolToExpr (BoolExpr) Expr)
+
+; Reverse bridges — for when Expr values feed into typed operations
+; (e.g., VecExtract result used in FMul)
+(constructor ExprToInt (Expr) IntExpr)
+(constructor ExprToFloat (Expr) FloatExpr)
+(constructor ExprToBool (Expr) BoolExpr)
+
+; Round-trip cancellation: bridge(reverse-bridge(x)) = x
+; These are essential for typed substitution to produce simplified results.
+(rule ((= e (ExprToInt (IntToExpr x)))) ((union e x)))
+(rule ((= e (ExprToFloat (FloatToExpr x)))) ((union e x)))
+(rule ((= e (ExprToBool (BoolToExpr x)))) ((union e x)))
+(rule ((= e (IntToExpr (ExprToInt x)))) ((union e x)))
+(rule ((= e (FloatToExpr (ExprToFloat x)))) ((union e x)))
+(rule ((= e (BoolToExpr (ExprToBool x)))) ((union e x)))
+
+; =============================================================================
+; Expr — Type-agnostic operations (vectors, matrices, memory, images, etc.)
+; =============================================================================
+
+; Generic control flow (for non-scalar types like vectors, structs)
+(constructor Gamma (BoolExpr Expr Expr) Expr)
+(constructor Select (BoolExpr Expr Expr) Expr)
+(constructor If (BoolExpr Expr Expr) Expr)
+(constructor Theta (BoolExpr Expr Expr) Expr)
+(constructor LoopVar () Expr)
+(constructor LoopInvariant (Expr) Expr)
+(constructor Sym (String) Expr)
+(constructor CopyObject (Expr) Expr)
+(constructor Undef () Expr)
+(constructor Arg (i64) Expr)
+
+; Vector construction and extraction
+(constructor Vec2 (Expr Expr) Expr)
+(constructor Vec3 (Expr Expr Expr) Expr)
+(constructor Vec4 (Expr Expr Expr Expr) Expr)
+(constructor VecExtract (Expr i64) Expr)
+(constructor VecInsert (Expr Expr i64) Expr)
+(constructor VecShuffle2 (Expr Expr i64 i64) Expr)
+(constructor VecShuffle3 (Expr Expr i64 i64 i64) Expr)
+(constructor VecShuffle4 (Expr Expr i64 i64 i64 i64) Expr)
+(constructor VecBroadcast2 (Expr) Expr)
+(constructor VecBroadcast3 (Expr) Expr)
+(constructor VecBroadcast4 (Expr) Expr)
+
+; Vector arithmetic (component-wise)
+(constructor VecAdd (Expr Expr) Expr)
+(constructor VecSub (Expr Expr) Expr)
+(constructor VecMul (Expr Expr) Expr)
+(constructor VecDiv (Expr Expr) Expr)
+(constructor VecNeg (Expr) Expr)
+(constructor VecFAdd (Expr Expr) Expr)
+(constructor VecFSub (Expr Expr) Expr)
+(constructor VecFMul (Expr Expr) Expr)
+(constructor VecFDiv (Expr Expr) Expr)
+(constructor VecFNeg (Expr) Expr)
+(constructor VecTimesScalar (Expr Expr) Expr)
+
+; Matrix operations
+(constructor MatTimesScalar (Expr Expr) Expr)
+(constructor MatTimesVec (Expr Expr) Expr)
+(constructor VecTimesMat (Expr Expr) Expr)
+(constructor MatTimesMat (Expr Expr) Expr)
+(constructor Transpose (Expr) Expr)
+(constructor OuterProduct (Expr Expr) Expr)
+(constructor MatInverse (Expr) Expr)
+
+; Geometry (vector results)
+(constructor Cross (Expr Expr) Expr)
+(constructor Normalize (Expr) Expr)
+(constructor Reflect (Expr Expr) Expr)
+(constructor Refract (Expr Expr Expr) Expr)
+(constructor FaceForward (Expr Expr Expr) Expr)
+
+; Unpacking (int → vector)
+(constructor UnpackHalf2x16 (IntExpr) Expr)
+(constructor UnpackSnorm4x8 (IntExpr) Expr)
+(constructor UnpackSnorm2x16 (IntExpr) Expr)
+(constructor UnpackUnorm4x8 (IntExpr) Expr)
+(constructor UnpackUnorm2x16 (IntExpr) Expr)
+(constructor UnpackDouble2x32 (IntExpr) Expr)
+
+; Struct operations
+(constructor ModfStruct (FloatExpr) Expr)
+(constructor FrexpStruct (FloatExpr) Expr)
+(constructor Frexp (FloatExpr) Expr)
+
+; Type conversions (generic/bitcast)
+(constructor Bitcast (Expr) Expr)
+(constructor BitCast (Expr) Expr)
+(constructor Convert (Expr) Expr)
+
+; Memory operations
+(constructor InitMem () Expr)
+(constructor StoreMem (Expr Expr Expr) Expr)
+(constructor MergeMem (BoolExpr Expr Expr) Expr)
+(constructor LoopMem (BoolExpr Expr Expr) Expr)
+(constructor Load (Expr Expr) Expr)
+(constructor Var (String i64) Expr)
+(constructor AccessChain1 (Expr i64) Expr)
+(constructor AccessChain2 (Expr i64 i64) Expr)
+(constructor AccessChain3 (Expr i64 i64 i64) Expr)
+(constructor AccessChainDyn (Expr Expr) Expr)
+
+; Image operations
+(constructor ImageSample (Expr Expr) Expr)
+(constructor ImageFetch (Expr Expr) Expr)
+(constructor ImageRead (Expr Expr) Expr)
+(constructor SampledImage (Expr Expr) Expr)
+(constructor Image (Expr) Expr)
+(constructor ImageWrite (Expr Expr Expr Expr) Expr)
+(constructor ImageQuerySize (Expr) Expr)
+(constructor ImageQuerySizeLod (Expr Expr) Expr)
+(constructor ImageQueryLevels (Expr) Expr)
+(constructor ImageQuerySamples (Expr) Expr)
+(constructor ImageQueryLod (Expr Expr) Expr)
+
+; Atomic operations
+(constructor AtomicLoad (Expr Expr) Expr)
+(constructor AtomicStore (Expr Expr Expr) Expr)
+(constructor AtomicExchange (Expr Expr Expr) Expr)
+(constructor AtomicCompareExchange (Expr Expr Expr Expr) Expr)
+(constructor AtomicIAdd (Expr Expr Expr) Expr)
+(constructor AtomicISub (Expr Expr Expr) Expr)
+(constructor AtomicSMin (Expr Expr Expr) Expr)
+(constructor AtomicUMin (Expr Expr Expr) Expr)
+(constructor AtomicSMax (Expr Expr Expr) Expr)
+(constructor AtomicUMax (Expr Expr Expr) Expr)
+(constructor AtomicAnd (Expr Expr Expr) Expr)
+(constructor AtomicOr (Expr Expr Expr) Expr)
+(constructor AtomicXor (Expr Expr Expr) Expr)
+
+; Subgroup/Wave operations (generic)
+(constructor GroupBroadcast (Expr Expr) Expr)
+(constructor GroupBroadcastFirst (Expr) Expr)
+(constructor GroupShuffle (Expr Expr) Expr)
+(constructor GroupShuffleXor (Expr Expr) Expr)
+
+; Function calls
+(constructor Call1 (String Expr) Expr)
+(constructor Call2 (String Expr Expr) Expr)
+(constructor Call3 (String Expr Expr Expr) Expr)
+(constructor Call4 (String Expr Expr Expr Expr) Expr)
+(constructor Call (String Expr) Expr)
+(constructor Subst (Expr i64 Expr) Expr)
+(constructor Subst2 (Expr Expr Expr) Expr)
+(constructor Subst3 (Expr Expr Expr Expr) Expr)
+(constructor Subst4 (Expr Expr Expr Expr Expr) Expr)
+
+; Typed substitution - pushes substitution through typed sort bridges
+; SubstI/F/B replace ExprToInt/Float/Bool(Arg(n)) with ExprToInt/Float/Bool(val)
+; within IntExpr/FloatExpr/BoolExpr sub-expressions
+(constructor SubstI (IntExpr i64 Expr) IntExpr)
+(constructor SubstF (FloatExpr i64 Expr) FloatExpr)
+(constructor SubstB (BoolExpr i64 Expr) BoolExpr)
+
+; Specialization constants
+(constructor SpecConst (i64 i64) Expr)
+(constructor SpecAdd (Expr Expr) Expr)
+(constructor SpecSub (Expr Expr) Expr)
+(constructor SpecMul (Expr Expr) Expr)
+(constructor SpecSDiv (Expr Expr) Expr)
+(constructor SpecUDiv (Expr Expr) Expr)
+(constructor SpecSMod (Expr Expr) Expr)
+(constructor SpecUMod (Expr Expr) Expr)
+(constructor SpecShl (Expr Expr) Expr)
+(constructor SpecShrS (Expr Expr) Expr)
+(constructor SpecShrU (Expr Expr) Expr)
+(constructor SpecBitAnd (Expr Expr) Expr)
+(constructor SpecBitOr (Expr Expr) Expr)
+(constructor SpecBitXor (Expr Expr) Expr)
+(constructor SpecEq (Expr Expr) Expr)
+(constructor SpecNe (Expr Expr) Expr)
+(constructor SpecSLt (Expr Expr) Expr)
+(constructor SpecULt (Expr Expr) Expr)
+(constructor SpecSelect (Expr Expr Expr) Expr)
+
+; Loop unrolling
+(constructor BoundedTheta (i64 Expr Expr) Expr)
+(constructor LoopIter (i64 Expr) Expr)
+
+; Loop transformations
+(constructor BreakableTheta (Expr Expr Expr Expr Expr) Expr)
+(constructor WasBroken (Expr) Expr)
+(constructor ThetaFused (Expr Expr Expr Expr Expr) Expr)
+(constructor ParTheta (Expr Expr Expr) Expr)
+(constructor CountedTheta (Expr Expr Expr) Expr)
+(constructor StripMined (Expr Expr Expr Expr) Expr)
+(constructor LoopInterchange (Expr) Expr)
+(constructor Coalesced (Expr) Expr)
+(constructor ThetaTiled (Expr Expr Expr Expr) Expr)
+(constructor LoopTile2D (Expr Expr Expr Expr) Expr)
+
+; Control flow (merge-return)
+(constructor FlatGamma4 (Expr Expr Expr Expr Expr Expr Expr) Expr)
+(constructor SetReturn (Expr) Expr)
+(constructor HasReturned () Expr)
+(constructor Uniform (Expr) Expr)
+(constructor UniformGamma (Expr Expr Expr) Expr)
+(constructor WorkgroupUniform (Expr) Expr)
+(constructor Continue () Expr)
+(constructor Break (Expr) Expr)
+(constructor Barrier () Expr)
+
+; Memory promotion (mem2reg)
+(constructor Alloca (String) Expr)
+(constructor SingleStoreOptimized (Expr Expr) Expr)
+(constructor MemState (i64) Expr)
+
+; Legalization - narrow integer operations
+(constructor Add8 (Expr Expr) Expr)
+(constructor Sub8 (Expr Expr) Expr)
+(constructor Mul8 (Expr Expr) Expr)
+(constructor Add16 (Expr Expr) Expr)
+(constructor Sub16 (Expr Expr) Expr)
+(constructor Mul16 (Expr Expr) Expr)
+(constructor Add64 (Expr Expr) Expr)
+(constructor Sub64 (Expr Expr) Expr)
+(constructor Mul64 (Expr Expr) Expr)
+(constructor Div64 (Expr Expr) Expr)
+(constructor Trunc8 (Expr) Expr)
+(constructor Trunc16 (Expr) Expr)
+(constructor ZeroExtend8 (Expr) Expr)
+(constructor ZeroExtend16 (Expr) Expr)
+(constructor SignExtend8 (Expr) Expr)
+(constructor SignExtend16 (Expr) Expr)
+(constructor Float16Add (Expr Expr) Expr)
+(constructor Float16Sub (Expr Expr) Expr)
+(constructor Float16Mul (Expr Expr) Expr)
+(constructor Float16Div (Expr Expr) Expr)
+(constructor EmulatedFloat16Add (Expr Expr) Expr)
+(constructor EmulatedFloat16Sub (Expr Expr) Expr)
+(constructor EmulatedFloat16Mul (Expr Expr) Expr)
+(constructor EmulatedFloat16Div (Expr Expr) Expr)
+(constructor SplitI64 (Expr) Expr)
+(constructor MergeI64 (Expr Expr) Expr)
+(constructor I64Hi (Expr) Expr)
+(constructor I64Lo (Expr) Expr)
+(constructor DivMod32Hi (Expr Expr) Expr)
+(constructor DivMod32Lo (Expr Expr) Expr)
+(constructor AddWithCarry (Expr Expr Expr) Expr)
+(constructor SubWithBorrow (Expr Expr Expr) Expr)
+(constructor VulkanLegalized (Expr) Expr)
+(constructor OpenCLLegalized (Expr) Expr)
+
+; Instrumentation
+(constructor Instrumented (Expr) Expr)
+(constructor InstrumentedVec2 (Expr) Expr)
+(constructor InstrumentedVec3 (Expr) Expr)
+(constructor InstrumentedVec4 (Expr) Expr)
+(constructor InstrumentedNamed (String Expr) Expr)
+(constructor ProfiledBlock (i64 Expr) Expr)
+(constructor ProfiledLoop (i64 Expr) Expr)
+(constructor ProfiledBranch (i64 Expr) Expr)
+(constructor ProfileCounter (i64) Expr)
+(constructor BoundsChecked (Expr Expr) Expr)
+(constructor BoundsChecked2D (Expr Expr Expr) Expr)
+(constructor BufferBoundsChecked (Expr Expr Expr) Expr)
+(constructor NaNChecked (FloatExpr) Expr)
+(constructor InfChecked (FloatExpr) Expr)
+(constructor FiniteChecked (FloatExpr) Expr)
+(constructor NaNCheckedVec (Expr) Expr)
+(constructor OverflowCheckedAdd (IntExpr IntExpr) Expr)
+(constructor OverflowCheckedSub (IntExpr IntExpr) Expr)
+(constructor OverflowCheckedMul (IntExpr IntExpr) Expr)
+(constructor DivChecked (IntExpr IntExpr) Expr)
+(constructor UDivChecked (IntExpr IntExpr) Expr)
+(constructor FDivChecked (FloatExpr FloatExpr) Expr)
+(constructor NullChecked (Expr) Expr)
+(constructor NullCheckedLoad (Expr Expr) Expr)
+(constructor NullPtr () Expr)
+(constructor ValidatedTexCoord (Expr) Expr)
+(constructor ValidatedNormal (Expr) Expr)
+(constructor ValidatedOrthogonal (Expr) Expr)
+(constructor Timed (i64 Expr) Expr)
+(constructor TimerStart (i64) Expr)
+(constructor TimerEnd (i64) Expr)
+(constructor ReadClock () Expr)
+(constructor TrackedLoad (Expr Expr) Expr)
+(constructor TrackedStore (Expr Expr Expr) Expr)
+(constructor AccessCounter (Expr) Expr)
+(constructor StoreCounter (Expr) Expr)
+(constructor PtrToInt (Expr) Expr)
+(constructor DebugPrintf (String Expr) Expr)
+(constructor Assert (BoolExpr String) Expr)
+(constructor DebugMode (Expr) Expr)
+(constructor VerboseMode (Expr) Expr)
+(constructor DebugEnabled () Expr)
+(constructor VerboseEnabled () Expr)
+(constructor SampledProfile (Expr Expr) Expr)
+(constructor InvocationId () Expr)
 
 ; =============================================================================
 ; RVSDG Region Types
 ; =============================================================================
 
-; A Region represents a computation with inputs and outputs.
-; Regions are used inside Gamma and Theta nodes.
-
-; ExprList for multi-output regions
 (datatype ExprList
     (ENil)
     (ECons Expr ExprList)
 )
 
-; Helper to build lists - removed self-referential rule that caused cycles
-
 ; =============================================================================
-; Additional Expr Constructors Using ExprList
+; Additional Constructors Using ExprList
 ; =============================================================================
-; These are added to the Expr datatype after ExprList is defined
 
-; VectorShuffle - shuffle two vectors using mask indices
-; (VecShuffle vec1 vec2 mask) where mask is a list of indices
 (function VecShuffle (Expr Expr ExprList) Expr :merge old)
-
-; Composite operations (general, works for structs too)
 (function CompositeConstruct (ExprList) Expr :merge old)
 (function CompositeExtract (Expr i64) Expr :merge old)
 (function CompositeInsert (Expr Expr i64) Expr :merge old)
-
-; Switch statement support (functions to avoid forward reference to ExprList)
 (function Switch (Expr ExprList Expr) Expr :merge old)
 (function Case (Expr Expr) Expr :merge old)
 (function BinarySwitch (Expr ExprList Expr) Expr :merge old)
 
-; CompositeExtract from CompositeConstruct rules - ONE-DIRECTIONAL to prevent explosion
+; CompositeExtract from CompositeConstruct rules
 (rule ((= e (CompositeExtract (CompositeConstruct (ECons a (ENil))) 0)))
       ((union e a)))
 (rule ((= e (CompositeExtract (CompositeConstruct (ECons a (ECons b (ENil)))) 0)))
@@ -1060,10 +659,10 @@
       ((union e d)))
 
 ; =============================================================================
-; CompositeInsert Optimization (Dead Insert Elimination)
+; CompositeInsert Optimization
 ; =============================================================================
 
-; Insert then extract at same index returns inserted value - ONE-DIRECTIONAL
+; Insert then extract at same index returns inserted value
 (rule ((= e (CompositeExtract (CompositeInsert composite val 0) 0)))
       ((union e val)))
 (rule ((= e (CompositeExtract (CompositeInsert composite val 1) 1)))
@@ -1073,11 +672,7 @@
 (rule ((= e (CompositeExtract (CompositeInsert composite val 3) 3)))
       ((union e val)))
 
-; Insert then extract at different index returns extraction from original composite
-; This enables dead insert elimination - if we insert at index 0 but extract at index 1,
-; the insert can be bypassed for that extraction - ONE-DIRECTIONAL
-; Note: These rules require the original CompositeExtract to exist in the e-graph because
-; CompositeExtract is a function (not a constructor), so we can't create new instances in rules.
+; Insert then extract at different index returns extraction from original
 (rule ((= outer (CompositeExtract (CompositeInsert composite val 0) 1))
        (= inner (CompositeExtract composite 1)))
       ((union outer inner)))
@@ -1126,32 +721,22 @@
       ((union e composite)))
 
 ; =============================================================================
-; CompositeExtractFeedingConstruct (C++ parity)
+; CompositeExtractFeedingConstruct
 ; =============================================================================
-; When constructing a composite from extractions of the same source at matching
-; indices, simplify to use the original source
 
-; Vec2: Construct(Extract(v,0), Extract(v,1)) = v
 (rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ENil))))))
       ((union e v)))
-
-; Vec3: Construct(Extract(v,0), Extract(v,1), Extract(v,2)) = v
 (rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ECons (CompositeExtract v 2) (ENil)))))))
       ((union e v)))
-
-; Vec4: Construct(Extract(v,0), Extract(v,1), Extract(v,2), Extract(v,3)) = v
 (rule ((= e (CompositeConstruct (ECons (CompositeExtract v 0) (ECons (CompositeExtract v 1) (ECons (CompositeExtract v 2) (ECons (CompositeExtract v 3) (ENil))))))))
       ((union e v)))
 
-; Same pattern for Vec2/3/4 constructors
 (rule ((= e (Vec2 (CompositeExtract v 0) (CompositeExtract v 1))))
       ((union e v)))
 (rule ((= e (Vec3 (CompositeExtract v 0) (CompositeExtract v 1) (CompositeExtract v 2))))
       ((union e v)))
 (rule ((= e (Vec4 (CompositeExtract v 0) (CompositeExtract v 1) (CompositeExtract v 2) (CompositeExtract v 3))))
       ((union e v)))
-
-; Same for VecExtract (vector-specific extraction)
 (rule ((= e (Vec2 (VecExtract v 0) (VecExtract v 1))))
       ((union e v)))
 (rule ((= e (Vec3 (VecExtract v 0) (VecExtract v 1) (VecExtract v 2))))
@@ -1160,303 +745,321 @@
       ((union e v)))
 
 ; =============================================================================
-; Undef (Undefined Value) Optimization Rules
+; Undef Optimization Rules
 ; =============================================================================
-; OpUndef represents an undefined value. Operations on Undef can often be
-; optimized away or simplified. These rules implement C++ StoringUndef and
-; related optimizations.
 
-; Selecting Undef when condition is known - ONE-DIRECTIONAL
-; Gamma(true, Undef, x) can be simplified (x is always returned if cond is false)
-; But we don't know which branch is taken without constant condition
-
-; Operations that absorb Undef:
-; - Storing Undef is a dead store (handled in memory.egg via StoreMem)
-; - CompositeExtract from Undef is Undef
 (rule ((= e (CompositeExtract (Undef) _)))
       ((union e (Undef))))
 (rule ((= e (VecExtract (Undef) _)))
       ((union e (Undef))))
 
-; Operations where one Undef operand makes result Undef:
-; Arithmetic with Undef propagates to Undef (conservative but safe)
-; Note: Some operations like x | 0xFFFFFFFF don't need the other operand,
-; but we're conservative here.
+; CopyObject/Copy elimination (rules for typed operations like Mul*0, BitAnd*0, etc.
+; are in their respective rule files: arithmetic.egg, bitwise.egg, logical.egg)
+(rule ((= e (CopyObject x))) ((union e x)))
+(rule ((= e (CopyI x))) ((union e x)))
+(rule ((= e (CopyF x))) ((union e x)))
+(rule ((= e (CopyB x))) ((union e x)))
 
-; Multiplication by zero beats Undef (0 * Undef = 0)
-(rule ((= e (Mul (Const 0) (Undef))))
-      ((union e (Const 0))))
-(rule ((= e (Mul (Undef) (Const 0))))
-      ((union e (Const 0))))
-(rule ((= e (FMul (Const 0) (Undef))))
-      ((union e (Const 0))))
-(rule ((= e (FMul (Undef) (Const 0))))
-      ((union e (Const 0))))
+; =============================================================================
+; Insert-to-Construct Transformation
+; =============================================================================
 
-; Bitwise operations that can determine result:
-; x & 0 = 0 regardless of x (including Undef)
-(rule ((= e (BitAnd (Const 0) (Undef))))
-      ((union e (Const 0))))
-(rule ((= e (BitAnd (Undef) (Const 0))))
-      ((union e (Const 0))))
+(rule ((= result (CompositeInsert (CompositeInsert _ v0 0) v1 1)))
+      ((union result (Vec2 v0 v1))))
+(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2)))
+      ((union result (Vec3 v0 v1 v2))))
+(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2) v3 3)))
+      ((union result (Vec4 v0 v1 v2 v3))))
 
-; x | -1 = -1 regardless of x (including Undef)
-(rule ((= e (BitOr (Const -1) (Undef))))
-      ((union e (Const -1))))
-(rule ((= e (BitOr (Undef) (Const -1))))
-      ((union e (Const -1))))
-
-; Logical operations that can determine result:
-; false && x = false (BoolConst and Const variants for interop)
-(rule ((= e (LogAnd (BoolConst 0) (Undef))))
-      ((union e (BoolConst 0))))
-(rule ((= e (LogAnd (Undef) (BoolConst 0))))
-      ((union e (BoolConst 0))))
-(rule ((= e (LogAnd (Const 0) (Undef))))
-      ((union e (BoolConst 0))))
-(rule ((= e (LogAnd (Undef) (Const 0))))
-      ((union e (BoolConst 0))))
-
-; true || x = true (BoolConst and Const variants for interop)
-(rule ((= e (LogOr (BoolConst 1) (Undef))))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr (Undef) (BoolConst 1))))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr (Const 1) (Undef))))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr (Undef) (Const 1))))
-      ((union e (BoolConst 1))))
-
-; CopyObject of Undef is Undef
-(rule ((= e (CopyObject (Undef))))
-      ((union e (Undef))))
+(rule ((= result (VecInsert (VecInsert _ v0 0) v1 1)))
+      ((union result (Vec2 v0 v1))))
+(rule ((= result (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2)))
+      ((union result (Vec3 v0 v1 v2))))
+(rule ((= result (VecInsert (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2) v3 3)))
+      ((union result (Vec4 v0 v1 v2 v3))))
 
 ; =============================================================================
 ; Effect Sort (side effects and control flow)
 ; =============================================================================
 
 (datatype Effect
-    ; No effect (identity)
     (Pure)
-
-    ; Return from function
     (Return)
     (ReturnValue Expr)
-
-    ; Sequence two effects
     (Seq Effect Effect)
-
-    ; Conditional effect (Gamma over effects)
-    ; (EffGamma cond then_effect else_effect)
-    (EffGamma Expr Effect Effect)
-
-    ; Unreachable (dead code)
+    (EffGamma BoolExpr Effect Effect)
     (Unreachable)
 )
 
 ; =============================================================================
-; Liveness Tracking for DCE (Dead Code Elimination)
+; Liveness Tracking for DCE
 ; =============================================================================
-; Live expressions are reachable from roots (side-effecting instructions).
-; DCE happens entirely in the e-graph during saturation.
-;
-; Root: Marks an Effect as a program root (entry point for liveness)
-; Live: Marks an Expr as live (reachable from a root)
-;
-; The Rust code marks effect terms as Root, then these rules propagate
-; liveness through the entire program during saturation.
 
 (relation Root (Effect))
 (relation Live (Expr))
+(relation LiveI (IntExpr))
+(relation LiveF (FloatExpr))
+(relation LiveB (BoolExpr))
 
-; Forward declarations for condition analysis (used by EffGamma root propagation below)
-; Full rules defined later in the "Condition Analysis for Partial DCE" section
-(relation CanBeTrue (Expr))
-(relation CanBeFalse (Expr))
+; Forward declarations for condition analysis
+(relation CanBeTrue (BoolExpr))
+(relation CanBeFalse (BoolExpr))
 
 ; =============================================================================
-; Root Effects propagate liveness to their operands
+; Root Effects propagate liveness
 ; =============================================================================
 
-; ReturnValue: the returned expression is live
 (rule ((Root e) (= e (ReturnValue x))) ((Live x)))
-
-; EffGamma: condition is always live, branches depend on condition value
-(rule ((Root e) (= e (EffGamma c t f))) ((Live c)))
+(rule ((Root e) (= e (EffGamma c t f))) ((LiveB c)))
 (rule ((Root e) (= e (EffGamma c t f)) (CanBeTrue c)) ((Root t)))
 (rule ((Root e) (= e (EffGamma c t f)) (CanBeFalse c)) ((Root f)))
-
-; Seq: both effects in a sequence are roots if the sequence is
 (rule ((Root e) (= e (Seq a b))) ((Root a) (Root b)))
 
-; Pure and Return have no expressions to mark live
-; Unreachable is dead by definition
+; =============================================================================
+; IntExpr Liveness Propagation
+; =============================================================================
 
-; Propagate liveness through arithmetic operations
-(rule ((Live e) (= e (Add a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (Sub a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (Mul a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (Neg a))) ((Live a)))
-(rule ((Live e) (= e (SDiv a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UDiv a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SRem a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SMod a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UMod a b))) ((Live a) (Live b)))
-
-; Propagate liveness through bitwise operations
-(rule ((Live e) (= e (Shl a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (ShrS a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (ShrU a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (BitAnd a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (BitOr a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (BitXor a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (BitNot a))) ((Live a)))
-(rule ((Live e) (= e (BitReverse a))) ((Live a)))
-(rule ((Live e) (= e (RotL a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (RotR a b))) ((Live a) (Live b)))
-
-; Propagate liveness through comparison operations
-(rule ((Live e) (= e (Eq a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (Ne a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SLt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SLe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SGt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SGe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (ULt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (ULe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UGt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UGe a b))) ((Live a) (Live b)))
-
-; Propagate liveness through min/max operations
-(rule ((Live e) (= e (SMin a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SMax a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UMin a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UMax a b))) ((Live a) (Live b)))
-
-; Propagate liveness through logical operations
-(rule ((Live e) (= e (LogNot a))) ((Live a)))
-(rule ((Live e) (= e (LogAnd a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (LogOr a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (LogEq a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (LogNe a b))) ((Live a) (Live b)))
+(rule ((LiveI e) (= e (Add a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (Sub a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (Mul a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (Neg a))) ((LiveI a)))
+(rule ((LiveI e) (= e (SDiv a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (UDiv a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (SRem a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (SMod a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (UMod a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (Shl a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (ShrS a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (ShrU a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (BitAnd a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (BitOr a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (BitXor a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (BitNot a))) ((LiveI a)))
+(rule ((LiveI e) (= e (BitReverse a))) ((LiveI a)))
+(rule ((LiveI e) (= e (RotL a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (RotR a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (SMin a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (SMax a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (UMin a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (UMax a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveI e) (= e (SAbs a))) ((LiveI a)))
+(rule ((LiveI e) (= e (Sign a))) ((LiveI a)))
+(rule ((LiveI e) (= e (FindILsb a))) ((LiveI a)))
+(rule ((LiveI e) (= e (FindSMsb a))) ((LiveI a)))
+(rule ((LiveI e) (= e (FindUMsb a))) ((LiveI a)))
+(rule ((LiveI e) (= e (BitCount a))) ((LiveI a)))
+(rule ((LiveI e) (= e (BitFieldInsert a b c d))) ((LiveI a) (LiveI b) (LiveI c) (LiveI d)))
+(rule ((LiveI e) (= e (BitFieldSExtract a b c))) ((LiveI a) (LiveI b) (LiveI c)))
+(rule ((LiveI e) (= e (BitFieldUExtract a b c))) ((LiveI a) (LiveI b) (LiveI c)))
+(rule ((LiveI e) (= e (Const _))) ())
+(rule ((LiveI e) (= e (Const64 _))) ())
+(rule ((LiveI e) (= e (ConvertFToS a))) ((LiveF a)))
+(rule ((LiveI e) (= e (ConvertFToU a))) ((LiveF a)))
+(rule ((LiveI e) (= e (SConvert a))) ((LiveI a)))
+(rule ((LiveI e) (= e (UConvert a))) ((LiveI a)))
+(rule ((LiveI e) (= e (SClamp a b c))) ((LiveI a) (LiveI b) (LiveI c)))
+(rule ((LiveI e) (= e (UClamp a b c))) ((LiveI a) (LiveI b) (LiveI c)))
+(rule ((LiveI e) (= e (ISym _))) ())
+(rule ((LiveI e) (= e (GammaI c t f))) ((LiveB c) (LiveI t) (LiveI f)))
+(rule ((LiveI e) (= e (SelectI c t f))) ((LiveB c) (LiveI t) (LiveI f)))
+(rule ((LiveI e) (= e (IfI c t f))) ((LiveB c) (LiveI t) (LiveI f)))
+(rule ((LiveI e) (= e (ThetaI c body init))) ((LiveB c) (LiveI body) (LiveI init)))
+(rule ((LiveI e) (= e (LoopVarI))) ())
+(rule ((LiveI e) (= e (LoopInvariantI x))) ((LiveI x)))
+(rule ((LiveI e) (= e (CopyI x))) ((LiveI x)))
+(rule ((LiveI e) (= e (GroupIAdd a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupIMul a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupSMin a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupUMin a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupSMax a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupUMax a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupBitAnd a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupBitOr a))) ((LiveI a)))
+(rule ((LiveI e) (= e (GroupBitXor a))) ((LiveI a)))
+(rule ((LiveI e) (= e (PackHalf2x16 a))) ((Live a)))
+(rule ((LiveI e) (= e (PackSnorm4x8 a))) ((Live a)))
+(rule ((LiveI e) (= e (PackSnorm2x16 a))) ((Live a)))
+(rule ((LiveI e) (= e (PackUnorm4x8 a))) ((Live a)))
+(rule ((LiveI e) (= e (PackUnorm2x16 a))) ((Live a)))
+(rule ((LiveI e) (= e (PackDouble2x32 a))) ((Live a)))
+(rule ((LiveI e) (= e (ExprToInt x))) ((Live x)))
 
 ; =============================================================================
-; Condition Analysis for Partial DCE
+; FloatExpr Liveness Propagation
 ; =============================================================================
-; CanBeTrue/CanBeFalse track whether a condition can have a particular value.
-; This enables partial dead code elimination - if we know a branch is never
-; taken, we don't need to mark its contents as live.
-; (Relation declarations are at top with Root/Live)
 
-; Constants have known truth values
-(rule ((= e (Const 0))) ((CanBeFalse e)))
-(rule ((= e (Const c)) (!= c 0)) ((CanBeTrue e)))
-
-; Boolean constants have known truth values
-(rule ((= e (BoolConst 0))) ((CanBeFalse e)))
-(rule ((= e (BoolConst c)) (!= c 0)) ((CanBeTrue e)))
-
-; By default, any non-constant expression can be either true or false
-; (conservative: assume both branches are possible)
-; We use Sym as a proxy for "unknown runtime value"
-(rule ((= e (Sym s))) ((CanBeTrue e) (CanBeFalse e)))
-
-; Propagate through logical operations
-(rule ((= e (LogNot x)) (CanBeTrue x)) ((CanBeFalse e)))
-(rule ((= e (LogNot x)) (CanBeFalse x)) ((CanBeTrue e)))
-
-; LogAnd can be true only if both can be true
-(rule ((= e (LogAnd a b)) (CanBeTrue a) (CanBeTrue b)) ((CanBeTrue e)))
-; LogAnd can be false if either can be false
-(rule ((= e (LogAnd a b)) (CanBeFalse a)) ((CanBeFalse e)))
-(rule ((= e (LogAnd a b)) (CanBeFalse b)) ((CanBeFalse e)))
-
-; LogOr can be false only if both can be false
-(rule ((= e (LogOr a b)) (CanBeFalse a) (CanBeFalse b)) ((CanBeFalse e)))
-; LogOr can be true if either can be true
-(rule ((= e (LogOr a b)) (CanBeTrue a)) ((CanBeTrue e)))
-(rule ((= e (LogOr a b)) (CanBeTrue b)) ((CanBeTrue e)))
-
-; Comparisons can generally be either (conservative)
-; More precise rules would require value range analysis
-(rule ((= e (Eq a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (Ne a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (SLt a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (SLe a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (SGt a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (SGe a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (ULt a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (ULe a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (UGt a b))) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (UGe a b))) ((CanBeTrue e) (CanBeFalse e)))
-
-; Gamma/Select results inherit condition properties
-(rule ((= e (Gamma c t f)) (CanBeTrue c)) ((CanBeTrue e) (CanBeFalse e)))
-(rule ((= e (Gamma c t f)) (CanBeFalse c)) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((LiveF e) (= e (FAdd a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FSub a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FMul a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FDiv a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FNeg a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FRem a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FMod a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FAbs a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FFloor a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FCeil a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FRound a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FTrunc a))) ((LiveF a)))
+(rule ((LiveF e) (= e (QuantizeToF16 a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FMin a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (FMax a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (NMin a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (NMax a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (Sqrt a))) ((LiveF a)))
+(rule ((LiveF e) (= e (InverseSqrt a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Exp a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Exp2 a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Log a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Log2 a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Sin a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Cos a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Tan a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Asin a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Acos a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Atan a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Sinh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Cosh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Tanh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Asinh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Acosh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Atanh a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Fract a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FSign a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Radians a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Degrees a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Modf a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Pow a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (Atan2 a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (Step a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveF e) (= e (Ldexp a b))) ((LiveF a) (LiveI b)))
+(rule ((LiveF e) (= e (Distance a b))) ((Live a) (Live b)))
+(rule ((LiveF e) (= e (Fma a b c))) ((LiveF a) (LiveF b) (LiveF c)))
+(rule ((LiveF e) (= e (FMix a b c))) ((LiveF a) (LiveF b) (LiveF c)))
+(rule ((LiveF e) (= e (SmoothStep a b c))) ((LiveF a) (LiveF b) (LiveF c)))
+(rule ((LiveF e) (= e (FClamp a b c))) ((LiveF a) (LiveF b) (LiveF c)))
+(rule ((LiveF e) (= e (NClamp a b c))) ((LiveF a) (LiveF b) (LiveF c)))
+(rule ((LiveF e) (= e (Length a))) ((Live a)))
+(rule ((LiveF e) (= e (Dot a b))) ((Live a) (Live b)))
+(rule ((LiveF e) (= e (Determinant a))) ((Live a)))
+(rule ((LiveF e) (= e (DPdx a))) ((LiveF a)))
+(rule ((LiveF e) (= e (DPdy a))) ((LiveF a)))
+(rule ((LiveF e) (= e (DPdxFine a))) ((LiveF a)))
+(rule ((LiveF e) (= e (DPdyFine a))) ((LiveF a)))
+(rule ((LiveF e) (= e (DPdxCoarse a))) ((LiveF a)))
+(rule ((LiveF e) (= e (DPdyCoarse a))) ((LiveF a)))
+(rule ((LiveF e) (= e (Fwidth a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FwidthFine a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FwidthCoarse a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FConst _))) ())
+(rule ((LiveF e) (= e (ConvertSToF a))) ((LiveI a)))
+(rule ((LiveF e) (= e (ConvertUToF a))) ((LiveI a)))
+(rule ((LiveF e) (= e (FConvert a))) ((LiveF a)))
+(rule ((LiveF e) (= e (FSym _))) ())
+(rule ((LiveF e) (= e (GammaF c t f))) ((LiveB c) (LiveF t) (LiveF f)))
+(rule ((LiveF e) (= e (SelectF c t f))) ((LiveB c) (LiveF t) (LiveF f)))
+(rule ((LiveF e) (= e (IfF c t f))) ((LiveB c) (LiveF t) (LiveF f)))
+(rule ((LiveF e) (= e (ThetaF c body init))) ((LiveB c) (LiveF body) (LiveF init)))
+(rule ((LiveF e) (= e (LoopVarF))) ())
+(rule ((LiveF e) (= e (LoopInvariantF x))) ((LiveF x)))
+(rule ((LiveF e) (= e (CopyF x))) ((LiveF x)))
+(rule ((LiveF e) (= e (GroupFAdd a))) ((LiveF a)))
+(rule ((LiveF e) (= e (GroupFMul a))) ((LiveF a)))
+(rule ((LiveF e) (= e (GroupFMin a))) ((LiveF a)))
+(rule ((LiveF e) (= e (GroupFMax a))) ((LiveF a)))
+(rule ((LiveF e) (= e (ExprToFloat x))) ((Live x)))
 
 ; =============================================================================
-; RVSDG-Aware Liveness for Partial DCE
+; BoolExpr Liveness Propagation
 ; =============================================================================
-; Propagate liveness through control flow with branch awareness.
-; Only mark a branch as live if the condition can take that path.
 
-; Condition is always live if the Gamma is live
-(rule ((Live e) (= e (Gamma c t f))) ((Live c)))
-(rule ((Live e) (= e (Select c t f))) ((Live c)))
-(rule ((Live e) (= e (If c t f))) ((Live c)))
+(rule ((LiveB e) (= e (Eq a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (Ne a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (SLt a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (SLe a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (SGt a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (SGe a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (ULt a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (ULe a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (UGt a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (UGe a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (FOrdEq a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FOrdNe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FOrdLt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FOrdLe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FOrdGt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FOrdGe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordEq a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordNe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordLt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordLe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordGt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FUnordGe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FEq a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FNe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FLt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FLe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FGt a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (FGe a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (IsNan a))) ((LiveF a)))
+(rule ((LiveB e) (= e (IsInf a))) ((LiveF a)))
+(rule ((LiveB e) (= e (LogNot a))) ((LiveB a)))
+(rule ((LiveB e) (= e (LogAnd a b))) ((LiveB a) (LiveB b)))
+(rule ((LiveB e) (= e (LogOr a b))) ((LiveB a) (LiveB b)))
+(rule ((LiveB e) (= e (LogEq a b))) ((LiveB a) (LiveB b)))
+(rule ((LiveB e) (= e (LogNe a b))) ((LiveB a) (LiveB b)))
+(rule ((LiveB e) (= e (BoolConst _))) ())
+(rule ((LiveB e) (= e (BSym _))) ())
+(rule ((LiveB e) (= e (GammaB c t f))) ((LiveB c) (LiveB t) (LiveB f)))
+(rule ((LiveB e) (= e (SelectB c t f))) ((LiveB c) (LiveB t) (LiveB f)))
+(rule ((LiveB e) (= e (IfB c t f))) ((LiveB c) (LiveB t) (LiveB f)))
+(rule ((LiveB e) (= e (ThetaB c body init))) ((LiveB c) (LiveB body) (LiveB init)))
+(rule ((LiveB e) (= e (LoopVarB))) ())
+(rule ((LiveB e) (= e (LoopInvariantB x))) ((LiveB x)))
+(rule ((LiveB e) (= e (CopyB x))) ((LiveB x)))
+(rule ((LiveB e) (= e (GroupElect))) ())
+(rule ((LiveB e) (= e (GroupAll a))) ((LiveB a)))
+(rule ((LiveB e) (= e (GroupAny a))) ((LiveB a)))
+(rule ((LiveB e) (= e (GroupAllEqual a))) ((Live a)))
+(rule ((LiveB e) (= e (GroupLogAnd a))) ((LiveB a)))
+(rule ((LiveB e) (= e (GroupLogOr a))) ((LiveB a)))
+(rule ((LiveB e) (= e (GroupLogXor a))) ((LiveB a)))
+(rule ((LiveB e) (= e (Any a))) ((Live a)))
+(rule ((LiveB e) (= e (All a))) ((Live a)))
+(rule ((LiveB e) (= e (AddOverflows a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (SubOverflows a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (MulOverflows a b))) ((LiveI a) (LiveI b)))
+(rule ((LiveB e) (= e (FApproxEq a b))) ((LiveF a) (LiveF b)))
+(rule ((LiveB e) (= e (ExprToBool x))) ((Live x)))
 
-; Then branch is only live if condition can be true
-(rule ((Live e) (= e (Gamma c t f)) (CanBeTrue c)) ((Live t)))
-(rule ((Live e) (= e (Select c t f)) (CanBeTrue c)) ((Live t)))
-(rule ((Live e) (= e (If c t f)) (CanBeTrue c)) ((Live t)))
+; =============================================================================
+; Bridge Liveness Propagation
+; =============================================================================
 
-; Else branch is only live if condition can be false
-(rule ((Live e) (= e (Gamma c t f)) (CanBeFalse c)) ((Live f)))
-(rule ((Live e) (= e (Select c t f)) (CanBeFalse c)) ((Live f)))
-(rule ((Live e) (= e (If c t f)) (CanBeFalse c)) ((Live f)))
+(rule ((Live e) (= e (IntToExpr x))) ((LiveI x)))
+(rule ((Live e) (= e (FloatToExpr x))) ((LiveF x)))
+(rule ((Live e) (= e (BoolToExpr x))) ((LiveB x)))
 
-; Propagate liveness through Theta (loops)
-; Loop body is only live if the loop can execute (condition can be true)
-(rule ((Live e) (= e (Theta c body init))) ((Live init)))
-(rule ((Live e) (= e (Theta c body init)) (CanBeTrue c)) ((Live c) (Live body)))
+; =============================================================================
+; Expr Liveness Propagation
+; =============================================================================
+
+; Generic control flow
+(rule ((Live e) (= e (Gamma c t f))) ((LiveB c) (Live t) (Live f)))
+(rule ((Live e) (= e (Select c t f))) ((LiveB c) (Live t) (Live f)))
+(rule ((Live e) (= e (If c t f))) ((LiveB c) (Live t) (Live f)))
+(rule ((Live e) (= e (Theta c body init))) ((LiveB c) (Live body) (Live init)))
+(rule ((Live e) (= e (LoopVar))) ())
 (rule ((Live e) (= e (LoopInvariant x))) ((Live x)))
+(rule ((Live e) (= e (Sym _))) ())
+(rule ((Live e) (= e (CopyObject x))) ((Live x)))
+(rule ((Live e) (= e (Undef))) ())
+(rule ((Live e) (= e (Arg _))) ())
 
-; Propagate liveness through floating-point operations
-(rule ((Live e) (= e (FAdd a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FSub a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FMul a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FDiv a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FNeg a))) ((Live a)))
-(rule ((Live e) (= e (FRem a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FMin a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FMax a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FAbs a))) ((Live a)))
-(rule ((Live e) (= e (FFloor a))) ((Live a)))
-(rule ((Live e) (= e (FCeil a))) ((Live a)))
-(rule ((Live e) (= e (FTrunc a))) ((Live a)))
-(rule ((Live e) (= e (FRound a))) ((Live a)))
-
-; Propagate liveness through floating-point comparisons
-(rule ((Live e) (= e (FOrdEq a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FOrdNe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FOrdLt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FOrdLe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FOrdGt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FOrdGe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordEq a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordNe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordLt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordLe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordGt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FUnordGe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (IsNan a))) ((Live a)))
-(rule ((Live e) (= e (IsInf a))) ((Live a)))
-
-; Propagate liveness through vector operations
-(rule ((Live e) (= e (VecExtract v _))) ((Live v)))
+; Vector operations
 (rule ((Live e) (= e (Vec2 a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Vec3 a b c))) ((Live a) (Live b) (Live c)))
 (rule ((Live e) (= e (Vec4 a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (VecExtract v _))) ((Live v)))
 (rule ((Live e) (= e (VecInsert v s _))) ((Live v) (Live s)))
 (rule ((Live e) (= e (VecShuffle2 a b _ _))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecShuffle3 a b _ _ _))) ((Live a) (Live b)))
@@ -1474,195 +1077,55 @@
 (rule ((Live e) (= e (VecFMul a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecFDiv a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecFNeg a))) ((Live a)))
-(rule ((Live e) (= e (Dot a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecTimesScalar v s))) ((Live v) (Live s)))
 
-; Propagate liveness through matrix operations
+; Matrix operations
 (rule ((Live e) (= e (MatTimesScalar m s))) ((Live m) (Live s)))
 (rule ((Live e) (= e (MatTimesVec m v))) ((Live m) (Live v)))
 (rule ((Live e) (= e (VecTimesMat v m))) ((Live v) (Live m)))
 (rule ((Live e) (= e (MatTimesMat a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Transpose m))) ((Live m)))
 (rule ((Live e) (= e (OuterProduct a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (MatInverse m))) ((Live m)))
 
-; Propagate liveness through type conversions
-(rule ((Live e) (= e (ConvertFToS a))) ((Live a)))
-(rule ((Live e) (= e (ConvertFToU a))) ((Live a)))
-(rule ((Live e) (= e (ConvertSToF a))) ((Live a)))
-(rule ((Live e) (= e (ConvertUToF a))) ((Live a)))
-(rule ((Live e) (= e (SConvert a))) ((Live a)))
-(rule ((Live e) (= e (UConvert a))) ((Live a)))
-(rule ((Live e) (= e (FConvert a))) ((Live a)))
-(rule ((Live e) (= e (Bitcast a))) ((Live a)))
-(rule ((Live e) (= e (QuantizeToF16 a))) ((Live a)))
-
-; Propagate liveness through composite operations
-(rule ((Live e) (= e (CompositeExtract a _))) ((Live a)))
-(rule ((Live e) (= e (CompositeInsert a b _))) ((Live a) (Live b)))
-
-; Propagate liveness through CopyObject
-(rule ((Live e) (= e (CopyObject x))) ((Live x)))
-
-; Propagate liveness through Sym (external references are always live if referenced)
-; Note: Sym nodes don't have subexpressions, so no propagation needed
-
-; =============================================================================
-; Copy Propagation (OpCopyObject elimination)
-; =============================================================================
-; CopyObject is always equivalent to its operand
-
-(rule ((= e (CopyObject x)))
-      ((union e x)))
-
-; =============================================================================
-; Insert-to-Construct Transformation
-; =============================================================================
-; A chain of inserts covering all positions becomes a Construct
-
-; Vec2: Insert(Insert(_, v0, 0), v1, 1) = Vec2(v0, v1)
-; Note: base is ignored when all positions are overwritten
-(rule ((= result (CompositeInsert (CompositeInsert _ v0 0) v1 1)))
-      ((union result (Vec2 v0 v1))))
-
-; Vec3: Insert(Insert(Insert(_, v0, 0), v1, 1), v2, 2) = Vec3(v0, v1, v2)
-(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2)))
-      ((union result (Vec3 v0 v1 v2))))
-
-; Vec4: Insert(Insert(Insert(Insert(_, v0, 0), v1, 1), v2, 2), v3, 3) = Vec4(v0, v1, v2, v3)
-(rule ((= result (CompositeInsert (CompositeInsert (CompositeInsert (CompositeInsert _ v0 0) v1 1) v2 2) v3 3)))
-      ((union result (Vec4 v0 v1 v2 v3))))
-
-; Also using VecInsert constructor
-(rule ((= result (VecInsert (VecInsert _ v0 0) v1 1)))
-      ((union result (Vec2 v0 v1))))
-(rule ((= result (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2)))
-      ((union result (Vec3 v0 v1 v2))))
-(rule ((= result (VecInsert (VecInsert (VecInsert (VecInsert _ v0 0) v1 1) v2 2) v3 3)))
-      ((union result (Vec4 v0 v1 v2 v3))))
-
-; =============================================================================
-; Liveness Propagation for GLSL Extended Instructions
-; =============================================================================
-; These complete the DCE support for all GLSL.std.450 operations
-
-; Math functions
-(rule ((Live e) (= e (Sqrt a))) ((Live a)))
-(rule ((Live e) (= e (InverseSqrt a))) ((Live a)))
-(rule ((Live e) (= e (Exp a))) ((Live a)))
-(rule ((Live e) (= e (Exp2 a))) ((Live a)))
-(rule ((Live e) (= e (Log a))) ((Live a)))
-(rule ((Live e) (= e (Log2 a))) ((Live a)))
-(rule ((Live e) (= e (Pow a b))) ((Live a) (Live b)))
-
-; Trigonometric functions
-(rule ((Live e) (= e (Sin a))) ((Live a)))
-(rule ((Live e) (= e (Cos a))) ((Live a)))
-(rule ((Live e) (= e (Tan a))) ((Live a)))
-(rule ((Live e) (= e (Asin a))) ((Live a)))
-(rule ((Live e) (= e (Acos a))) ((Live a)))
-(rule ((Live e) (= e (Atan a))) ((Live a)))
-(rule ((Live e) (= e (Atan2 a b))) ((Live a) (Live b)))
-
-; Hyperbolic functions
-(rule ((Live e) (= e (Sinh a))) ((Live a)))
-(rule ((Live e) (= e (Cosh a))) ((Live a)))
-(rule ((Live e) (= e (Tanh a))) ((Live a)))
-(rule ((Live e) (= e (Asinh a))) ((Live a)))
-(rule ((Live e) (= e (Acosh a))) ((Live a)))
-(rule ((Live e) (= e (Atanh a))) ((Live a)))
-
-; Interpolation and clamping
-(rule ((Live e) (= e (FMix a b t))) ((Live a) (Live b) (Live t)))
-(rule ((Live e) (= e (SmoothStep e0 e1 x))) ((Live e0) (Live e1) (Live x)))
-(rule ((Live e) (= e (FClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
-(rule ((Live e) (= e (SClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
-(rule ((Live e) (= e (UClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
-(rule ((Live e) (= e (NClamp x lo hi))) ((Live x) (Live lo) (Live hi)))
-
-; Geometry functions
+; Geometry (vector results)
 (rule ((Live e) (= e (Cross a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Normalize a))) ((Live a)))
-(rule ((Live e) (= e (Length a))) ((Live a)))
-(rule ((Live e) (= e (Distance a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Reflect i n))) ((Live i) (Live n)))
 (rule ((Live e) (= e (Refract i n eta))) ((Live i) (Live n) (Live eta)))
 (rule ((Live e) (= e (FaceForward n i nref))) ((Live n) (Live i) (Live nref)))
 
-; Additional math
-(rule ((Live e) (= e (Fma a b c))) ((Live a) (Live b) (Live c)))
-(rule ((Live e) (= e (Fract a))) ((Live a)))
-(rule ((Live e) (= e (Modf a))) ((Live a)))
-(rule ((Live e) (= e (ModfStruct a))) ((Live a)))
-(rule ((Live e) (= e (Ldexp a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (Frexp a))) ((Live a)))
-(rule ((Live e) (= e (FrexpStruct a))) ((Live a)))
-(rule ((Live e) (= e (Step e x))) ((Live e) (Live x)))
+; Unpacking
+(rule ((Live e) (= e (UnpackHalf2x16 a))) ((LiveI a)))
+(rule ((Live e) (= e (UnpackSnorm4x8 a))) ((LiveI a)))
+(rule ((Live e) (= e (UnpackSnorm2x16 a))) ((LiveI a)))
+(rule ((Live e) (= e (UnpackUnorm4x8 a))) ((LiveI a)))
+(rule ((Live e) (= e (UnpackUnorm2x16 a))) ((LiveI a)))
+(rule ((Live e) (= e (UnpackDouble2x32 a))) ((LiveI a)))
 
-; Sign and absolute value
-(rule ((Live e) (= e (Sign a))) ((Live a)))
-(rule ((Live e) (= e (FSign a))) ((Live a)))
-(rule ((Live e) (= e (SAbs a))) ((Live a)))
+; Structs
+(rule ((Live e) (= e (ModfStruct a))) ((LiveF a)))
+(rule ((Live e) (= e (FrexpStruct a))) ((LiveF a)))
+(rule ((Live e) (= e (Frexp a))) ((LiveF a)))
 
-; Bit manipulation
-(rule ((Live e) (= e (FindILsb a))) ((Live a)))
-(rule ((Live e) (= e (FindSMsb a))) ((Live a)))
-(rule ((Live e) (= e (FindUMsb a))) ((Live a)))
-(rule ((Live e) (= e (BitCount a))) ((Live a)))
+; Conversions
+(rule ((Live e) (= e (Bitcast a))) ((Live a)))
+(rule ((Live e) (= e (BitCast a))) ((Live a)))
+(rule ((Live e) (= e (Convert a))) ((Live a)))
 
-; NaN-ignoring min/max
-(rule ((Live e) (= e (NMin a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (NMax a b))) ((Live a) (Live b)))
-
-; Pack/Unpack operations
-(rule ((Live e) (= e (PackHalf2x16 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackHalf2x16 a))) ((Live a)))
-(rule ((Live e) (= e (PackSnorm4x8 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackSnorm4x8 a))) ((Live a)))
-(rule ((Live e) (= e (PackSnorm2x16 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackSnorm2x16 a))) ((Live a)))
-(rule ((Live e) (= e (PackUnorm4x8 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackUnorm4x8 a))) ((Live a)))
-(rule ((Live e) (= e (PackUnorm2x16 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackUnorm2x16 a))) ((Live a)))
-(rule ((Live e) (= e (PackDouble2x32 a))) ((Live a)))
-(rule ((Live e) (= e (UnpackDouble2x32 a))) ((Live a)))
-
-; Radians/Degrees conversion
-(rule ((Live e) (= e (Radians a))) ((Live a)))
-(rule ((Live e) (= e (Degrees a))) ((Live a)))
-
-; Determinant and inverse
-(rule ((Live e) (= e (Determinant m))) ((Live m)))
-(rule ((Live e) (= e (MatInverse m))) ((Live m)))
-
-; =============================================================================
-; Liveness for Memory Operations
-; =============================================================================
-
-; Load: both pointer and memory state are live
-(rule ((Live e) (= e (Load ptr mem))) ((Live ptr) (Live mem)))
-
-; StoreMem: pointer, value, and previous state are live
+; Memory
+(rule ((Live e) (= e (InitMem))) ())
 (rule ((Live e) (= e (StoreMem ptr val prev))) ((Live ptr) (Live val) (Live prev)))
-
-; MergeMem: condition and both branch states are live
-(rule ((Live e) (= e (MergeMem cond then_mem else_mem)))
-      ((Live cond) (Live then_mem) (Live else_mem)))
-
-; LoopMem: condition, body state, and init state are live
-(rule ((Live e) (= e (LoopMem cond body init)))
-      ((Live cond) (Live body) (Live init)))
-
-; Var is a leaf - no propagation needed
+(rule ((Live e) (= e (MergeMem cond t f))) ((LiveB cond) (Live t) (Live f)))
+(rule ((Live e) (= e (LoopMem cond body init))) ((LiveB cond) (Live body) (Live init)))
+(rule ((Live e) (= e (Load ptr mem))) ((Live ptr) (Live mem)))
 (rule ((Live e) (= e (Var _ _))) ())
-
-; Access chains propagate to base
 (rule ((Live e) (= e (AccessChain1 base _))) ((Live base)))
 (rule ((Live e) (= e (AccessChain2 base _ _))) ((Live base)))
 (rule ((Live e) (= e (AccessChain3 base _ _ _))) ((Live base)))
 (rule ((Live e) (= e (AccessChainDyn base idx))) ((Live base) (Live idx)))
 
-; Image operations
+; Images
 (rule ((Live e) (= e (ImageSample img coord))) ((Live img) (Live coord)))
 (rule ((Live e) (= e (ImageFetch img coord))) ((Live img) (Live coord)))
 (rule ((Live e) (= e (ImageRead img coord))) ((Live img) (Live coord)))
@@ -1670,8 +1133,13 @@
       ((Live img) (Live coord) (Live data) (Live mem)))
 (rule ((Live e) (= e (SampledImage img sampler))) ((Live img) (Live sampler)))
 (rule ((Live e) (= e (Image sampled))) ((Live sampled)))
+(rule ((Live e) (= e (ImageQuerySize img))) ((Live img)))
+(rule ((Live e) (= e (ImageQuerySizeLod img lod))) ((Live img) (Live lod)))
+(rule ((Live e) (= e (ImageQueryLevels img))) ((Live img)))
+(rule ((Live e) (= e (ImageQuerySamples img))) ((Live img)))
+(rule ((Live e) (= e (ImageQueryLod img coord))) ((Live img) (Live coord)))
 
-; Atomic operations
+; Atomics
 (rule ((Live e) (= e (AtomicLoad ptr mem))) ((Live ptr) (Live mem)))
 (rule ((Live e) (= e (AtomicStore ptr val mem))) ((Live ptr) (Live val) (Live mem)))
 (rule ((Live e) (= e (AtomicExchange ptr val mem))) ((Live ptr) (Live val) (Live mem)))
@@ -1687,77 +1155,29 @@
 (rule ((Live e) (= e (AtomicOr ptr val mem))) ((Live ptr) (Live val) (Live mem)))
 (rule ((Live e) (= e (AtomicXor ptr val mem))) ((Live ptr) (Live val) (Live mem)))
 
-; Subgroup operations
-(rule ((Live e) (= e (GroupElect))) ())
-(rule ((Live e) (= e (GroupAll pred))) ((Live pred)))
-(rule ((Live e) (= e (GroupAny pred))) ((Live pred)))
-(rule ((Live e) (= e (GroupAllEqual val))) ((Live val)))
+; Subgroup
 (rule ((Live e) (= e (GroupBroadcast val id))) ((Live val) (Live id)))
 (rule ((Live e) (= e (GroupBroadcastFirst val))) ((Live val)))
 (rule ((Live e) (= e (GroupShuffle val id))) ((Live val) (Live id)))
 (rule ((Live e) (= e (GroupShuffleXor val mask))) ((Live val) (Live mask)))
-(rule ((Live e) (= e (GroupIAdd val))) ((Live val)))
-(rule ((Live e) (= e (GroupFAdd val))) ((Live val)))
-(rule ((Live e) (= e (GroupIMul val))) ((Live val)))
-(rule ((Live e) (= e (GroupFMul val))) ((Live val)))
-(rule ((Live e) (= e (GroupSMin val))) ((Live val)))
-(rule ((Live e) (= e (GroupUMin val))) ((Live val)))
-(rule ((Live e) (= e (GroupFMin val))) ((Live val)))
-(rule ((Live e) (= e (GroupSMax val))) ((Live val)))
-(rule ((Live e) (= e (GroupUMax val))) ((Live val)))
-(rule ((Live e) (= e (GroupFMax val))) ((Live val)))
-(rule ((Live e) (= e (GroupBitAnd val))) ((Live val)))
-(rule ((Live e) (= e (GroupBitOr val))) ((Live val)))
-(rule ((Live e) (= e (GroupBitXor val))) ((Live val)))
-(rule ((Live e) (= e (GroupLogAnd val))) ((Live val)))
-(rule ((Live e) (= e (GroupLogOr val))) ((Live val)))
-(rule ((Live e) (= e (GroupLogXor val))) ((Live val)))
 
-; =============================================================================
-; Liveness for Bitfield Operations
-; =============================================================================
-
-(rule ((Live e) (= e (BitFieldInsert base insert offset count)))
-      ((Live base) (Live insert) (Live offset) (Live count)))
-(rule ((Live e) (= e (BitFieldSExtract base offset count)))
-      ((Live base) (Live offset) (Live count)))
-(rule ((Live e) (= e (BitFieldUExtract base offset count)))
-      ((Live base) (Live offset) (Live count)))
-; NOTE: BitReverse, BitCount, FindILsb, FindSMsb, FindUMsb liveness rules
-; are already defined in the main bitwise liveness section above
-
-; =============================================================================
-; Liveness for Image Query Operations
-; =============================================================================
-
-(rule ((Live e) (= e (ImageQuerySize img))) ((Live img)))
-(rule ((Live e) (= e (ImageQuerySizeLod img lod))) ((Live img) (Live lod)))
-(rule ((Live e) (= e (ImageQueryLevels img))) ((Live img)))
-(rule ((Live e) (= e (ImageQuerySamples img))) ((Live img)))
-(rule ((Live e) (= e (ImageQueryLod img coord))) ((Live img) (Live coord)))
-
-; =============================================================================
-; Liveness for Function Calls
-; =============================================================================
-
+; Function calls
 (rule ((Live e) (= e (Call1 _ a))) ((Live a)))
 (rule ((Live e) (= e (Call2 _ a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Call3 _ a b c))) ((Live a) (Live b) (Live c)))
 (rule ((Live e) (= e (Call4 _ a b c d))) ((Live a) (Live b) (Live c) (Live d)))
+(rule ((Live e) (= e (Call _ arg))) ((Live arg)))
 (rule ((Live e) (= e (Subst body _ val))) ((Live body) (Live val)))
-(rule ((Live e) (= e (Arg _))) ())
+(rule ((LiveI e) (= e (SubstI body _ val))) ((LiveI body) (Live val)))
+(rule ((LiveF e) (= e (SubstF body _ val))) ((LiveF body) (Live val)))
+(rule ((LiveB e) (= e (SubstB body _ val))) ((LiveB body) (Live val)))
 
-; =============================================================================
-; Liveness for Specialization Constants
-; =============================================================================
+; Composites
+(rule ((Live e) (= e (CompositeExtract a _))) ((Live a)))
+(rule ((Live e) (= e (CompositeInsert a b _))) ((Live a) (Live b)))
 
-; SpecConst is a leaf
+; Spec constants
 (rule ((Live e) (= e (SpecConst _ _))) ())
-
-; BoolConst is a leaf
-(rule ((Live e) (= e (BoolConst _))) ())
-
-; Spec constant operations
 (rule ((Live e) (= e (SpecAdd a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (SpecSub a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (SpecMul a b))) ((Live a) (Live b)))
@@ -1777,61 +1197,9 @@
 (rule ((Live e) (= e (SpecULt a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (SpecSelect c t f))) ((Live c) (Live t) (Live f)))
 
-; =============================================================================
-; Liveness for Loop Unrolling
-; =============================================================================
-
+; Loop unrolling
 (rule ((Live e) (= e (BoundedTheta _ body init))) ((Live body) (Live init)))
 (rule ((Live e) (= e (LoopIter _ val))) ((Live val)))
-
-; =============================================================================
-; Liveness for Derivative Operations
-; =============================================================================
-
-(rule ((Live e) (= e (DPdx a))) ((Live a)))
-(rule ((Live e) (= e (DPdy a))) ((Live a)))
-(rule ((Live e) (= e (DPdxFine a))) ((Live a)))
-(rule ((Live e) (= e (DPdyFine a))) ((Live a)))
-(rule ((Live e) (= e (DPdxCoarse a))) ((Live a)))
-(rule ((Live e) (= e (DPdyCoarse a))) ((Live a)))
-(rule ((Live e) (= e (Fwidth a))) ((Live a)))
-(rule ((Live e) (= e (FwidthFine a))) ((Live a)))
-(rule ((Live e) (= e (FwidthCoarse a))) ((Live a)))
-
-; InitMem is a leaf
-(rule ((Live e) (= e (InitMem))) ())
-
-; =============================================================================
-; Function for Case Count (used in switch optimization)
-; =============================================================================
-(function CaseCount (ExprList) i64 :merge (min old new))
-
-; =============================================================================
-; Capability Check Relations (for legalization)
-; =============================================================================
-(relation VulkanInt8 ())
-(relation VulkanInt16 ())
-(relation VulkanFloat16 ())
-(relation OpenCLFP16 ())
-
-; =============================================================================
-; Liveness Propagation for New E-Nodes
-; =============================================================================
-
-; Floating-point operations
-(rule ((Live e) (= e (FMod a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FConst _))) ())
-(rule ((Live e) (= e (FNe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FGe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FLe a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FLt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FGt a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FEq a b))) ((Live a) (Live b)))
-
-; Memory/register promotion
-(rule ((Live e) (= e (Alloca _))) ())
-(rule ((Live e) (= e (SingleStoreOptimized ptr val))) ((Live ptr) (Live val)))
-(rule ((Live e) (= e (MemState _))) ())
 
 ; Loop transformations
 (rule ((Live e) (= e (BreakableTheta c bc bv body init)))
@@ -1859,9 +1227,13 @@
 (rule ((Live e) (= e (Continue))) ())
 (rule ((Live e) (= e (Break val))) ((Live val)))
 (rule ((Live e) (= e (Barrier))) ())
-(rule ((Live e) (= e (Call _ arg))) ((Live arg)))
 
-; Legalization - narrow integer ops
+; Memory promotion
+(rule ((Live e) (= e (Alloca _))) ())
+(rule ((Live e) (= e (SingleStoreOptimized ptr val))) ((Live ptr) (Live val)))
+(rule ((Live e) (= e (MemState _))) ())
+
+; Legalization
 (rule ((Live e) (= e (Add8 a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Sub8 a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Mul8 a b))) ((Live a) (Live b)))
@@ -1878,8 +1250,6 @@
 (rule ((Live e) (= e (ZeroExtend16 a))) ((Live a)))
 (rule ((Live e) (= e (SignExtend8 a))) ((Live a)))
 (rule ((Live e) (= e (SignExtend16 a))) ((Live a)))
-
-; Float16 operations
 (rule ((Live e) (= e (Float16Add a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Float16Sub a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Float16Mul a b))) ((Live a) (Live b)))
@@ -1888,8 +1258,6 @@
 (rule ((Live e) (= e (EmulatedFloat16Sub a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (EmulatedFloat16Mul a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (EmulatedFloat16Div a b))) ((Live a) (Live b)))
-
-; 64-bit decomposition
 (rule ((Live e) (= e (SplitI64 a))) ((Live a)))
 (rule ((Live e) (= e (MergeI64 a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (I64Hi a))) ((Live a)))
@@ -1898,8 +1266,6 @@
 (rule ((Live e) (= e (DivMod32Lo a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (AddWithCarry a b c))) ((Live a) (Live b) (Live c)))
 (rule ((Live e) (= e (SubWithBorrow a b c))) ((Live a) (Live b) (Live c)))
-
-; Target legalization markers
 (rule ((Live e) (= e (VulkanLegalized x))) ((Live x)))
 (rule ((Live e) (= e (OpenCLLegalized x))) ((Live x)))
 
@@ -1916,26 +1282,22 @@
 (rule ((Live e) (= e (BoundsChecked a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (BoundsChecked2D a b c))) ((Live a) (Live b) (Live c)))
 (rule ((Live e) (= e (BufferBoundsChecked a b c))) ((Live a) (Live b) (Live c)))
-(rule ((Live e) (= e (NaNChecked x))) ((Live x)))
-(rule ((Live e) (= e (InfChecked x))) ((Live x)))
-(rule ((Live e) (= e (FiniteChecked x))) ((Live x)))
+(rule ((Live e) (= e (NaNChecked x))) ((LiveF x)))
+(rule ((Live e) (= e (InfChecked x))) ((LiveF x)))
+(rule ((Live e) (= e (FiniteChecked x))) ((LiveF x)))
 (rule ((Live e) (= e (NaNCheckedVec x))) ((Live x)))
-(rule ((Live e) (= e (OverflowCheckedAdd a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (OverflowCheckedSub a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (OverflowCheckedMul a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (AddOverflows a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (SubOverflows a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (MulOverflows a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (DivChecked a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (UDivChecked a b))) ((Live a) (Live b)))
-(rule ((Live e) (= e (FDivChecked a b))) ((Live a) (Live b)))
+(rule ((Live e) (= e (OverflowCheckedAdd a b))) ((LiveI a) (LiveI b)))
+(rule ((Live e) (= e (OverflowCheckedSub a b))) ((LiveI a) (LiveI b)))
+(rule ((Live e) (= e (OverflowCheckedMul a b))) ((LiveI a) (LiveI b)))
+(rule ((Live e) (= e (DivChecked a b))) ((LiveI a) (LiveI b)))
+(rule ((Live e) (= e (UDivChecked a b))) ((LiveI a) (LiveI b)))
+(rule ((Live e) (= e (FDivChecked a b))) ((LiveF a) (LiveF b)))
 (rule ((Live e) (= e (NullChecked x))) ((Live x)))
 (rule ((Live e) (= e (NullCheckedLoad a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (NullPtr))) ())
 (rule ((Live e) (= e (ValidatedTexCoord x))) ((Live x)))
 (rule ((Live e) (= e (ValidatedNormal x))) ((Live x)))
 (rule ((Live e) (= e (ValidatedOrthogonal x))) ((Live x)))
-(rule ((Live e) (= e (FApproxEq a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (Timed _ x))) ((Live x)))
 (rule ((Live e) (= e (TimerStart _))) ())
 (rule ((Live e) (= e (TimerEnd _))) ())
@@ -1946,16 +1308,59 @@
 (rule ((Live e) (= e (StoreCounter x))) ((Live x)))
 (rule ((Live e) (= e (PtrToInt x))) ((Live x)))
 (rule ((Live e) (= e (DebugPrintf _ x))) ((Live x)))
-(rule ((Live e) (= e (Assert c _))) ((Live c)))
+(rule ((Live e) (= e (Assert c _))) ((LiveB c)))
 (rule ((Live e) (= e (DebugMode x))) ((Live x)))
 (rule ((Live e) (= e (VerboseMode x))) ((Live x)))
 (rule ((Live e) (= e (DebugEnabled))) ())
 (rule ((Live e) (= e (VerboseEnabled))) ())
 (rule ((Live e) (= e (SampledProfile a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (InvocationId))) ())
-(rule ((Live e) (= e (Any x))) ((Live x)))
-(rule ((Live e) (= e (All x))) ((Live x)))
 
-; Conversion operations
-(rule ((Live e) (= e (Convert x))) ((Live x)))
-(rule ((Live e) (= e (BitCast x))) ((Live x)))
+; =============================================================================
+; Condition Analysis for Partial DCE
+; =============================================================================
+
+; Boolean constants have known truth values
+(rule ((= e (BoolConst 0))) ((CanBeFalse e)))
+(rule ((= e (BoolConst c)) (!= c 0)) ((CanBeTrue e)))
+
+; By default, any Sym-like expression can be either true or false
+(rule ((= e (BSym s))) ((CanBeTrue e) (CanBeFalse e)))
+
+; Propagate through logical operations
+(rule ((= e (LogNot x)) (CanBeTrue x)) ((CanBeFalse e)))
+(rule ((= e (LogNot x)) (CanBeFalse x)) ((CanBeTrue e)))
+(rule ((= e (LogAnd a b)) (CanBeTrue a) (CanBeTrue b)) ((CanBeTrue e)))
+(rule ((= e (LogAnd a b)) (CanBeFalse a)) ((CanBeFalse e)))
+(rule ((= e (LogAnd a b)) (CanBeFalse b)) ((CanBeFalse e)))
+(rule ((= e (LogOr a b)) (CanBeFalse a) (CanBeFalse b)) ((CanBeFalse e)))
+(rule ((= e (LogOr a b)) (CanBeTrue a)) ((CanBeTrue e)))
+(rule ((= e (LogOr a b)) (CanBeTrue b)) ((CanBeTrue e)))
+
+; Comparisons can generally be either (conservative)
+(rule ((= e (Eq a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (Ne a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SLt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SLe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SGt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (SGe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (ULt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (ULe a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (UGt a b))) ((CanBeTrue e) (CanBeFalse e)))
+(rule ((= e (UGe a b))) ((CanBeTrue e) (CanBeFalse e)))
+
+; Gamma/Select results can be either
+(rule ((= e (GammaB c t f))) ((CanBeTrue e) (CanBeFalse e)))
+
+; =============================================================================
+; Function for Case Count (used in switch optimization)
+; =============================================================================
+(function CaseCount (ExprList) i64 :merge (min old new))
+
+; =============================================================================
+; Capability Check Relations (for legalization)
+; =============================================================================
+(relation VulkanInt8 ())
+(relation VulkanInt16 ())
+(relation VulkanFloat16 ())
+(relation OpenCLFP16 ())

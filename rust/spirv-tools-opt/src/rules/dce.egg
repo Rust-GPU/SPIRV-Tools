@@ -38,14 +38,14 @@
 ; The dead branch's computation is never executed.
 
 ; Gamma with constant true: eliminate false branch entirely
-; Gamma(1, t, f) = t (already in rvsdg.egg)
+; Gamma(BoolConst 1, t, f) = t (already in rvsdg.egg)
 
 ; Gamma with constant false: eliminate true branch entirely
-; Gamma(0, t, f) = f (already in rvsdg.egg)
+; Gamma(BoolConst 0, t, f) = f (already in rvsdg.egg)
 
 ; EffGamma with constant condition - already in rvsdg.egg
-; EffGamma(1, t, f) = t
-; EffGamma(0, t, f) = f
+; EffGamma(BoolConst 1, t, f) = t
+; EffGamma(BoolConst 0, t, f) = f
 
 ; Gamma where both branches are identical: eliminate condition computation
 ; Gamma(c, x, x) = x (already in rvsdg.egg)
@@ -57,7 +57,7 @@
 ; Loops that never execute or don't modify their carried value are dead.
 
 ; Loop with false condition never executes
-; Theta(0, body, init) = init (already in rvsdg.egg)
+; Theta(BoolConst 0, body, init) = init (already in rvsdg.egg)
 ; BoundedTheta(0, body, init) = init (already in loop_unroll.egg)
 
 ; Loop where body doesn't change the value (identity loop)
@@ -89,28 +89,58 @@
 (rule ((= m (StoreMem (Undef) val prev)))
       ((union m prev)))
 
-; Arithmetic on Undef propagates Undef
-; NOTE: Special cases like 0*Undef=0 and Undef&0=0 are in datatypes.egg
-; These rules are for cases without dominating constants
-(rule ((= e (Add (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (Sub (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (Neg (Undef)))) ((union e (Undef))))
+; Undef propagation through typed sorts via bridge constructors.
+; ExprToInt(Undef), ExprToFloat(Undef), ExprToBool(Undef) act as "typed undefs".
 
-; Bitwise on Undef propagates Undef (except for special cases)
-(rule ((= e (BitNot (Undef)))) ((union e (Undef))))
-(rule ((= e (BitXor (Undef) (Undef)))) ((union e (Undef))))
-; Note: BitAnd(Undef, 0) = 0 and BitOr(Undef, -1) = -1 are special cases
-; handled in datatypes.egg. Also Undef ^ Undef could be 0 but we say Undef.
+; Integer arithmetic on Undef
+(rule ((= e (Add (ExprToInt (Undef)) y))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (Add x (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (Sub (ExprToInt (Undef)) y))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (Sub x (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (Neg (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitNot (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitAnd (ExprToInt (Undef)) y))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitAnd x (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitOr (ExprToInt (Undef)) y))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitOr x (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitXor (ExprToInt (Undef)) y))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (BitXor x (ExprToInt (Undef))))) ((union e (ExprToInt (Undef)))))
 
-; Comparisons with Undef produce Undef only when both are Undef
-; (comparing x with Undef is genuinely undefined behavior)
-(rule ((= e (Eq (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (Ne (Undef) (Undef)))) ((union e (Undef))))
+; Float arithmetic on Undef
+(rule ((= e (FAdd (ExprToFloat (Undef)) y))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FAdd x (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FSub (ExprToFloat (Undef)) y))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FSub x (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FMul (ExprToFloat (Undef)) y))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FMul x (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FDiv (ExprToFloat (Undef)) y))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FDiv x (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FNeg (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (FAbs (ExprToFloat (Undef))))) ((union e (ExprToFloat (Undef)))))
 
-; Gamma with Undef condition: we don't know which branch, result is Undef
-; (Conservative: if condition is Undef, behavior is undefined)
-(rule ((= e (Gamma (Undef) t f)))
-      ((union e (Undef))))
+; Comparisons on Undef produce Undef (bool)
+(rule ((= e (Eq (ExprToInt (Undef)) y))) ((union e (ExprToBool (Undef)))))
+(rule ((= e (Eq x (ExprToInt (Undef))))) ((union e (ExprToBool (Undef)))))
+(rule ((= e (Ne (ExprToInt (Undef)) y))) ((union e (ExprToBool (Undef)))))
+(rule ((= e (Ne x (ExprToInt (Undef))))) ((union e (ExprToBool (Undef)))))
+
+; Gamma with Undef condition
+(rule ((= e (Gamma (ExprToBool (Undef)) t f))) ((union e (Undef))))
+
+; Derivatives of Undef are zero (Undef is constant, derivative of any constant is 0)
+(rule ((= e (DPdx (ExprToFloat (Undef))))) ((union e (FConst 0.0))))
+(rule ((= e (DPdy (ExprToFloat (Undef))))) ((union e (FConst 0.0))))
+(rule ((= e (Fwidth (ExprToFloat (Undef))))) ((union e (FConst 0.0))))
+
+; Subgroup ops on typed Undef
+(rule ((= e (GroupAll (ExprToBool (Undef))))) ((union e (ExprToBool (Undef)))))
+(rule ((= e (GroupAny (ExprToBool (Undef))))) ((union e (ExprToBool (Undef)))))
+
+; Type conversions of typed Undef
+(rule ((= e (ConvertFToS (ExprToFloat (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (ConvertFToU (ExprToFloat (Undef))))) ((union e (ExprToInt (Undef)))))
+(rule ((= e (ConvertSToF (ExprToInt (Undef))))) ((union e (ExprToFloat (Undef)))))
+(rule ((= e (ConvertUToF (ExprToInt (Undef))))) ((union e (ExprToFloat (Undef)))))
 
 ; =============================================================================
 ; SECTION 5: Aggressive Dead Store Elimination Patterns
@@ -143,7 +173,7 @@
 ; MergeMem(c, s, s) = s (already in memory.egg)
 
 ; MergeMem with constant condition
-; MergeMem(0, t, f) = f (already in memory.egg)
+; MergeMem(BoolConst 0, t, f) = f (already in memory.egg)
 ; MergeMem(c, t, f) where c != 0 = t (already in memory.egg)
 
 ; MergeMem where both branches store same value to same location
@@ -151,10 +181,8 @@
 ; = StoreMem(p, v, MergeMem(c, s1, s2))
 ; Already in sroa.egg
 
-; MergeMem with Undef condition: pick either branch (they should be equivalent in well-formed code)
-; or propagate Undef if they differ
-(rule ((= m (MergeMem (Undef) s1 s2)) (= s1 s2))
-      ((union m s1)))
+; NOTE: MergeMem-with-Undef-condition rule removed because MergeMem condition
+; is now BoolExpr and Undef is Expr sort.
 
 ; =============================================================================
 ; SECTION 7: Dead Image/Atomic Operation Elimination
@@ -183,17 +211,20 @@
 ; Most rules already in subgroup.egg - only add new patterns here.
 
 ; GroupAll of constant false = false (not in subgroup.egg)
-(rule ((= e (GroupAll (Const 0))))
-      ((union e (Const 0))))
+; GroupAll(BoolExpr) -> BoolExpr, so use BoolConst
+(rule ((= e (GroupAll (BoolConst 0))))
+      ((union e (BoolConst 0))))
 
 ; GroupAny of constant true = true (not in subgroup.egg)
-(rule ((= e (GroupAny (Const 1))))
-      ((union e (Const 1))))
+(rule ((= e (GroupAny (BoolConst 1))))
+      ((union e (BoolConst 1))))
 
-; Subgroup operations on Undef: result is Undef
-(rule ((= e (GroupAll (Undef)))) ((union e (Undef))))
-(rule ((= e (GroupAny (Undef)))) ((union e (Undef))))
-(rule ((= e (GroupAllEqual (Undef)))) ((union e (Undef))))
+; NOTE: Subgroup-on-Undef rules removed because GroupAll/GroupAny take BoolExpr,
+; GroupAllEqual takes Expr but returns BoolExpr. Undef is Expr sort, so
+; GroupAll(Undef) and GroupAny(Undef) are ill-typed. GroupBroadcast/GroupBroadcastFirst
+; take Expr and return Expr, so those Undef rules are still valid.
+
+; Subgroup operations on Undef: result is Undef (only for Expr-sort ops)
 (rule ((= e (GroupBroadcast (Undef) id))) ((union e (Undef))))
 (rule ((= e (GroupBroadcastFirst (Undef)))) ((union e (Undef))))
 
@@ -259,23 +290,14 @@
 ; SECTION 13: Dead Derivative Elimination
 ; =============================================================================
 ; Derivatives of constants/uniforms are zero.
+; NOTE: DPdx/DPdy/Fwidth etc. now take FloatExpr and return FloatExpr.
+; Undef is Expr sort, so DPdx(Undef) is ill-typed. Those rules are removed.
 
 ; Already in memory.egg:
-; DPdx(Const) = 0, DPdy(Const) = 0
-; DPdx(LoopInvariant) = 0, DPdy(LoopInvariant) = 0
+; DPdx(FConst) = FConst 0.0, DPdy(FConst) = FConst 0.0
+; DPdx(LoopInvariantF) = FConst 0.0, DPdy(LoopInvariantF) = FConst 0.0
 
 ; Fwidth of constant is zero (already in memory.egg)
-
-; Derivatives of Undef are zero (constant value, just unknown)
-(rule ((= e (DPdx (Undef)))) ((union e (Const 0))))
-(rule ((= e (DPdy (Undef)))) ((union e (Const 0))))
-(rule ((= e (DPdxFine (Undef)))) ((union e (Const 0))))
-(rule ((= e (DPdyFine (Undef)))) ((union e (Const 0))))
-(rule ((= e (DPdxCoarse (Undef)))) ((union e (Const 0))))
-(rule ((= e (DPdyCoarse (Undef)))) ((union e (Const 0))))
-(rule ((= e (Fwidth (Undef)))) ((union e (Const 0))))
-(rule ((= e (FwidthFine (Undef)))) ((union e (Const 0))))
-(rule ((= e (FwidthCoarse (Undef)))) ((union e (Const 0))))
 
 ; =============================================================================
 ; SECTION 14: Dead Vector Component Elimination
@@ -309,8 +331,8 @@
 
 ; If a Gamma's condition can only be true, false branch is dead
 ; Already handled by CanBeTrue/CanBeFalse in datatypes.egg:
-; - CanBeTrue(Const c) where c != 0
-; - CanBeFalse(Const 0)
+; - CanBeTrue(BoolConst c) where c != 0
+; - CanBeFalse(BoolConst 0)
 ; - Gamma branches only marked Live if condition CanBe that value
 
 ; Effect of liveness: when something isn't Live after saturation,
@@ -326,7 +348,7 @@
 ; (infinite loop is valid behavior)
 
 ; Theta with constant false condition never loops - body is dead
-; Theta(Const 0, body, init) = init (already in rvsdg.egg)
+; Theta(BoolConst 0, body, init) = init (already in rvsdg.egg)
 
 ; BoundedTheta simplifications
 ; BoundedTheta(n, body, init) where body = init means loop does nothing
@@ -367,30 +389,17 @@
 ; =============================================================================
 ; SECTION 19: Comprehensive Undef Propagation
 ; =============================================================================
-; Ensure Undef propagates through all operation types.
-
-; Float operations with both operands Undef
-; Note: FMul(0, Undef)=0 is in datatypes.egg, so we only handle Undef+Undef cases
-(rule ((= e (FAdd (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (FSub (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (FMul (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (FDiv (Undef) (Undef)))) ((union e (Undef))))
-(rule ((= e (FNeg (Undef)))) ((union e (Undef))))
-(rule ((= e (FAbs (Undef)))) ((union e (Undef))))
+; Ensure Undef propagates through all Expr-sort operation types.
+; NOTE: Rules for typed-sort operations (IntExpr, FloatExpr, BoolExpr) have
+; been removed since those constructors no longer accept Undef (Expr sort).
+; Only Expr-sort operations remain.
 
 ; Vector construction with all Undef = Undef
 (rule ((= e (Vec2 (Undef) (Undef)))) ((union e (Undef))))
 (rule ((= e (Vec3 (Undef) (Undef) (Undef)))) ((union e (Undef))))
 (rule ((= e (Vec4 (Undef) (Undef) (Undef) (Undef)))) ((union e (Undef))))
 
-; Type conversions of Undef = Undef
-(rule ((= e (ConvertFToS (Undef)))) ((union e (Undef))))
-(rule ((= e (ConvertFToU (Undef)))) ((union e (Undef))))
-(rule ((= e (ConvertSToF (Undef)))) ((union e (Undef))))
-(rule ((= e (ConvertUToF (Undef)))) ((union e (Undef))))
-(rule ((= e (SConvert (Undef)))) ((union e (Undef))))
-(rule ((= e (UConvert (Undef)))) ((union e (Undef))))
-(rule ((= e (FConvert (Undef)))) ((union e (Undef))))
+; Type conversions of Undef = Undef (only Expr-sort conversions)
 (rule ((= e (Bitcast (Undef)))) ((union e (Undef))))
 
 ; =============================================================================
@@ -408,4 +417,3 @@
 ; (The intermediate store-load is dead)
 (rule ((= m (StoreMem p v2 (StoreMem p (Load p prev) prev))))
       ((union m (StoreMem p v2 prev))))
-

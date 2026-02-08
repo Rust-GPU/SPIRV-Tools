@@ -14,17 +14,22 @@
 ; - loop_fusion.egg: Theta with invariant body
 ;
 ; This file contains ONLY unique LICM rules not covered elsewhere.
+;
+; NOTE: With typed sorts, LoopInvariant(Expr)->Expr is for Expr sort.
+; Typed variants: LoopInvariantI(IntExpr)->IntExpr,
+; LoopInvariantF(FloatExpr)->FloatExpr, LoopInvariantB(BoolExpr)->BoolExpr.
+; Rules must use the correct variant matching each constructor's sort.
 ; =============================================================================
 
 ; Base case: Symbols are inherently loop-invariant
 (rule ((= e (Sym s)))
       ((union e (LoopInvariant (Sym s)))))
 
-; FMod - distinct from FRem
-(rule ((= e (FMod (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (FMod a b)))))
+; FMod - distinct from FRem, both are FloatExpr sort
+(rule ((= e (FMod (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (FMod a b)))))
 
-; Vector construction
+; Vector construction (Vec2/3/4 are Expr sort)
 (rule ((= e (Vec2 (LoopInvariant a) (LoopInvariant b))))
       ((union e (LoopInvariant (Vec2 a b)))))
 (rule ((= e (Vec3 (LoopInvariant a) (LoopInvariant b) (LoopInvariant c))))
@@ -32,13 +37,13 @@
 (rule ((= e (Vec4 (LoopInvariant a) (LoopInvariant b) (LoopInvariant c) (LoopInvariant d))))
       ((union e (LoopInvariant (Vec4 a b c d)))))
 
-; Vector element access
+; Vector element access (VecExtract/VecInsert are Expr sort)
 (rule ((= e (VecExtract (LoopInvariant v) idx)))
       ((union e (LoopInvariant (VecExtract v idx)))))
 (rule ((= e (VecInsert (LoopInvariant v) (LoopInvariant s) idx)))
       ((union e (LoopInvariant (VecInsert v s idx)))))
 
-; Vector division (not in vector.egg)
+; Vector division (VecDiv/VecFDiv are Expr sort, not in vector.egg)
 (rule ((= e (VecDiv (LoopInvariant a) (LoopInvariant b))))
       ((union e (LoopInvariant (VecDiv a b)))))
 (rule ((= e (VecFDiv (LoopInvariant a) (LoopInvariant b))))
@@ -46,7 +51,7 @@
 (rule ((= e (VecTimesScalar (LoopInvariant v) (LoopInvariant s))))
       ((union e (LoopInvariant (VecTimesScalar v s)))))
 
-; Access chain LICM
+; Access chain LICM (AccessChain* are Expr sort)
 (rule ((= e (AccessChain1 (LoopInvariant ptr) idx)))
       ((union e (LoopInvariant (AccessChain1 ptr idx)))))
 (rule ((= e (AccessChain2 (LoopInvariant ptr) i1 i2)))
@@ -56,7 +61,7 @@
 (rule ((= e (AccessChainDyn (LoopInvariant ptr) (LoopInvariant idx))))
       ((union e (LoopInvariant (AccessChainDyn ptr idx)))))
 
-; Image operations with BOTH image AND coordinate invariant
+; Image operations with BOTH image AND coordinate invariant (Expr sort)
 ; (graphics.egg only has coord invariant, these are different rules)
 (rule ((= e (ImageSample (LoopInvariant img) (LoopInvariant coord))))
       ((union e (LoopInvariant (ImageSample img coord)))))
@@ -65,7 +70,8 @@
 (rule ((= e (ImageRead (LoopInvariant img) (LoopInvariant coord))))
       ((union e (LoopInvariant (ImageRead img coord)))))
 
-; Gamma LICM - when all branches AND condition are invariant
-(rule ((= e (Gamma (LoopInvariant c) (LoopInvariant t) (LoopInvariant f))))
+; Gamma LICM - when condition (BoolExpr) AND both branches (Expr) are invariant
+; Gamma condition is BoolExpr -> use LoopInvariantB for condition
+; Gamma branches are Expr -> use LoopInvariant for branches
+(rule ((= e (Gamma (LoopInvariantB c) (LoopInvariant t) (LoopInvariant f))))
       ((union e (LoopInvariant (Gamma c t f)))))
-

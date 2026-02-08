@@ -9,32 +9,48 @@
 ;
 ; Key insight: Subgroup operations with uniform inputs can be simplified.
 ;
+; NOTE: With typed sorts, subgroup operations use different sorts:
+; - GroupElect() -> BoolExpr
+; - GroupAll(BoolExpr) -> BoolExpr, GroupAny(BoolExpr) -> BoolExpr
+; - GroupAllEqual(Expr) -> BoolExpr
+; - GroupLogAnd/LogOr/LogXor(BoolExpr) -> BoolExpr
+; - GroupIAdd/IMul/SMin/UMin/SMax/UMax/BitAnd/BitOr/BitXor(IntExpr) -> IntExpr
+; - GroupFAdd/FMul/FMin/FMax(FloatExpr) -> FloatExpr
+; - GroupBroadcast(Expr, Expr) -> Expr
+; - GroupBroadcastFirst(Expr) -> Expr
+; - GroupShuffle(Expr, Expr) -> Expr
+; - GroupShuffleXor(Expr, Expr) -> Expr
+;
 ; =============================================================================
 ; Constant Propagation for Broadcasts
 ; =============================================================================
-; Broadcasting a constant is just the constant
-(rule ((= e (GroupBroadcast (Const c) _)))
-      ((union e (Const c))))
-(rule ((= e (GroupBroadcastFirst (Const c))))
-      ((union e (Const c))))
+; Broadcasting a constant is just the constant (Expr sort)
+; Const is IntExpr, so bridge through IntToExpr for Expr-sort operations
+(rule ((= e (GroupBroadcast (IntToExpr (Const c)) _)))
+      ((union e (IntToExpr (Const c)))))
+(rule ((= e (GroupBroadcastFirst (IntToExpr (Const c)))))
+      ((union e (IntToExpr (Const c)))))
 
 ; =============================================================================
 ; Redundant Voting Operations
 ; =============================================================================
 ; All(true) = true, Any(false) = false with uniform values
-(rule ((= e (GroupAll (Const 1))))
-      ((union e (Const 1))))
-(rule ((= e (GroupAny (Const 0))))
-      ((union e (Const 0))))
+; GroupAll/GroupAny take BoolExpr, use BoolConst
+(rule ((= e (GroupAll (BoolConst 1))))
+      ((union e (BoolConst 1))))
+(rule ((= e (GroupAny (BoolConst 0))))
+      ((union e (BoolConst 0))))
 
-; AllEqual on constant is always true
-(rule ((= e (GroupAllEqual (Const _))))
-      ((union e (Const 1))))
+; AllEqual on constant is always true (GroupAllEqual takes Expr, returns BoolExpr)
+(rule ((= e (GroupAllEqual (IntToExpr (Const _)))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Reduction of Constants
 ; =============================================================================
 ; Reduction of a constant is the constant (modulo subgroup size, but safe for identities)
+
+; Integer reductions (GroupIAdd/IMul/BitAnd/BitOr/BitXor take IntExpr)
 (rule ((= e (GroupIAdd (Const 0))))
       ((union e (Const 0))))
 (rule ((= e (GroupIMul (Const 1))))
@@ -45,10 +61,12 @@
       ((union e (Const 0))))
 (rule ((= e (GroupBitXor (Const 0))))
       ((union e (Const 0))))
-(rule ((= e (GroupLogAnd (Const 1))))
-      ((union e (Const 1))))
-(rule ((= e (GroupLogOr (Const 0))))
-      ((union e (Const 0))))
+
+; Boolean reductions (GroupLogAnd/LogOr take BoolExpr, use BoolConst)
+(rule ((= e (GroupLogAnd (BoolConst 1))))
+      ((union e (BoolConst 1))))
+(rule ((= e (GroupLogOr (BoolConst 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; Shuffle Optimizations
@@ -56,7 +74,7 @@
 ; Shuffle with constant index 0 from first is like BroadcastFirst
 ; (Could add more shuffle patterns)
 
-; ShuffleXor with mask 0 is identity
-(rule ((= e (GroupShuffleXor x (Const 0))))
+; ShuffleXor with mask 0 is identity (GroupShuffleXor takes Expr)
+; Const is IntExpr, bridge through IntToExpr
+(rule ((= e (GroupShuffleXor x (IntToExpr (Const 0)))))
       ((union e x)))
-

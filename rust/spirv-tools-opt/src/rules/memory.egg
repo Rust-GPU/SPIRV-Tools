@@ -43,6 +43,7 @@
 ; =============================================================================
 
 ; Load from MergeMem where both branches stored the same value
+; Note: MergeMem condition is now BoolExpr
 (rule ((= e (Load ptr (MergeMem cond (StoreMem ptr val s1) (StoreMem ptr val s2)))))
       ((union e val)))
 
@@ -54,21 +55,26 @@
 ; =============================================================================
 
 ; MergeMem with identical states on both branches
+; Note: MergeMem(BoolExpr, Expr, Expr) - condition is BoolExpr
 (rule ((= m (MergeMem cond s s)))
       ((union m s)))
 
 ; MergeMem with constant condition
-(rule ((= m (MergeMem (Const 0) then_m else_m)))
+; Note: BoolConst(i64) -> BoolExpr (was Const which is now IntExpr)
+(rule ((= m (MergeMem (BoolConst 0) then_m else_m)))
       ((union m else_m)))
-(rule ((= m (MergeMem (Const c) then_m else_m)) (!= c 0))
+(rule ((= m (MergeMem (BoolConst c) then_m else_m)) (!= c 0))
       ((union m then_m)))
 
 ; MergeMem with negated condition - swap branches
+; Note: LogNot(BoolExpr) -> BoolExpr
 (rule ((= m (MergeMem (LogNot cond) then_m else_m)))
       ((union m (MergeMem cond else_m then_m))))
 
 ; LoopMem with constant false condition - loop never executes
-(rule ((= m (LoopMem (Const 0) body init)))
+; Note: BoolConst(i64) -> BoolExpr (was Const which is now IntExpr)
+; Note: LoopMem(BoolExpr, Expr, Expr) - condition is BoolExpr
+(rule ((= m (LoopMem (BoolConst 0) body init)))
       ((union m init)))
 
 ; =============================================================================
@@ -91,21 +97,25 @@
 ; =============================================================================
 
 ; Derivative of constant is zero
-(rule ((= e (DPdx (Const _)))) ((union e (Const 0))))
-(rule ((= e (DPdy (Const _)))) ((union e (Const 0))))
-(rule ((= e (DPdxFine (Const _)))) ((union e (Const 0))))
-(rule ((= e (DPdyFine (Const _)))) ((union e (Const 0))))
-(rule ((= e (DPdxCoarse (Const _)))) ((union e (Const 0))))
-(rule ((= e (DPdyCoarse (Const _)))) ((union e (Const 0))))
+; Note: DPdx/DPdy take FloatExpr, return FloatExpr. Use FConst for float constants.
+; Note: Const is IntExpr. DPdx of Const doesn't type-check since DPdx takes FloatExpr.
+; Use FConst for float constants that feed into DPdx/DPdy.
+(rule ((= e (DPdx (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdy (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdxFine (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdyFine (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdxCoarse (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdyCoarse (FConst _)))) ((union e (FConst 0.0))))
 
 ; Fwidth of constant is zero
-(rule ((= e (Fwidth (Const _)))) ((union e (Const 0))))
-(rule ((= e (FwidthFine (Const _)))) ((union e (Const 0))))
-(rule ((= e (FwidthCoarse (Const _)))) ((union e (Const 0))))
+(rule ((= e (Fwidth (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (FwidthFine (FConst _)))) ((union e (FConst 0.0))))
+(rule ((= e (FwidthCoarse (FConst _)))) ((union e (FConst 0.0))))
 
 ; Derivative of loop-invariant is zero (if hoisted out)
-(rule ((= e (DPdx (LoopInvariant x)))) ((union e (Const 0))))
-(rule ((= e (DPdy (LoopInvariant x)))) ((union e (Const 0))))
+; Note: DPdx/DPdy take FloatExpr, use LoopInvariantF for FloatExpr
+(rule ((= e (DPdx (LoopInvariantF x)))) ((union e (FConst 0.0))))
+(rule ((= e (DPdy (LoopInvariantF x)))) ((union e (FConst 0.0))))
 
 ; =============================================================================
 ; Private-to-Local Optimization
@@ -167,8 +177,9 @@
 ; =============================================================================
 ; Dynamic access chains with constant indices can become static chains
 
-; AccessChainDyn(base, Const i) -> AccessChain1(base, i)
-(rule ((= e (AccessChainDyn base (Const i))))
+; AccessChainDyn(base, IntToExpr(Const i)) -> AccessChain1(base, i)
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context in AccessChainDyn
+(rule ((= e (AccessChainDyn base (IntToExpr (Const i)))))
       ((union e (AccessChain1 base i))))
 
 ; =============================================================================
@@ -200,6 +211,7 @@
 ; Store to a location that's immediately overwritten in both branches
 
 ; StoreMem followed by MergeMem where both branches overwrite the location
+; Note: MergeMem condition is BoolExpr
 (rule ((= m (MergeMem cond (StoreMem ptr val1 (StoreMem ptr val0 prev))
                            (StoreMem ptr val2 (StoreMem ptr val0 prev)))))
       ((union m (MergeMem cond (StoreMem ptr val1 prev) (StoreMem ptr val2 prev)))))
@@ -213,4 +225,3 @@
 
 ; AtomicExchange with value that was just atomically loaded returns same value
 ; (This is tricky with concurrency - be very conservative)
-

@@ -51,8 +51,19 @@ const UNARY_OPS: &[(&str, Op)] = &[
     ("LogNot", Op::LogicalNot),
     ("BitCount", Op::BitCount),
     ("CopyObject", Op::CopyObject),
+    // Typed Copy variants all emit CopyObject
+    ("CopyI", Op::CopyObject),
+    ("CopyF", Op::CopyObject),
+    ("CopyB", Op::CopyObject),
     ("Any", Op::Any),
     ("All", Op::All),
+];
+
+/// All Select/Gamma/If variants (typed and untyped) map to Op::Select.
+const SELECT_VARIANTS: &[&str] = &[
+    "Select", "SelectI", "SelectF", "SelectB",
+    "Gamma", "GammaI", "GammaF", "GammaB",
+    "If", "IfI", "IfF", "IfB",
 ];
 
 /// Try to parse an arithmetic, comparison, or logical operation.
@@ -95,51 +106,22 @@ pub fn try_parse_arithmetic(
         }
     }
 
-    // Parse Select (ternary)
-    if let Some(rest) = term.strip_prefix("(Select ") {
-        if let Some((cond, t, f)) = parse_ternary_args(rest, id_map) {
-            return Some(Instruction::new(
-                Op::Select,
-                Some(result_type),
-                Some(result_id),
-                vec![
-                    rspirv::dr::Operand::IdRef(cond),
-                    rspirv::dr::Operand::IdRef(t),
-                    rspirv::dr::Operand::IdRef(f),
-                ],
-            ));
-        }
-    }
-
-    // Parse Gamma (same as Select - RVSDG conditional selection)
-    if let Some(rest) = term.strip_prefix("(Gamma ") {
-        if let Some((cond, t, f)) = parse_ternary_args(rest, id_map) {
-            return Some(Instruction::new(
-                Op::Select,
-                Some(result_type),
-                Some(result_id),
-                vec![
-                    rspirv::dr::Operand::IdRef(cond),
-                    rspirv::dr::Operand::IdRef(t),
-                    rspirv::dr::Operand::IdRef(f),
-                ],
-            ));
-        }
-    }
-
-    // Parse If (alias for Select/Gamma)
-    if let Some(rest) = term.strip_prefix("(If ") {
-        if let Some((cond, t, f)) = parse_ternary_args(rest, id_map) {
-            return Some(Instruction::new(
-                Op::Select,
-                Some(result_type),
-                Some(result_id),
-                vec![
-                    rspirv::dr::Operand::IdRef(cond),
-                    rspirv::dr::Operand::IdRef(t),
-                    rspirv::dr::Operand::IdRef(f),
-                ],
-            ));
+    // Parse all Select/Gamma/If variants (typed and untyped) → Op::Select
+    for variant in SELECT_VARIANTS {
+        let prefix = format!("({} ", variant);
+        if let Some(rest) = term.strip_prefix(&prefix) {
+            if let Some((cond, t, f)) = parse_ternary_args(rest, id_map) {
+                return Some(Instruction::new(
+                    Op::Select,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![
+                        rspirv::dr::Operand::IdRef(cond),
+                        rspirv::dr::Operand::IdRef(t),
+                        rspirv::dr::Operand::IdRef(f),
+                    ],
+                ));
+            }
         }
     }
 

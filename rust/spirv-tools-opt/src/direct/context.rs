@@ -2,7 +2,9 @@
 
 use rspirv::dr::{Instruction, Operand};
 use rspirv::spirv::{Op, Word};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use super::TypeClass;
 
 /// Context for building egglog expressions from SPIR-V instructions.
 pub struct EgglogContext {
@@ -10,22 +12,44 @@ pub struct EgglogContext {
     pub id_to_term: HashMap<Word, String>,
     /// Maps result_id -> result_type
     pub id_to_type: HashMap<Word, Word>,
-    /// Type widths
+    /// Type widths (int, float, and bool)
     type_widths: HashMap<Word, u32>,
+    /// Type classes (Bool/Int/Float/Other) keyed by type ID
+    type_classes: HashMap<Word, TypeClass>,
     /// All root IDs (instructions we're optimizing)
     pub root_ids: Vec<Word>,
     /// GLSL.std.450 extended instruction set ID (if any)
     glsl_ext_id: Option<Word>,
+    /// IDs of instructions that will be added to the egraph.
+    /// Used by get_or_create_term to emit variable references (id{N})
+    /// instead of Sym constructors for forward cross-block references.
+    known_instruction_ids: HashSet<Word>,
 }
 
 impl EgglogContext {
-    pub fn new(type_widths: &HashMap<Word, u32>) -> Self {
+    pub fn new(type_widths: &HashMap<Word, u32>, type_classes: &HashMap<Word, TypeClass>) -> Self {
         Self {
             id_to_term: HashMap::new(),
             id_to_type: HashMap::new(),
             type_widths: type_widths.clone(),
+            type_classes: type_classes.clone(),
             root_ids: Vec::new(),
             glsl_ext_id: None,
+            known_instruction_ids: HashSet::new(),
+        }
+    }
+
+    /// Pre-register an instruction so its ID and type are known before term creation.
+    /// This allows `get_or_create_term` to emit variable references instead of Sym
+    /// constructors for cross-block forward references.
+    pub fn pre_register(&mut self, inst: &Instruction) {
+        if let Some(id) = inst.result_id {
+            if let Some(ty) = inst.result_type {
+                self.id_to_type.insert(id, ty);
+            }
+            if super::is_optimizable(inst) {
+                self.known_instruction_ids.insert(id);
+            }
         }
     }
 
@@ -55,22 +79,47 @@ impl EgglogContext {
         }
     }
 
+    /// Get the type class for a value ID (via its result type).
+    fn type_class_of(&self, id: Word) -> TypeClass {
+        self.id_to_type
+            .get(&id)
+            .and_then(|ty| self.type_classes.get(ty))
+            .copied()
+            .unwrap_or(TypeClass::Other)
+    }
+
+    /// Get the type class for a result type ID directly.
+    fn type_class_of_type(&self, type_id: Word) -> TypeClass {
+        self.type_classes
+            .get(&type_id)
+            .copied()
+            .unwrap_or(TypeClass::Other)
+    }
+
     /// Get or create a term for an operand ID.
     ///
     /// Returns a reference to the egglog variable for this ID.
     /// If the ID has a known term (was added via add_instruction), we reference
-    /// the egglog variable directly. Otherwise, we use Sym for external references
-    /// (function parameters, globals, etc.).
+    /// the egglog variable directly. Otherwise, we use a typed Sym for external
+    /// references (function parameters, globals, etc.).
     fn get_or_create_term(&mut self, id: Word) -> String {
-        // Check if this ID was added to the e-graph via add_instruction
-        // If so, use the egglog variable name directly
-        if self.id_to_term.contains_key(&id) {
+        // Check if this ID is (or will be) bound in the e-graph.
+        // We check known_instruction_ids in addition to id_to_term to handle
+        // cross-block forward references where the instruction hasn't been
+        // processed yet but will be (blocks may be out of dominance order).
+        if self.id_to_term.contains_key(&id) || self.known_instruction_ids.contains(&id) {
             // Reference the egglog variable (will be bound via let)
             format!("id{}", id)
         } else {
             // External reference (function parameter, global, etc.)
-            // Use Sym to represent an opaque symbol
-            format!("(Sym \"id{}\")", id)
+            // Use typed Sym to place in the correct sort
+            let sym_ctor = match self.type_class_of(id) {
+                TypeClass::Int => "ISym",
+                TypeClass::Float => "FSym",
+                TypeClass::Bool => "BSym",
+                TypeClass::Other => "Sym",
+            };
+            format!("({} \"id{}\")", sym_ctor, id)
         }
     }
 
@@ -78,29 +127,46 @@ impl EgglogContext {
     fn instruction_to_term(&mut self, inst: &Instruction) -> Option<String> {
         let term = match inst.class.opcode {
             Op::Constant => {
-                let width = inst
-                    .result_type
-                    .and_then(|ty| self.type_widths.get(&ty))
-                    .copied()
-                    .unwrap_or(32);
-                // Sign-extend 32-bit values so that 0xFFFFFFFF becomes -1 in i64
-                // This enables rules like (BitXor x (Const -1)) to match
-                let value = inst.operands.iter().find_map(|op| match op {
-                    rspirv::dr::Operand::LiteralBit32(v) => {
-                        if width == 32 {
-                            // Sign-extend 32-bit value to i64
-                            Some((*v as i32) as i64)
-                        } else {
-                            Some(*v as i64)
-                        }
-                    }
-                    rspirv::dr::Operand::LiteralBit64(v) => Some(*v as i64),
-                    _ => None,
-                })?;
-                if width == 64 {
-                    format!("(Const64 {})", value)
+                let result_type = inst.result_type?;
+                let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
+                let is_float = self.type_class_of_type(result_type) == TypeClass::Float;
+
+                if is_float {
+                    // Float constant: reinterpret bits as IEEE float for FConst
+                    let float_val: f64 = inst.operands.iter().find_map(|op| match op {
+                        Operand::LiteralBit32(v) => Some(f32::from_bits(*v) as f64),
+                        Operand::LiteralBit64(v) => Some(f64::from_bits(*v)),
+                        _ => None,
+                    })?;
+                    // Format with decimal point for egglog f64 parsing
+                    let s = format!("{}", float_val);
+                    let literal = if s.contains('.') || s.contains('e') || s.contains('E')
+                        || s == "inf" || s == "-inf" || s == "NaN"
+                    {
+                        s
+                    } else {
+                        format!("{}.0", s)
+                    };
+                    format!("(FConst {})", literal)
                 } else {
-                    format!("(Const {})", value)
+                    // Integer constant: sign-extend 32-bit values so 0xFFFFFFFF becomes -1
+                    // This enables rules like (BitXor x (Const -1)) to match
+                    let value = inst.operands.iter().find_map(|op| match op {
+                        Operand::LiteralBit32(v) => {
+                            if width == 32 {
+                                Some((*v as i32) as i64)
+                            } else {
+                                Some(*v as i64)
+                            }
+                        }
+                        Operand::LiteralBit64(v) => Some(*v as i64),
+                        _ => None,
+                    })?;
+                    if width == 64 {
+                        format!("(Const64 {})", value)
+                    } else {
+                        format!("(Const {})", value)
+                    }
                 }
             }
             Op::ConstantTrue => "(BoolConst 1)".to_string(),
@@ -175,7 +241,14 @@ impl EgglogContext {
                     let cond = self.get_or_create_term(ops[0]);
                     let t = self.get_or_create_term(ops[1]);
                     let f = self.get_or_create_term(ops[2]);
-                    format!("(Select {} {} {})", cond, t, f)
+                    // Use typed Select based on result type
+                    let select_ctor = match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
+                        Some(TypeClass::Int) => "SelectI",
+                        Some(TypeClass::Float) => "SelectF",
+                        Some(TypeClass::Bool) => "SelectB",
+                        _ => "Select",
+                    };
+                    format!("({} {} {} {})", select_ctor, cond, t, f)
                 } else {
                     return None;
                 }
@@ -716,11 +789,16 @@ impl EgglogContext {
                     return None;
                 }
                 // If all values are the same, the phi simplifies to that value
-                // Use a Sym reference so that after extraction we get a CopyObject
+                // Use a typed Sym reference so that after extraction we get a CopyObject
                 let first = values[0];
                 if values.iter().all(|&v| v == first) {
-                    // Always use Sym for phi simplification to preserve the reference
-                    format!("(Sym \"id{}\")", first)
+                    let sym_ctor = match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
+                        Some(TypeClass::Int) => "ISym",
+                        Some(TypeClass::Float) => "FSym",
+                        Some(TypeClass::Bool) => "BSym",
+                        _ => "Sym",
+                    };
+                    format!("({} \"id{}\")", sym_ctor, first)
                 } else {
                     // Can't optimize a phi with different values in the e-graph yet
                     return None;

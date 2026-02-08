@@ -265,18 +265,21 @@
 ; =============================================================================
 
 ; select(c, a == x, a == y) = a == select(c, x, y) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Eq a x) (Eq a y))))
-      ((union e (Eq a (Gamma c x y)))))
-(rule ((= e (Gamma c (Ne a x) (Ne a y))))
-      ((union e (Ne a (Gamma c x y)))))
-(rule ((= e (Gamma c (SLt a x) (SLt a y))))
-      ((union e (SLt a (Gamma c x y)))))
-(rule ((= e (Gamma c (SLe a x) (SLe a y))))
-      ((union e (SLe a (Gamma c x y)))))
-(rule ((= e (Gamma c (ULt a x) (ULt a y))))
-      ((union e (ULt a (Gamma c x y)))))
-(rule ((= e (Gamma c (ULe a x) (ULe a y))))
-      ((union e (ULe a (Gamma c x y)))))
+; Eq/Ne/SLt/SLe/ULt/ULe take IntExpr operands and return BoolExpr.
+; The outer Gamma has BoolExpr branches, so use GammaB.
+; The inner Gamma selects IntExpr values, so use GammaI.
+(rule ((= e (GammaB c (Eq a x) (Eq a y))))
+      ((union e (Eq a (GammaI c x y)))))
+(rule ((= e (GammaB c (Ne a x) (Ne a y))))
+      ((union e (Ne a (GammaI c x y)))))
+(rule ((= e (GammaB c (SLt a x) (SLt a y))))
+      ((union e (SLt a (GammaI c x y)))))
+(rule ((= e (GammaB c (SLe a x) (SLe a y))))
+      ((union e (SLe a (GammaI c x y)))))
+(rule ((= e (GammaB c (ULt a x) (ULt a y))))
+      ((union e (ULt a (GammaI c x y)))))
+(rule ((= e (GammaB c (ULe a x) (ULe a y))))
+      ((union e (ULe a (GammaI c x y)))))
 
 ; =============================================================================
 ; Comparison after Bitwise Operations

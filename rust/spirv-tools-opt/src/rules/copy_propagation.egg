@@ -67,6 +67,7 @@
 ; Gamma nodes that select the same value = that value (already in rvsdg.egg)
 
 ; Gamma where both branches compute same result
+; Note: Gamma(BoolExpr, Expr, Expr) -> Expr - condition is BoolExpr
 (rule ((= e (Gamma cond then_val then_val)))
       ((union e then_val)))
 
@@ -92,10 +93,13 @@
 
 ; Gamma selecting between x and x+1 based on condition
 ; This might be better as: x + (cond ? 1 : 0)
-(rule ((= e (Gamma cond (Add x (Const 1)) x)))
-      ((union e (Add x (Gamma cond (Const 1) (Const 0))))))
-(rule ((= e (Gamma cond x (Add x (Const 1)))))
-      ((union e (Add x (Gamma cond (Const 0) (Const 1))))))
+; Note: Gamma(BoolExpr, Expr, Expr) -> Expr, Add(IntExpr, IntExpr) -> IntExpr
+; These rules work when x is Expr and the Add/Const are wrapped with IntToExpr
+; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context in Gamma args
+(rule ((= e (Gamma cond (IntToExpr (Add (ExprToInt x) (Const 1))) x)))
+      ((union e (IntToExpr (Add (ExprToInt x) (GammaI cond (Const 1) (Const 0)))))))
+(rule ((= e (Gamma cond x (IntToExpr (Add (ExprToInt x) (Const 1))))))
+      ((union e (IntToExpr (Add (ExprToInt x) (GammaI cond (Const 0) (Const 1)))))))
 
 ; =============================================================================
 ; Partial Redundancy Elimination (PRE)
@@ -129,6 +133,6 @@
 
 ; NClamp idempotence (NaN-ignoring clamp, not covered elsewhere)
 ; NClamp(NClamp(x, lo, hi), lo, hi) = NClamp(x, lo, hi)
+; Note: NClamp(FloatExpr, FloatExpr, FloatExpr) -> FloatExpr
 (rule ((= e (NClamp (NClamp x lo hi) lo hi)))
       ((union e (NClamp x lo hi))))
-

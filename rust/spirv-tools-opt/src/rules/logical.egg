@@ -9,33 +9,21 @@
       ((union e x)))
 (rule ((= e (LogOr x x)))
       ((union e x)))
-; LogAnd with false: already in constant_folding.egg (both BoolConst and Const variants)
-; LogOr with false (identity) - BoolConst and Const variants
+; LogAnd with false: already in constant_folding.egg (BoolConst variant)
+; LogOr with false (identity) - BoolConst variant
 (rule ((= e (LogOr x (BoolConst 0))))
       ((union e x)))
 (rule ((= e (LogOr (BoolConst 0) x)))
       ((union e x)))
-(rule ((= e (LogOr x (Const 0))))
-      ((union e x)))
-(rule ((= e (LogOr (Const 0) x)))
-      ((union e x)))
-; LogAnd with true (identity) - BoolConst and Const variants
+; LogAnd with true (identity) - BoolConst variant
 (rule ((= e (LogAnd x (BoolConst 1))))
       ((union e x)))
 (rule ((= e (LogAnd (BoolConst 1) x)))
       ((union e x)))
-(rule ((= e (LogAnd x (Const 1))))
-      ((union e x)))
-(rule ((= e (LogAnd (Const 1) x)))
-      ((union e x)))
-; LogOr with true - BoolConst and Const variants
+; LogOr with true - BoolConst variant
 (rule ((= e (LogOr x (BoolConst 1))))
       ((union e (BoolConst 1))))
 (rule ((= e (LogOr (BoolConst 1) x)))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr x (Const 1))))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr (Const 1) x)))
       ((union e (BoolConst 1))))
 
 ; Logical complement
@@ -57,10 +45,6 @@
       ((union e f)))
 (rule ((= e (Select (BoolConst 1) t f)))
       ((union e t)))
-(rule ((= e (Select (Const 0) t f)))
-      ((union e f)))
-(rule ((= e (Select (Const 1) t f)))
-      ((union e t)))
 (rule ((= e (Select c x x)))
       ((union e x)))
 ; Select with negated condition - ONE-DIRECTIONAL
@@ -76,10 +60,6 @@
 (rule ((= e (If (BoolConst 0) t f)))
       ((union e f)))
 (rule ((= e (If (BoolConst 1) t f)))
-      ((union e t)))
-(rule ((= e (If (Const 0) t f)))
-      ((union e f)))
-(rule ((= e (If (Const 1) t f)))
       ((union e t)))
 
 ; =============================================================================
@@ -177,24 +157,16 @@
 (rule ((= e (LogNe a a)))
       ((union e (BoolConst 0))))
 
-; a XOR 0 = a - ONE-DIRECTIONAL (BoolConst and Const variants)
+; a XOR 0 = a - ONE-DIRECTIONAL (BoolConst variant)
 (rule ((= e (LogNe a (BoolConst 0))))
       ((union e a)))
 (rule ((= e (LogNe (BoolConst 0) a)))
       ((union e a)))
-(rule ((= e (LogNe a (Const 0))))
-      ((union e a)))
-(rule ((= e (LogNe (Const 0) a)))
-      ((union e a)))
 
-; a XOR 1 = !a - ONE-DIRECTIONAL (BoolConst and Const variants)
+; a XOR 1 = !a - ONE-DIRECTIONAL (BoolConst variant)
 (rule ((= e (LogNe a (BoolConst 1))))
       ((union e (LogNot a))))
 (rule ((= e (LogNe (BoolConst 1) a)))
-      ((union e (LogNot a))))
-(rule ((= e (LogNe a (Const 1))))
-      ((union e (LogNot a))))
-(rule ((= e (LogNe (Const 1) a)))
       ((union e (LogNot a))))
 
 ; =============================================================================
@@ -249,15 +221,13 @@
 ; select(false, a, b) = b - already in rules
 
 ; select(c, true, false) = c (boolean to boolean) - ONE-DIRECTIONAL
-(rule ((= e (Select c (BoolConst 1) (BoolConst 0))))
-      ((union e c)))
-(rule ((= e (Select c (Const 1) (Const 0))))
+; Branches are BoolExpr, so use SelectB
+(rule ((= e (SelectB c (BoolConst 1) (BoolConst 0))))
       ((union e c)))
 
 ; select(c, false, true) = !c - ONE-DIRECTIONAL
-(rule ((= e (Select c (BoolConst 0) (BoolConst 1))))
-      ((union e (LogNot c))))
-(rule ((= e (Select c (Const 0) (Const 1))))
+; Branches are BoolExpr, so use SelectB
+(rule ((= e (SelectB c (BoolConst 0) (BoolConst 1))))
       ((union e (LogNot c))))
 
 ; select(c, a, a) = a - already in rules
@@ -267,12 +237,14 @@
 ; =============================================================================
 
 ; select(c, a && b, a && d) = a && select(c, b, d) - ONE-DIRECTIONAL
-(rule ((= e (Select c (LogAnd a b) (LogAnd a d))))
-      ((union e (LogAnd a (Select c b d)))))
+; Branches are BoolExpr, so use SelectB/GammaB
+(rule ((= e (SelectB c (LogAnd a b) (LogAnd a d))))
+      ((union e (LogAnd a (SelectB c b d)))))
 
 ; select(c, a || b, a || d) = a || select(c, b, d) - ONE-DIRECTIONAL
-(rule ((= e (Select c (LogOr a b) (LogOr a d))))
-      ((union e (LogOr a (Select c b d)))))
+; Branches are BoolExpr, so use SelectB/GammaB
+(rule ((= e (SelectB c (LogOr a b) (LogOr a d))))
+      ((union e (LogOr a (SelectB c b d)))))
 
 ; =============================================================================
 ; Loop Invariant Logical Rules
@@ -281,38 +253,42 @@
 ; Here we add the ones not covered there
 
 ; Loop invariant rules - ONE-DIRECTIONAL
-(rule ((= e (LogAnd (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (LogAnd a b)))))
-(rule ((= e (LogOr (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (LogOr a b)))))
-(rule ((= e (LogEq (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (LogEq a b)))))
-(rule ((= e (LogNe (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (LogNe a b)))))
+; LogAnd/LogOr/LogEq/LogNe operate on BoolExpr, so use LoopInvariantB
+(rule ((= e (LogAnd (LoopInvariantB a) (LoopInvariantB b))))
+      ((union e (LoopInvariantB (LogAnd a b)))))
+(rule ((= e (LogOr (LoopInvariantB a) (LoopInvariantB b))))
+      ((union e (LoopInvariantB (LogOr a b)))))
+(rule ((= e (LogEq (LoopInvariantB a) (LoopInvariantB b))))
+      ((union e (LoopInvariantB (LogEq a b)))))
+(rule ((= e (LogNe (LoopInvariantB a) (LoopInvariantB b))))
+      ((union e (LoopInvariantB (LogNe a b)))))
 
 ; =============================================================================
 ; Gamma with Logical Operations
 ; =============================================================================
 
 ; select(c, !a, !b) = !(select(c, a, b)) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (LogNot a) (LogNot b))))
-      ((union e (LogNot (Gamma c a b)))))
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (GammaB c (LogNot a) (LogNot b))))
+      ((union e (LogNot (GammaB c a b)))))
 
 ; select(c, a && x, b && x) = select(c, a, b) && x - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (LogAnd a x) (LogAnd b x))))
-      ((union e (LogAnd (Gamma c a b) x))))
-(rule ((= e (Gamma c (LogOr a x) (LogOr b x))))
-      ((union e (LogOr (Gamma c a b) x))))
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (GammaB c (LogAnd a x) (LogAnd b x))))
+      ((union e (LogAnd (GammaB c a b) x))))
+(rule ((= e (GammaB c (LogOr a x) (LogOr b x))))
+      ((union e (LogOr (GammaB c a b) x))))
 
 ; select(c, min(a, x), min(b, x)) = min(select(c, a, b), x) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (SMin a x) (SMin b x))))
-      ((union e (SMin (Gamma c a b) x))))
-(rule ((= e (Gamma c (SMax a x) (SMax b x))))
-      ((union e (SMax (Gamma c a b) x))))
-(rule ((= e (Gamma c (UMin a x) (UMin b x))))
-      ((union e (UMin (Gamma c a b) x))))
-(rule ((= e (Gamma c (UMax a x) (UMax b x))))
-      ((union e (UMax (Gamma c a b) x))))
+; SMin/SMax/UMin/UMax operate on IntExpr, so use GammaI
+(rule ((= e (GammaI c (SMin a x) (SMin b x))))
+      ((union e (SMin (GammaI c a b) x))))
+(rule ((= e (GammaI c (SMax a x) (SMax b x))))
+      ((union e (SMax (GammaI c a b) x))))
+(rule ((= e (GammaI c (UMin a x) (UMin b x))))
+      ((union e (UMin (GammaI c a b) x))))
+(rule ((= e (GammaI c (UMax a x) (UMax b x))))
+      ((union e (UMax (GammaI c a b) x))))
 
 ; =============================================================================
 ; Comparison Contradiction Rules (not in comparison.egg)
@@ -526,80 +502,67 @@
       ((union (ULt a c) (BoolConst 1))))
 
 ; =============================================================================
-; LogAnd/LogOr with Gamma Identity Patterns
+; LogAnd/LogOr with GammaB Identity Patterns
 ; =============================================================================
 ; These patterns optimize logical operations combined with conditionals.
+; Since LogAnd/LogOr operate on BoolExpr and branches are BoolExpr, use GammaB.
 
 ; c && select(c, a, b) = c && a (if c is true, we pick a; if false, result is false anyway)
-(rule ((= e (LogAnd c (Gamma c a b))))
+(rule ((= e (LogAnd c (GammaB c a b))))
       ((union e (LogAnd c a))))
-(rule ((= e (LogAnd (Gamma c a b) c)))
+(rule ((= e (LogAnd (GammaB c a b) c)))
       ((union e (LogAnd c a))))
 
 ; !c && select(c, a, b) = !c && b (if c is false, we pick b)
-(rule ((= e (LogAnd (LogNot c) (Gamma c a b))))
+(rule ((= e (LogAnd (LogNot c) (GammaB c a b))))
       ((union e (LogAnd (LogNot c) b))))
-(rule ((= e (LogAnd (Gamma c a b) (LogNot c))))
+(rule ((= e (LogAnd (GammaB c a b) (LogNot c))))
       ((union e (LogAnd (LogNot c) b))))
 
 ; c || select(c, a, b) = c || b (if c is true, result is true; if false, pick b)
-(rule ((= e (LogOr c (Gamma c a b))))
+(rule ((= e (LogOr c (GammaB c a b))))
       ((union e (LogOr c b))))
-(rule ((= e (LogOr (Gamma c a b) c)))
+(rule ((= e (LogOr (GammaB c a b) c)))
       ((union e (LogOr c b))))
 
 ; !c || select(c, a, b) = !c || a
-(rule ((= e (LogOr (LogNot c) (Gamma c a b))))
+(rule ((= e (LogOr (LogNot c) (GammaB c a b))))
       ((union e (LogOr (LogNot c) a))))
-(rule ((= e (LogOr (Gamma c a b) (LogNot c))))
+(rule ((= e (LogOr (GammaB c a b) (LogNot c))))
       ((union e (LogOr (LogNot c) a))))
 
 ; =============================================================================
 ; Additional Boolean Gamma Patterns
 ; =============================================================================
 
-; select(c, c && a, x) = c && select(c, a, false) when short-circuiting (c true means use a)
-; Simplified: select(c, c && a, x) -> c && select(c, a, x) doesn't quite work
-; But: select(c, c && a, false) = c && a (proved by truth table)
-(rule ((= e (Gamma c (LogAnd c a) (BoolConst 0))))
-      ((union e (LogAnd c a))))
-; Guard Const variant with ExprType to prevent int→bool domain crossing
-(rule ((= e (Gamma c (LogAnd c a) (Const 0))) (= (ExprType e) (BoolType)))
+; select(c, c && a, false) = c && a (proved by truth table)
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (GammaB c (LogAnd c a) (BoolConst 0))))
       ((union e (LogAnd c a))))
 
 ; select(c, c || a, true) = true (c true means c||a=true; c false means result is true)
-(rule ((= e (Gamma c (LogOr c a) (BoolConst 1))))
-      ((union e (BoolConst 1))))
-; Guard Const variant with ExprType to prevent int→bool domain crossing
-(rule ((= e (Gamma c (LogOr c a) (Const 1))) (= (ExprType e) (BoolType)))
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (GammaB c (LogOr c a) (BoolConst 1))))
       ((union e (BoolConst 1))))
 
-; select(c, !c, x) = select(c, false, x) = !c && x via existing rules
-; But also: select(c, !c, true) = !c || c = true? No wait: c?!c:true = c?false:true = !c
-; Actually if c is true, !c is false; if c is false, we get true. So = !c
-(rule ((= e (Gamma c (LogNot c) (BoolConst 1))))
+; select(c, !c, true) = !c
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (GammaB c (LogNot c) (BoolConst 1))))
       ((union e (LogNot c))))
-; Guard Const variant with ExprType to prevent int→bool domain crossing
-(rule ((= e (Gamma c (LogNot c) (Const 1))) (= (ExprType e) (BoolType)))
-      ((union e (LogNot c))))
-
-; select(c, true, c) = true (c?true:c = if c then true else c, but c is false so false = c)
-; Actually: true when c is true, c (false) when c is false = c || true when c, c when !c
-; Truth table: c=T -> true, c=F -> false. So this is just c? No: c=T->true, c=F->c=F
-; So select(c, true, c) = c || true = true? No... c?true:c. c=T:true, c=F:F. So = c.
-; Already covered by select(c,1,x) rules
 
 ; =============================================================================
 ; Logical Operation Gamma Fusion
 ; =============================================================================
 
 ; select(c, a, b) && select(c, x, y) = select(c, a && x, b && y)
-(rule ((= e (LogAnd (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (LogAnd a x) (LogAnd b y)))))
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (LogAnd (GammaB c a b) (GammaB c x y))))
+      ((union e (GammaB c (LogAnd a x) (LogAnd b y)))))
 
 ; select(c, a, b) || select(c, x, y) = select(c, a || x, b || y)
-(rule ((= e (LogOr (Gamma c a b) (Gamma c x y))))
-      ((union e (Gamma c (LogOr a x) (LogOr b y)))))
+; Branches are BoolExpr, so use GammaB
+(rule ((= e (LogOr (GammaB c a b) (GammaB c x y))))
+      ((union e (GammaB c (LogOr a x) (LogOr b y)))))
 
 ; =============================================================================
 ; Comparison with Shift Patterns

@@ -3,7 +3,7 @@
 ; =============================================================================
 ;
 ; This module provides additional loop optimizations beyond rvsdg.egg:
-; - Loop strength reduction for LoopVar
+; - Loop strength reduction for LoopVarI (typed integer loop variable)
 ; - Bounded loop unrolling
 ; - LoopIter simplifications
 ;
@@ -11,56 +11,61 @@
 ;
 ; Key concepts:
 ; - Theta: General loop node (Theta cond body_result loop_var_init)
+;   where cond is BoolExpr, body/init are Expr
 ; - BoundedTheta: Loop with known trip count (BoundedTheta count body init)
-; - LoopVar: Reference to loop-carried variable
-; - LoopInvariant: Expression that doesn't depend on LoopVar
-; - LoopIter: Value at specific iteration (for unrolling)
+;   where count is i64, body/init are Expr
+; - LoopVar/LoopVarI/LoopVarF/LoopVarB: Reference to loop-carried variable
+;   (typed variants for IntExpr, FloatExpr, BoolExpr)
+; - LoopInvariant/LoopInvariantI/F/B: Expression that doesn't depend on LoopVar
+; - LoopIter: Value at specific iteration (for unrolling), Expr sort
 ;
 ; =============================================================================
-; Loop Strength Reduction for LoopVar
+; Loop Strength Reduction for LoopVarI (Integer Loop Variable)
 ; =============================================================================
 ; Replace expensive operations with cheaper equivalents inside loops.
+; These rules use LoopVarI (IntExpr) since Mul/Add/Shl/ShrU/UDiv are IntExpr.
 
-; LoopVar * 2 = LoopVar + LoopVar (addition is cheaper than multiplication)
-(rule ((= e (Mul (LoopVar) (Const 2))))
-      ((union e (Add (LoopVar) (LoopVar)))))
-(rule ((= e (Mul (Const 2) (LoopVar))))
-      ((union e (Add (LoopVar) (LoopVar)))))
+; LoopVarI * 2 = LoopVarI + LoopVarI (addition is cheaper than multiplication)
+(rule ((= e (Mul (LoopVarI) (Const 2))))
+      ((union e (Add (LoopVarI) (LoopVarI)))))
+(rule ((= e (Mul (Const 2) (LoopVarI))))
+      ((union e (Add (LoopVarI) (LoopVarI)))))
 
 ; Shift instead of multiply by power of 2
-(rule ((= e (Mul (LoopVar) (Const 4))))
-      ((union e (Shl (LoopVar) (Const 2)))))
-(rule ((= e (Mul (LoopVar) (Const 8))))
-      ((union e (Shl (LoopVar) (Const 3)))))
-(rule ((= e (Mul (LoopVar) (Const 16))))
-      ((union e (Shl (LoopVar) (Const 4)))))
-(rule ((= e (Mul (LoopVar) (Const 32))))
-      ((union e (Shl (LoopVar) (Const 5)))))
-(rule ((= e (Mul (LoopVar) (Const 64))))
-      ((union e (Shl (LoopVar) (Const 6)))))
-(rule ((= e (Mul (Const 4) (LoopVar))))
-      ((union e (Shl (LoopVar) (Const 2)))))
-(rule ((= e (Mul (Const 8) (LoopVar))))
-      ((union e (Shl (LoopVar) (Const 3)))))
-(rule ((= e (Mul (Const 16) (LoopVar))))
-      ((union e (Shl (LoopVar) (Const 4)))))
-(rule ((= e (Mul (Const 32) (LoopVar))))
-      ((union e (Shl (LoopVar) (Const 5)))))
-(rule ((= e (Mul (Const 64) (LoopVar))))
-      ((union e (Shl (LoopVar) (Const 6)))))
+(rule ((= e (Mul (LoopVarI) (Const 4))))
+      ((union e (Shl (LoopVarI) (Const 2)))))
+(rule ((= e (Mul (LoopVarI) (Const 8))))
+      ((union e (Shl (LoopVarI) (Const 3)))))
+(rule ((= e (Mul (LoopVarI) (Const 16))))
+      ((union e (Shl (LoopVarI) (Const 4)))))
+(rule ((= e (Mul (LoopVarI) (Const 32))))
+      ((union e (Shl (LoopVarI) (Const 5)))))
+(rule ((= e (Mul (LoopVarI) (Const 64))))
+      ((union e (Shl (LoopVarI) (Const 6)))))
+(rule ((= e (Mul (Const 4) (LoopVarI))))
+      ((union e (Shl (LoopVarI) (Const 2)))))
+(rule ((= e (Mul (Const 8) (LoopVarI))))
+      ((union e (Shl (LoopVarI) (Const 3)))))
+(rule ((= e (Mul (Const 16) (LoopVarI))))
+      ((union e (Shl (LoopVarI) (Const 4)))))
+(rule ((= e (Mul (Const 32) (LoopVarI))))
+      ((union e (Shl (LoopVarI) (Const 5)))))
+(rule ((= e (Mul (Const 64) (LoopVarI))))
+      ((union e (Shl (LoopVarI) (Const 6)))))
 
 ; Division by power of 2 becomes shift
-(rule ((= e (UDiv (LoopVar) (Const 2))))
-      ((union e (ShrU (LoopVar) (Const 1)))))
-(rule ((= e (UDiv (LoopVar) (Const 4))))
-      ((union e (ShrU (LoopVar) (Const 2)))))
-(rule ((= e (UDiv (LoopVar) (Const 8))))
-      ((union e (ShrU (LoopVar) (Const 3)))))
+(rule ((= e (UDiv (LoopVarI) (Const 2))))
+      ((union e (ShrU (LoopVarI) (Const 1)))))
+(rule ((= e (UDiv (LoopVarI) (Const 4))))
+      ((union e (ShrU (LoopVarI) (Const 2)))))
+(rule ((= e (UDiv (LoopVarI) (Const 8))))
+      ((union e (ShrU (LoopVarI) (Const 3)))))
 
 ; =============================================================================
 ; BoundedTheta (Loop with Known Trip Count)
 ; =============================================================================
 ; When we know the exact number of iterations, we can unroll or simplify.
+; BoundedTheta(i64, Expr, Expr) -> Expr stays in Expr sort.
 
 ; BoundedTheta with 0 iterations - return init
 (rule ((= e (BoundedTheta 0 body init)))
@@ -87,8 +92,8 @@
 ; LoopIter (Iteration-Specific Values)
 ; =============================================================================
 ; LoopIter marks values at specific iterations for unrolling.
+; LoopIter(i64, Expr) -> Expr stays in Expr sort.
 
 ; LoopIter(0, x) = x (iteration 0 is the initial value)
 (rule ((= e (LoopIter 0 x)))
       ((union e x)))
-

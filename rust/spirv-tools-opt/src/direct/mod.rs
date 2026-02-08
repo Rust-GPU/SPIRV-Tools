@@ -29,7 +29,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let type_classes = collect_type_classes(module);
 
     // Step 2: Collect ALL SSA values (for id_map) and optimizable instructions
-    let mut ctx = EgglogContext::new(&type_widths);
+    let mut ctx = EgglogContext::new(&type_widths, &type_classes);
 
     // Detect GLSL.std.450 extended instruction set
     for inst in &module.ext_inst_imports {
@@ -52,6 +52,23 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut id_to_block: HashMap<Word, Word> = HashMap::new();
 
     // Add module-level constants and types first
+    // Pre-registration pass: populate id_to_type and known_instruction_ids
+    // BEFORE creating any terms. This ensures cross-block forward references
+    // use variable references (id{N}) instead of Sym constructors.
+    for inst in &module.types_global_values {
+        ctx.pre_register(inst);
+    }
+    for func in &module.functions {
+        for param in &func.parameters {
+            ctx.pre_register(param);
+        }
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                ctx.pre_register(inst);
+            }
+        }
+    }
+
     for inst in &module.types_global_values {
         if let Some(id) = inst.result_id {
             all_ssa_ids.insert(id);
@@ -257,22 +274,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Seed ExprType for all known IDs so type-guarded rules work correctly.
-    // This sets the type domain (BoolType/IntType/FloatType) for each expression
-    // based on its SPIR-V result type, enabling type-aware rewrite guards.
-    for (&id, &type_id) in &ctx.id_to_type {
-        if ctx.id_to_term.contains_key(&id) {
-            let type_str = match type_classes.get(&type_id) {
-                Some(TypeClass::Bool) => "(BoolType)",
-                Some(TypeClass::Int) => "(IntType)",
-                Some(TypeClass::Float) => "(FloatType)",
-                _ => continue,
-            };
-            let cmd = format!("(set (ExprType id{}) {})", id, type_str);
-            let _ = egraph.parse_and_run_program(None, &cmd);
-        }
-    }
-
     // ==========================================================================
     // PRE: Represent branch value pairs as Gamma selections
     // ==========================================================================
@@ -344,10 +345,26 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 });
 
                 // Add a Gamma term representing the selection between these values
-                // The egraph will unify equivalent computations via (Gamma c x x) => x
+                // The egraph will unify equivalent computations via (GammaX c x x) => x
+                // Use typed Gamma based on branch type class
+                let cond_term = if ctx.id_to_term.contains_key(&sel.condition_id) {
+                    format!("id{}", sel.condition_id)
+                } else {
+                    format!("(BSym \"id{}\")", sel.condition_id)
+                };
+                let branch_type_class = ctx.id_to_type.get(&then_id)
+                    .and_then(|ty| type_classes.get(ty))
+                    .copied()
+                    .unwrap_or(TypeClass::Other);
+                let gamma_ctor = match branch_type_class {
+                    TypeClass::Int => "GammaI",
+                    TypeClass::Float => "GammaF",
+                    TypeClass::Bool => "GammaB",
+                    TypeClass::Other => "Gamma",
+                };
                 let gamma_term = format!(
-                    "(Gamma (Sym \"id{}\") id{} id{})",
-                    sel.condition_id, then_id, else_id
+                    "({} {} id{} id{})",
+                    gamma_ctor, cond_term, then_id, else_id
                 );
                 let gamma_binding = format!("(let gamma_{}_{} {})", then_id, else_id, gamma_term);
                 egraph
@@ -544,10 +561,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
             // Create the EffGamma term
             let effect_var = format!("eff_sel{}", sel_idx);
-            // Always use Sym for condition in EffGamma to preserve the conditional structure
-            // We don't want constant folding to eliminate the gamma - we need both branches
-            // for the Phi reconstruction. The condition optimization happens separately.
-            let cond_sym = format!("(Sym \"cond{}\")", cond_id);
+            // Use BSym for condition (conditions are always boolean).
+            // We use a synthetic name "cond{N}" to preserve the conditional structure
+            // so constant folding doesn't eliminate the gamma during saturation.
+            let cond_sym = format!("(BSym \"cond{}\")", cond_id);
 
             let eff_gamma = format!(
                 "(let {} (EffGamma {} {} {}))",
@@ -674,8 +691,18 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // This enables DCE to happen entirely IN the e-graph alongside optimization
     for &root_id in &true_roots {
         if ctx.id_to_term.contains_key(&root_id) {
-            // Mark the expression as Live - the egraph rules will propagate this
-            let live_cmd = format!("(Live id{})", root_id);
+            // Mark the expression as Live using the typed variant matching its sort
+            let live_ctor = match ctx
+                .id_to_type
+                .get(&root_id)
+                .and_then(|ty| type_classes.get(ty))
+            {
+                Some(TypeClass::Int) => "LiveI",
+                Some(TypeClass::Float) => "LiveF",
+                Some(TypeClass::Bool) => "LiveB",
+                _ => "Live",
+            };
+            let live_cmd = format!("({} id{})", live_ctor, root_id);
             let _ = egraph.parse_and_run_program(None, &live_cmd);
         }
     }
@@ -694,7 +721,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Only live IDs need to be extracted and emitted
     let mut live_ids: HashSet<Word> = HashSet::new();
     for &id in ctx.id_to_term.keys() {
-        let check_cmd = format!("(check (Live id{}))", id);
+        // Check the typed Live variant matching this ID's sort
+        let live_ctor = match ctx.id_to_type.get(&id).and_then(|ty| type_classes.get(ty)) {
+            Some(TypeClass::Int) => "LiveI",
+            Some(TypeClass::Float) => "LiveF",
+            Some(TypeClass::Bool) => "LiveB",
+            _ => "Live",
+        };
+        let check_cmd = format!("(check ({} id{}))", live_ctor, id);
         if egraph.parse_and_run_program(None, &check_cmd).is_ok() {
             live_ids.insert(id);
         }
@@ -721,23 +755,46 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
 
     // Also add constant value -> id mappings so synthesized constants can be resolved
-    // Key format: "const_N" for 32-bit, "const64_N" for 64-bit
+    // Key format: "const_N" for 32-bit int, "const64_N" for 64-bit int,
+    //             "fconst_BITS" for floats, "boolconst_N" for bools
     for inst in &module.types_global_values {
         if let Some(id) = inst.result_id {
             match inst.class.opcode {
                 Op::Constant => {
-                    if let Some(val) = inst.operands.first() {
-                        let (value, is_64) = match val {
-                            rspirv::dr::Operand::LiteralBit32(v) => (*v as i64, false),
-                            rspirv::dr::Operand::LiteralBit64(v) => (*v as i64, true),
-                            _ => continue,
-                        };
-                        let key = if is_64 {
-                            format!("const64_{}", value)
-                        } else {
-                            format!("const_{}", value)
-                        };
-                        id_map.entry(key).or_insert(id);
+                    // Check if this constant's type is float
+                    let is_float = inst
+                        .result_type
+                        .and_then(|ty| type_classes.get(&ty))
+                        == Some(&TypeClass::Float);
+
+                    if is_float {
+                        // Float constant - key by f64 bit pattern
+                        if let Some(val) = inst.operands.first() {
+                            let bits: u64 = match val {
+                                rspirv::dr::Operand::LiteralBit32(v) => {
+                                    (f32::from_bits(*v) as f64).to_bits()
+                                }
+                                rspirv::dr::Operand::LiteralBit64(v) => *v,
+                                _ => continue,
+                            };
+                            let key = format!("fconst_{}", bits);
+                            id_map.entry(key).or_insert(id);
+                        }
+                    } else {
+                        // Integer constant
+                        if let Some(val) = inst.operands.first() {
+                            let (value, is_64) = match val {
+                                rspirv::dr::Operand::LiteralBit32(v) => (*v as i64, false),
+                                rspirv::dr::Operand::LiteralBit64(v) => (*v as i64, true),
+                                _ => continue,
+                            };
+                            let key = if is_64 {
+                                format!("const64_{}", value)
+                            } else {
+                                format!("const_{}", value)
+                            };
+                            id_map.entry(key).or_insert(id);
+                        }
                     }
                 }
                 Op::ConstantTrue => {
@@ -765,6 +822,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         .find(|inst| {
             inst.class.opcode == Op::TypeInt
                 && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
+        })
+        .and_then(|inst| inst.result_id);
+    let int64_type = module
+        .types_global_values
+        .iter()
+        .find(|inst| {
+            inst.class.opcode == Op::TypeInt
+                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64))
         })
         .and_then(|inst| inst.result_id);
     let bool_type = module
@@ -810,45 +875,25 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         if !results.is_empty() {
             let result_str = format!("{}", results[0]);
             if let Some(term) = parse_extract_result(&result_str) {
-                let mut result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
-
-                // Infer the correct type domain from the extracted term's head
-                // operator. This is more reliable than querying ExprType from the
-                // egraph because e-class merges can make ExprType stale/wrong.
-                let term_class = infer_type_class_from_term(&term);
-                if term_class != TypeClass::Other {
-                    let current_class = type_classes
-                        .get(&result_type)
-                        .copied()
-                        .unwrap_or(TypeClass::Other);
-                    if current_class != term_class {
-                        let corrected = match term_class {
-                            TypeClass::Bool => bool_type,
-                            TypeClass::Int => int32_type,
-                            TypeClass::Float => float32_type,
-                            TypeClass::Other => None,
-                        };
-                        if let Some(ct) = corrected {
-                            result_type = ct;
-                            ctx.id_to_type.insert(id, ct);
-                        }
-                    }
-                }
+                let result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
 
                 // Before parsing, ensure all inline constants in the term have IDs
                 // If the ENTIRE term is just a constant (e.g., "(Const 84)"), use the
                 // current instruction's ID for that constant instead of synthesizing.
                 // This enables proper DCE - the instruction becomes the constant.
                 use parse::InlineConstKind;
-                let is_root_const = term.trim().starts_with("(Const ")
-                    || term.trim().starts_with("(Const64 ")
-                    || term.trim().starts_with("(BoolConst ");
+                let stripped_root = strip_bridge_constructors(term.trim());
+                let is_root_const = stripped_root.starts_with("(Const ")
+                    || stripped_root.starts_with("(Const64 ")
+                    || stripped_root.starts_with("(BoolConst ")
+                    || stripped_root.starts_with("(FConst ");
 
                 for (kind, value) in find_inline_constants(&term) {
                     let key = match kind {
                         InlineConstKind::Int64 => format!("const64_{}", value),
                         InlineConstKind::Int32 => format!("const_{}", value),
                         InlineConstKind::Bool => format!("boolconst_{}", value),
+                        InlineConstKind::Float => format!("fconst_{}", value as u64),
                     };
                     if !id_map.contains_key(&key) {
                         // If this root folds to a constant, use its ID for the constant
@@ -871,6 +916,25 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     Some(ty),
                                     Some(const_id),
                                     vec![],
+                                ));
+                                id_map.insert(key, const_id);
+                                id_map.insert(format!("id{}", const_id), const_id);
+                            }
+                        } else if kind == InlineConstKind::Float {
+                            // Synthesize a float constant
+                            if let Some(ty) = float32_type {
+                                let const_id = next_id;
+                                next_id += 1;
+                                // value contains f64 bits packed as i64
+                                let f64_val = f64::from_bits(value as u64);
+                                let operand = rspirv::dr::Operand::LiteralBit32(
+                                    (f64_val as f32).to_bits(),
+                                );
+                                synthesized_constants.push(Instruction::new(
+                                    Op::Constant,
+                                    Some(ty),
+                                    Some(const_id),
+                                    vec![operand],
                                 ));
                                 id_map.insert(key, const_id);
                                 id_map.insert(format!("id{}", const_id), const_id);
@@ -922,8 +986,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     used_ids.insert(result_type);
                 }
 
+                // Strip bridge constructors for all downstream parsing.
+                // Bridge constructors (IntToExpr, FloatToExpr, etc.) are transparent
+                // wrappers from the typed egglog schema that the SPIR-V reconstruction
+                // pipeline does not need.
+                let stripped_term = strip_bridge_constructors(&term).to_string();
+
                 // Check if the result is just a reference to another ID
-                if let Some(alias_id) = parse_sym_alias(&term, &id_map) {
+                if let Some(alias_id) = parse_sym_alias(&stripped_term, &id_map) {
                     if alias_id != id {
                         // This instruction becomes an alias to another value
                         id_aliases.insert(id, alias_id);
@@ -943,7 +1013,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     let type_width = type_widths.get(&result_type).copied();
                     // Try simple term_to_instruction first
                     if let Some(mut inst) =
-                        term_to_instruction(&term, id, result_type, &id_map, type_width)
+                        term_to_instruction(&stripped_term, id, result_type, &id_map, type_width)
                     {
                         // Fix result type if the operation changed type domain
                         let corrected_type = infer_result_type(
@@ -971,11 +1041,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         // If simple parsing fails, try to materialize nested expressions
                         // This handles cases like (Mul (Const 4) (Add (Sym "id5") (Sym "id6")))
                         if let Some((final_id, new_insts)) = materialize_term(
-                            &term,
+                            &stripped_term,
                             result_type,
                             &mut id_map,
                             &mut next_id,
                             int32_type,
+                            int64_type,
+                            float32_type,
                             &ctx.id_to_type,
                             &type_classes,
                             bool_type,
@@ -1086,9 +1158,17 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             None => continue,
         };
 
-        // If the gamma has simplified to just the expression (not a Gamma/Select),
+        // If the gamma has simplified to just the expression (not a Gamma/Select variant),
         // it means both branches computed the same thing and it can be hoisted
-        if !gamma_term.starts_with("(Gamma ") && !gamma_term.starts_with("(Select ") {
+        let is_gamma_or_select = gamma_term.starts_with("(Gamma ")
+            || gamma_term.starts_with("(GammaI ")
+            || gamma_term.starts_with("(GammaF ")
+            || gamma_term.starts_with("(GammaB ")
+            || gamma_term.starts_with("(Select ")
+            || gamma_term.starts_with("(SelectI ")
+            || gamma_term.starts_with("(SelectF ")
+            || gamma_term.starts_with("(SelectB ");
+        if !is_gamma_or_select {
             // The expression can be hoisted!
             // Mark both branch IDs to become CopyObjects of the hoisted value
             let result_type = ctx.id_to_type.get(&pair.then_id).copied().unwrap_or(0);
@@ -1784,10 +1864,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
 /// Parse a term to see if it's just a Sym reference to an existing ID
 fn parse_sym_alias(term: &str, id_map: &HashMap<String, Word>) -> Option<Word> {
-    let term = term.trim();
-    if let Some(rest) = term.strip_prefix("(Sym \"") {
-        if let Some(sym_name) = rest.strip_suffix("\")") {
-            return id_map.get(sym_name).copied();
+    let term = strip_bridge_constructors(term);
+    // Handle typed and untyped Sym variants
+    for prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(sym_name) = rest.strip_suffix("\")") {
+                return id_map.get(sym_name).copied();
+            }
         }
     }
     None
@@ -1931,43 +2014,64 @@ fn cleanup_module(
 
 /// Collect all IDs referenced in a term string (for DCE tracking)
 fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &mut HashSet<Word>) {
-    // Find all (Sym "idN") patterns and extract the IDs
+    // Find all Sym variants: (Sym "idN"), (ISym "idN"), (FSym "idN"), (BSym "idN")
+    let sym_prefixes: &[&[u8]] = &[b"(Sym \"id", b"(ISym \"id", b"(FSym \"id", b"(BSym \"id"];
+    let const_prefixes: &[&[u8]] = &[b"(Sym \"const", b"(ISym \"const", b"(FSym \"const", b"(BSym \"const"];
     let mut i = 0;
     let bytes = term.as_bytes();
     while i < bytes.len() {
-        // Look for (Sym "id
-        if i + 8 < bytes.len() && &bytes[i..i + 8] == b"(Sym \"id" {
-            // Extract the number after "id"
-            let start = i + 8;
-            let mut end = start;
-            while end < bytes.len() && bytes[end].is_ascii_digit() {
-                end += 1;
-            }
-            if end > start {
-                if let Ok(id_str) = std::str::from_utf8(&bytes[start..end]) {
-                    if let Ok(id) = id_str.parse::<Word>() {
-                        used_ids.insert(id);
+        let mut matched = false;
+
+        // Check for Sym "id..." patterns (extract numeric IDs)
+        for prefix in sym_prefixes {
+            if i + prefix.len() < bytes.len() && &bytes[i..i + prefix.len()] == *prefix {
+                let start = i + prefix.len();
+                let mut end = start;
+                while end < bytes.len() && bytes[end].is_ascii_digit() {
+                    end += 1;
+                }
+                if end > start {
+                    if let Ok(id_str) = std::str::from_utf8(&bytes[start..end]) {
+                        if let Ok(id) = id_str.parse::<Word>() {
+                            used_ids.insert(id);
+                        }
                     }
                 }
+                i = end;
+                matched = true;
+                break;
             }
-            i = end;
-        } else if i + 10 < bytes.len() && &bytes[i..i + 10] == b"(Sym \"const" {
-            // Look for (Sym "const_N") or (Sym "const64_N") patterns
-            // These reference constants that need to be kept
-            let start = i + 5; // After "(Sym "
-            let mut end = start;
-            while end < bytes.len() && bytes[end] != b'"' {
-                end += 1;
-            }
-            if let Ok(key) = std::str::from_utf8(&bytes[start..end]) {
-                if let Some(&id) = id_map.get(key) {
-                    used_ids.insert(id);
-                }
-            }
-            i = end;
-        } else {
-            i += 1;
         }
+        if matched { continue; }
+
+        // Check for Sym "const..." patterns (constant references)
+        for prefix in const_prefixes {
+            if i + prefix.len() < bytes.len() && &bytes[i..i + prefix.len()] == *prefix {
+                // Find the opening quote position: after "(Sym " or "(ISym " etc.
+                // We need to extract the key between the quotes
+                // Find the full key between quotes
+                let key_start = bytes[i..].iter().position(|&b| b == b'"').map(|p| i + p + 1);
+                if let Some(ks) = key_start {
+                    let mut end = ks;
+                    while end < bytes.len() && bytes[end] != b'"' {
+                        end += 1;
+                    }
+                    if let Ok(key) = std::str::from_utf8(&bytes[ks..end]) {
+                        if let Some(&id) = id_map.get(key) {
+                            used_ids.insert(id);
+                        }
+                    }
+                    i = end;
+                } else {
+                    i += prefix.len();
+                }
+                matched = true;
+                break;
+            }
+        }
+        if matched { continue; }
+
+        i += 1;
     }
 }
 
@@ -2023,7 +2127,7 @@ fn has_side_effects(inst: &Instruction) -> bool {
 }
 
 /// Check if an instruction should be optimized.
-fn is_optimizable(inst: &Instruction) -> bool {
+pub(crate) fn is_optimizable(inst: &Instruction) -> bool {
     matches!(
         inst.class.opcode,
         // Integer arithmetic
@@ -2102,13 +2206,13 @@ fn is_optimizable(inst: &Instruction) -> bool {
     )
 }
 
-/// Collect type widths from module.
+/// Collect type widths from module (includes int, float, and bool types).
 fn collect_type_widths(module: &Module) -> HashMap<Word, u32> {
     module
         .types_global_values
         .iter()
         .filter_map(|inst| match inst.class.opcode {
-            Op::TypeInt => inst.result_id.and_then(|id| {
+            Op::TypeInt | Op::TypeFloat => inst.result_id.and_then(|id| {
                 inst.operands.first().and_then(|op| match op {
                     rspirv::dr::Operand::LiteralBit32(bits) => Some((id, *bits)),
                     _ => None,
@@ -2122,7 +2226,7 @@ fn collect_type_widths(module: &Module) -> HashMap<Word, u32> {
 
 /// Type classification for SPIR-V types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TypeClass {
+pub(crate) enum TypeClass {
     Bool,
     Int,
     Float,
@@ -2145,65 +2249,10 @@ fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
             }
         }
     }
-    // Classify vector types by their component type (e.g., vec4<f32> -> Float)
-    for inst in &module.types_global_values {
-        if inst.class.opcode == Op::TypeVector {
-            if let (Some(id), Some(rspirv::dr::Operand::IdRef(component_type))) =
-                (inst.result_id, inst.operands.first())
-            {
-                if let Some(&component_class) = classes.get(component_type) {
-                    classes.insert(id, component_class);
-                }
-            }
-        }
-    }
+    // NOTE: Vectors are intentionally NOT classified here.
+    // Vectors use the general Expr sort (not IntExpr/FloatExpr/BoolExpr),
+    // so they must remain TypeClass::Other to avoid mis-typing vector Select/Sym.
     classes
-}
-
-/// Infer the type class of an extracted term from its head operator.
-/// This is more reliable than querying ExprType from the egraph because
-/// e-class merges (via `:merge old`) can produce stale type information.
-fn infer_type_class_from_term(term: &str) -> TypeClass {
-    let term = term.trim();
-    // Extract the head operator from the term (first word after opening paren)
-    let head = if let Some(rest) = term.strip_prefix('(') {
-        rest.split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_end_matches(')')
-    } else {
-        // Bare symbol or constant - no type info
-        return TypeClass::Other;
-    };
-
-    match head {
-        // Integer arithmetic
-        "Add" | "Sub" | "Mul" | "Neg" | "SDiv" | "UDiv" | "SRem" | "SMod" | "UMod" | "Shl"
-        | "ShrS" | "ShrU" | "BitAnd" | "BitOr" | "BitXor" | "BitNot" | "BitReverse"
-        | "BitCount" | "RotL" | "RotR" | "SMin" | "SMax" | "UMin" | "UMax" | "SAbs"
-        | "FindILsb" | "FindSMsb" | "FindUMsb" | "ConvertFToS" | "ConvertFToU" | "Const"
-        | "Const64" | "BitFieldInsert" | "BitFieldSExtract" | "BitFieldUExtract" => TypeClass::Int,
-
-        // Float arithmetic
-        "FAdd" | "FSub" | "FMul" | "FDiv" | "FNeg" | "FRem" | "FMod" | "FMin" | "FMax" | "FAbs"
-        | "FFloor" | "FCeil" | "FRound" | "FTrunc" | "ConvertSToF" | "ConvertUToF" | "Sqrt"
-        | "InverseSqrt" | "Exp" | "Exp2" | "Log" | "Log2" | "Pow" | "Sin" | "Cos" | "Tan"
-        | "Asin" | "Acos" | "Atan" | "Atan2" | "Sinh" | "Cosh" | "Tanh" | "Asinh" | "Acosh"
-        | "Atanh" | "Fma" | "Fract" | "Modf" | "Step" | "FSign" | "Radians" | "Degrees"
-        | "FMix" | "SmoothStep" | "FClamp" | "NMin" | "NMax" | "NClamp" | "Length" | "Distance"
-        | "Normalize" | "Cross" | "Reflect" | "Refract" | "FaceForward" | "FConst" | "DPdx"
-        | "DPdy" | "Fwidth" | "DPdxFine" | "DPdyFine" | "FwidthFine" | "DPdxCoarse"
-        | "DPdyCoarse" | "FwidthCoarse" | "Dot" => TypeClass::Float,
-
-        // Boolean-producing operations
-        "Eq" | "Ne" | "SLt" | "SLe" | "SGt" | "SGe" | "ULt" | "ULe" | "UGt" | "UGe" | "FOrdEq"
-        | "FOrdNe" | "FOrdLt" | "FOrdLe" | "FOrdGt" | "FOrdGe" | "FUnordEq" | "FUnordNe"
-        | "FUnordLt" | "FUnordLe" | "FUnordGt" | "FUnordGe" | "LogNot" | "LogAnd" | "LogOr"
-        | "LogEq" | "LogNe" | "IsNan" | "IsInf" | "BoolConst" => TypeClass::Bool,
-
-        // Type-preserving (Gamma, Select, CopyObject, Sym, etc.) - can't determine from head
-        _ => TypeClass::Other,
-    }
 }
 
 /// What type class does this opcode require for its *result* type?
@@ -2442,8 +2491,11 @@ fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
         let bytes = term.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            // Skip (Sym "idN") patterns - these are safe opaque references
-            if i + 5 < bytes.len() && &bytes[i..i + 5] == b"(Sym " {
+            // Skip Sym variant patterns - these are safe opaque references
+            // Handles: (Sym "..."), (ISym "..."), (FSym "..."), (BSym "...")
+            let skip_sym = (i + 5 < bytes.len() && &bytes[i..i + 5] == b"(Sym ")
+                || (i + 6 < bytes.len() && (&bytes[i..i + 6] == b"(ISym " || &bytes[i..i + 6] == b"(FSym " || &bytes[i..i + 6] == b"(BSym "));
+            if skip_sym {
                 // Skip to closing paren
                 if let Some(close) = term[i..].find(')') {
                     i += close + 1;
@@ -2555,14 +2607,13 @@ fn parse_effect_result(s: &str) -> Option<ParsedEffect> {
         if let Some(inner) = rest.strip_suffix(')') {
             let inner = inner.trim();
 
-            // Check for (Gamma ...) or (Select ...)
-            if inner.starts_with("(Gamma ") || inner.starts_with("(Select ") {
-                // Parse (Gamma cond then else) or (Select cond then else)
-                let prefix = if inner.starts_with("(Gamma ") {
-                    "(Gamma "
-                } else {
-                    "(Select "
-                };
+            // Check for Gamma/Select variants (typed and untyped)
+            let gamma_select_prefixes = [
+                "(Gamma ", "(GammaI ", "(GammaF ", "(GammaB ",
+                "(Select ", "(SelectI ", "(SelectF ", "(SelectB ",
+            ];
+            let matched_prefix = gamma_select_prefixes.iter().find(|p| inner.starts_with(*p));
+            if let Some(prefix) = matched_prefix {
                 if let Some(args) = inner.strip_prefix(prefix) {
                     if let Some(args) = args.strip_suffix(')') {
                         let parts = split_terms_simple(args);
@@ -2632,20 +2683,75 @@ fn resolve_term_to_id_or_create(
     resolve_term_to_id_simple(term, id_map).unwrap_or(fallback)
 }
 
+/// Strip outermost bridge constructors from a term, recursively.
+/// Bridge constructors (IntToExpr, FloatToExpr, BoolToExpr, ExprToInt, ExprToFloat, ExprToBool)
+/// are transparent wrappers used by the typed egglog schema. Since each bridge takes exactly
+/// one argument, `strip_suffix(')')` safely removes the bridge's closing paren.
+fn strip_bridge_constructors(term: &str) -> &str {
+    let term = term.trim();
+    for prefix in &[
+        "(IntToExpr ",
+        "(FloatToExpr ",
+        "(BoolToExpr ",
+        "(ExprToInt ",
+        "(ExprToFloat ",
+        "(ExprToBool ",
+    ] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix(')') {
+                return strip_bridge_constructors(inner.trim());
+            }
+        }
+    }
+    term
+}
+
 /// Resolve a term to an ID (simple cases only)
 fn resolve_term_to_id_simple(term: &str, id_map: &HashMap<String, Word>) -> Option<Word> {
-    let term = term.trim();
+    let term = strip_bridge_constructors(term);
 
-    // (Sym "idN")
-    if let Some(rest) = term.strip_prefix("(Sym \"") {
-        if let Some(sym_name) = rest.strip_suffix("\")") {
-            return id_map.get(sym_name).copied();
+    // Typed and untyped Sym variants
+    for prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(sym_name) = rest.strip_suffix("\")") {
+                return id_map.get(sym_name).copied();
+            }
         }
     }
 
     // Direct id reference (idN)
     if term.starts_with("id") {
         return id_map.get(term).copied();
+    }
+
+    // Constant lookups (so materialize_term can reuse existing constants)
+    if let Some(rest) = term.strip_prefix("(Const ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                return id_map.get(&format!("const_{}", value)).copied();
+            }
+        }
+    }
+    if let Some(rest) = term.strip_prefix("(Const64 ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                return id_map.get(&format!("const64_{}", value)).copied();
+            }
+        }
+    }
+    if let Some(rest) = term.strip_prefix("(BoolConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                return id_map.get(&format!("boolconst_{}", value)).copied();
+            }
+        }
+    }
+    if let Some(rest) = term.strip_prefix("(FConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<f64>() {
+                return id_map.get(&format!("fconst_{}", value.to_bits())).copied();
+            }
+        }
     }
 
     None
@@ -2662,19 +2768,21 @@ fn infer_term_type(
     if let Some(id) = resolve_term_to_id_simple(term, id_map) {
         return id_to_type.get(&id).copied();
     }
-    // Scan for first Sym reference in the term
-    let mut search = term;
-    while let Some(pos) = search.find("(Sym \"") {
-        let rest = &search[pos + 6..];
-        if let Some(end) = rest.find("\")") {
-            let sym_name = &rest[..end];
-            if let Some(&id) = id_map.get(sym_name) {
-                if let Some(&ty) = id_to_type.get(&id) {
-                    return Some(ty);
+    // Scan for first Sym reference in the term (typed or untyped)
+    for sym_prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
+        let mut search = term;
+        while let Some(pos) = search.find(sym_prefix) {
+            let rest = &search[pos + sym_prefix.len()..];
+            if let Some(end) = rest.find("\")") {
+                let sym_name = &rest[..end];
+                if let Some(&id) = id_map.get(sym_name) {
+                    if let Some(&ty) = id_to_type.get(&id) {
+                        return Some(ty);
+                    }
                 }
             }
+            search = &search[pos + sym_prefix.len()..];
         }
-        search = &search[pos + 6..];
     }
     // Scan for bare id references
     let mut search = term;
@@ -2704,11 +2812,13 @@ fn materialize_term(
     id_map: &mut HashMap<String, Word>,
     next_id: &mut Word,
     int32_type: Option<Word>,
+    int64_type: Option<Word>,
+    float32_type: Option<Word>,
     id_to_type: &HashMap<Word, Word>,
     type_classes: &HashMap<Word, TypeClass>,
     bool_type: Option<Word>,
 ) -> Option<(Word, Vec<Instruction>)> {
-    let term = term.trim();
+    let term = strip_bridge_constructors(term);
     let mut synthesized: Vec<Instruction> = Vec::new();
 
     // Try to resolve as simple reference first
@@ -2749,8 +2859,8 @@ fn materialize_term(
                 if let Some(&id) = id_map.get(&const_key) {
                     return Some((id, synthesized));
                 }
-                // Create new 64-bit constant
-                if let Some(ty) = int32_type {
+                // Create new 64-bit constant — prefer int64 type, fall back to int32
+                if let Some(ty) = int64_type.or(int32_type) {
                     let const_id = *next_id;
                     *next_id += 1;
                     let inst = Instruction::new(
@@ -2758,6 +2868,58 @@ fn materialize_term(
                         Some(ty),
                         Some(const_id),
                         vec![rspirv::dr::Operand::LiteralBit64(value as u64)],
+                    );
+                    synthesized.push(inst);
+                    id_map.insert(const_key, const_id);
+                    id_map.insert(format!("id{}", const_id), const_id);
+                    return Some((const_id, synthesized));
+                }
+            }
+        }
+    }
+
+    // BoolConst
+    if let Some(rest) = term.strip_prefix("(BoolConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<i64>() {
+                let const_key = format!("boolconst_{}", value);
+                if let Some(&id) = id_map.get(&const_key) {
+                    return Some((id, synthesized));
+                }
+                if let Some(ty) = bool_type {
+                    let const_id = *next_id;
+                    *next_id += 1;
+                    let op = if value != 0 {
+                        Op::ConstantTrue
+                    } else {
+                        Op::ConstantFalse
+                    };
+                    let inst = Instruction::new(op, Some(ty), Some(const_id), vec![]);
+                    synthesized.push(inst);
+                    id_map.insert(const_key, const_id);
+                    id_map.insert(format!("id{}", const_id), const_id);
+                    return Some((const_id, synthesized));
+                }
+            }
+        }
+    }
+    // FConst
+    if let Some(rest) = term.strip_prefix("(FConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<f64>() {
+                let const_key = format!("fconst_{}", value.to_bits());
+                if let Some(&id) = id_map.get(&const_key) {
+                    return Some((id, synthesized));
+                }
+                if let Some(ty) = float32_type {
+                    let const_id = *next_id;
+                    *next_id += 1;
+                    let bits = (value as f32).to_bits();
+                    let inst = Instruction::new(
+                        Op::Constant,
+                        Some(ty),
+                        Some(const_id),
+                        vec![rspirv::dr::Operand::LiteralBit32(bits)],
                     );
                     synthesized.push(inst);
                     id_map.insert(const_key, const_id);
@@ -2871,6 +3033,8 @@ fn materialize_term(
                         id_map,
                         next_id,
                         int32_type,
+                        int64_type,
+                        float32_type,
                         id_to_type,
                         type_classes,
                         bool_type,
@@ -2883,6 +3047,8 @@ fn materialize_term(
                         id_map,
                         next_id,
                         int32_type,
+                        int64_type,
+                        float32_type,
                         id_to_type,
                         type_classes,
                         bool_type,
@@ -2923,6 +3089,10 @@ fn materialize_term(
         ("ConvertFToS", Op::ConvertFToS),
         ("ConvertSToF", Op::ConvertSToF),
         ("ConvertUToF", Op::ConvertUToF),
+        // Copy (typed variants)
+        ("CopyI", Op::CopyObject),
+        ("CopyF", Op::CopyObject),
+        ("CopyB", Op::CopyObject),
     ];
 
     for (name, opcode) in unary_ops {
@@ -2953,6 +3123,8 @@ fn materialize_term(
                     id_map,
                     next_id,
                     int32_type,
+                    int64_type,
+                    float32_type,
                     id_to_type,
                     type_classes,
                     bool_type,
@@ -2974,8 +3146,13 @@ fn materialize_term(
         }
     }
 
-    // Select / Gamma
-    for select_prefix in &["(Select ", "(Gamma "] {
+    // Select / Gamma / If (untyped and typed variants) — all map to Op::Select
+    for select_prefix in &[
+        "(Select ", "(Gamma ", "(If ",
+        "(SelectI ", "(GammaI ", "(IfI ",
+        "(SelectF ", "(GammaF ", "(IfF ",
+        "(SelectB ", "(GammaB ", "(IfB ",
+    ] {
         if let Some(rest) = term.strip_prefix(select_prefix) {
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
@@ -2993,6 +3170,8 @@ fn materialize_term(
                         id_map,
                         next_id,
                         int32_type,
+                        int64_type,
+                        float32_type,
                         id_to_type,
                         type_classes,
                         bool_type,
@@ -3005,6 +3184,8 @@ fn materialize_term(
                         id_map,
                         next_id,
                         int32_type,
+                        int64_type,
+                        float32_type,
                         id_to_type,
                         type_classes,
                         bool_type,
@@ -3017,6 +3198,8 @@ fn materialize_term(
                         id_map,
                         next_id,
                         int32_type,
+                        int64_type,
+                        float32_type,
                         id_to_type,
                         type_classes,
                         bool_type,

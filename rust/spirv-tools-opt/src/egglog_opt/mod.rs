@@ -36,6 +36,7 @@
 
 mod primitives;
 
+use egglog::sort::{F, OrderedFloat};
 use egglog::{add_primitive, EGraph};
 // The primitive functions are used inside `add_primitive!` macro closures, which
 // the compiler doesn't track as direct usage of the imported names.
@@ -451,222 +452,32 @@ fn float_recip32(x: i64) -> i64 {
 // GLSL Transcendental Constant Folding Primitives
 // =============================================================================
 // These primitives evaluate GLSL math functions on float constants.
-// Constants are stored as i64 (bit representation of f64).
+// FConst uses native f64 values, so primitives operate on f64 directly.
 
-/// Compute sin of a float constant.
-fn float_sin(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.sin().to_bits() as i64
+/// Compute sign of an integer constant (-1, 0, or 1).
+fn int_sign(x: i64) -> i64 {
+    if x > 0 { 1 } else if x < 0 { -1 } else { 0 }
 }
 
-/// Compute cos of a float constant.
-fn float_cos(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.cos().to_bits() as i64
-}
-
-/// Compute tan of a float constant.
-fn float_tan(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.tan().to_bits() as i64
-}
-
-/// Compute asin of a float constant.
-fn float_asin(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.asin().to_bits() as i64
-}
-
-/// Compute acos of a float constant.
-fn float_acos(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.acos().to_bits() as i64
-}
-
-/// Compute atan of a float constant.
-fn float_atan(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.atan().to_bits() as i64
-}
-
-/// Compute atan2 of two float constants.
-fn float_atan2(y: i64, x: i64) -> i64 {
-    let fy = f64::from_bits(y as u64);
-    let fx = f64::from_bits(x as u64);
-    fy.atan2(fx).to_bits() as i64
-}
-
-/// Compute sinh of a float constant.
-fn float_sinh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.sinh().to_bits() as i64
-}
-
-/// Compute cosh of a float constant.
-fn float_cosh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.cosh().to_bits() as i64
-}
-
-/// Compute tanh of a float constant.
-fn float_tanh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.tanh().to_bits() as i64
-}
-
-/// Compute asinh of a float constant.
-fn float_asinh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.asinh().to_bits() as i64
-}
-
-/// Compute acosh of a float constant.
-fn float_acosh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.acosh().to_bits() as i64
-}
-
-/// Compute atanh of a float constant.
-fn float_atanh(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.atanh().to_bits() as i64
-}
-
-/// Compute exp of a float constant.
-fn float_exp(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.exp().to_bits() as i64
-}
-
-/// Compute exp2 of a float constant.
-fn float_exp2(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.exp2().to_bits() as i64
-}
-
-/// Compute log (natural logarithm) of a float constant.
-fn float_log(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.ln().to_bits() as i64
-}
-
-/// Compute log2 of a float constant.
-fn float_log2(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.log2().to_bits() as i64
-}
-
-/// Compute sqrt of a float constant.
-fn float_sqrt(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.sqrt().to_bits() as i64
-}
-
-/// Compute inverse sqrt of a float constant.
-fn float_inversesqrt(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    (1.0 / f.sqrt()).to_bits() as i64
-}
-
-/// Compute pow of two float constants.
-fn float_pow(x: i64, y: i64) -> i64 {
-    let fx = f64::from_bits(x as u64);
-    let fy = f64::from_bits(y as u64);
-    fx.powf(fy).to_bits() as i64
-}
-
-/// Compute floor of a float constant.
-fn float_floor(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.floor().to_bits() as i64
-}
-
-/// Compute ceil of a float constant.
-fn float_ceil(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.ceil().to_bits() as i64
-}
-
-/// Compute round of a float constant.
-fn float_round(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.round().to_bits() as i64
-}
-
-/// Compute trunc of a float constant.
-fn float_trunc(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.trunc().to_bits() as i64
-}
-
-/// Compute abs of a float constant.
-fn float_abs(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    f.abs().to_bits() as i64
-}
-
-/// Compute sign of a float constant (-1, 0, or 1).
-fn float_sign(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    if f > 0.0 {
-        1.0_f64.to_bits() as i64
-    } else if f < 0.0 {
-        (-1.0_f64).to_bits() as i64
-    } else {
-        0.0_f64.to_bits() as i64
-    }
+/// Compute sign of a float constant (-1.0, 0.0, or 1.0).
+fn float_sign_f64(x: f64) -> f64 {
+    if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
 }
 
 /// Compute fract (fractional part) of a float constant.
-fn float_fract(x: i64) -> i64 {
-    let f = f64::from_bits(x as u64);
-    (f - f.floor()).to_bits() as i64
-}
-
-/// Compute min of two float constants.
-fn float_min(x: i64, y: i64) -> i64 {
-    let fx = f64::from_bits(x as u64);
-    let fy = f64::from_bits(y as u64);
-    fx.min(fy).to_bits() as i64
-}
-
-/// Compute max of two float constants.
-fn float_max(x: i64, y: i64) -> i64 {
-    let fx = f64::from_bits(x as u64);
-    let fy = f64::from_bits(y as u64);
-    fx.max(fy).to_bits() as i64
-}
-
-/// Compute clamp of a float constant.
-fn float_clamp(x: i64, lo: i64, hi: i64) -> i64 {
-    let fx = f64::from_bits(x as u64);
-    let flo = f64::from_bits(lo as u64);
-    let fhi = f64::from_bits(hi as u64);
-    fx.clamp(flo, fhi).to_bits() as i64
+fn float_fract_f64(x: f64) -> f64 {
+    x - x.floor()
 }
 
 /// Compute mix (linear interpolation) of float constants.
-fn float_mix(x: i64, y: i64, a: i64) -> i64 {
-    let fx = f64::from_bits(x as u64);
-    let fy = f64::from_bits(y as u64);
-    let fa = f64::from_bits(a as u64);
-    (fx * (1.0 - fa) + fy * fa).to_bits() as i64
-}
-
-/// Compute step function.
-fn float_step(edge: i64, x: i64) -> i64 {
-    let fe = f64::from_bits(edge as u64);
-    let fx = f64::from_bits(x as u64);
-    if fx < fe { 0.0_f64 } else { 1.0_f64 }.to_bits() as i64
+fn float_mix_f64(x: f64, y: f64, a: f64) -> f64 {
+    x * (1.0 - a) + y * a
 }
 
 /// Compute smoothstep function.
-fn float_smoothstep(edge0: i64, edge1: i64, x: i64) -> i64 {
-    let e0 = f64::from_bits(edge0 as u64);
-    let e1 = f64::from_bits(edge1 as u64);
-    let fx = f64::from_bits(x as u64);
-    let t = ((fx - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    (t * t * (3.0 - 2.0 * t)).to_bits() as i64
+fn float_smoothstep_f64(e0: f64, e1: f64, x: f64) -> f64 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 // =============================================================================
@@ -781,121 +592,43 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
         "float-recip32" = |a: i64| -> i64 { float_recip32(a) }
     );
 
-    // GLSL transcendental constant folding primitives
-    add_primitive!(&mut egraph, "float-sin" = |a: i64| -> i64 { float_sin(a) });
-    add_primitive!(&mut egraph, "float-cos" = |a: i64| -> i64 { float_cos(a) });
-    add_primitive!(&mut egraph, "float-tan" = |a: i64| -> i64 { float_tan(a) });
-    add_primitive!(
-        &mut egraph,
-        "float-asin" = |a: i64| -> i64 { float_asin(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-acos" = |a: i64| -> i64 { float_acos(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-atan" = |a: i64| -> i64 { float_atan(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-atan2" = |y: i64, x: i64| -> i64 { float_atan2(y, x) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-sinh" = |a: i64| -> i64 { float_sinh(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-cosh" = |a: i64| -> i64 { float_cosh(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-tanh" = |a: i64| -> i64 { float_tanh(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-asinh" = |a: i64| -> i64 { float_asinh(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-acosh" = |a: i64| -> i64 { float_acosh(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-atanh" = |a: i64| -> i64 { float_atanh(a) }
-    );
-    add_primitive!(&mut egraph, "float-exp" = |a: i64| -> i64 { float_exp(a) });
-    add_primitive!(
-        &mut egraph,
-        "float-exp2" = |a: i64| -> i64 { float_exp2(a) }
-    );
-    add_primitive!(&mut egraph, "float-log" = |a: i64| -> i64 { float_log(a) });
-    add_primitive!(
-        &mut egraph,
-        "float-log2" = |a: i64| -> i64 { float_log2(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-sqrt" = |a: i64| -> i64 { float_sqrt(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-inversesqrt" = |a: i64| -> i64 { float_inversesqrt(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-pow" = |x: i64, y: i64| -> i64 { float_pow(x, y) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-floor" = |a: i64| -> i64 { float_floor(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-ceil" = |a: i64| -> i64 { float_ceil(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-round" = |a: i64| -> i64 { float_round(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-trunc" = |a: i64| -> i64 { float_trunc(a) }
-    );
-    add_primitive!(&mut egraph, "float-abs" = |a: i64| -> i64 { float_abs(a) });
-    add_primitive!(
-        &mut egraph,
-        "float-sign" = |a: i64| -> i64 { float_sign(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-fract" = |a: i64| -> i64 { float_fract(a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-min" = |x: i64, y: i64| -> i64 { float_min(x, y) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-max" = |x: i64, y: i64| -> i64 { float_max(x, y) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-clamp" = |x: i64, lo: i64, hi: i64| -> i64 { float_clamp(x, lo, hi) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-mix" = |x: i64, y: i64, a: i64| -> i64 { float_mix(x, y, a) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-step" = |edge: i64, x: i64| -> i64 { float_step(edge, x) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "float-smoothstep" = |e0: i64, e1: i64, x: i64| -> i64 { float_smoothstep(e0, e1, x) }
-    );
+    // Integer sign primitive
+    add_primitive!(&mut egraph, "int-sign" = |a: i64| -> i64 { int_sign(a) });
+
+    // GLSL transcendental constant folding primitives (native f64 via F for FConst)
+    add_primitive!(&mut egraph, "float-sin" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sin())) });
+    add_primitive!(&mut egraph, "float-cos" = |a: F| -> F { F::from(OrderedFloat(a.0.0.cos())) });
+    add_primitive!(&mut egraph, "float-tan" = |a: F| -> F { F::from(OrderedFloat(a.0.0.tan())) });
+    add_primitive!(&mut egraph, "float-asin" = |a: F| -> F { F::from(OrderedFloat(a.0.0.asin())) });
+    add_primitive!(&mut egraph, "float-acos" = |a: F| -> F { F::from(OrderedFloat(a.0.0.acos())) });
+    add_primitive!(&mut egraph, "float-atan" = |a: F| -> F { F::from(OrderedFloat(a.0.0.atan())) });
+    add_primitive!(&mut egraph, "float-atan2" = |y: F, x: F| -> F { F::from(OrderedFloat(y.0.0.atan2(x.0.0))) });
+    add_primitive!(&mut egraph, "float-sinh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sinh())) });
+    add_primitive!(&mut egraph, "float-cosh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.cosh())) });
+    add_primitive!(&mut egraph, "float-tanh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.tanh())) });
+    add_primitive!(&mut egraph, "float-asinh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.asinh())) });
+    add_primitive!(&mut egraph, "float-acosh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.acosh())) });
+    add_primitive!(&mut egraph, "float-atanh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.atanh())) });
+    add_primitive!(&mut egraph, "float-exp" = |a: F| -> F { F::from(OrderedFloat(a.0.0.exp())) });
+    add_primitive!(&mut egraph, "float-exp2" = |a: F| -> F { F::from(OrderedFloat(a.0.0.exp2())) });
+    add_primitive!(&mut egraph, "float-log" = |a: F| -> F { F::from(OrderedFloat(a.0.0.ln())) });
+    add_primitive!(&mut egraph, "float-log2" = |a: F| -> F { F::from(OrderedFloat(a.0.0.log2())) });
+    add_primitive!(&mut egraph, "float-sqrt" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sqrt())) });
+    add_primitive!(&mut egraph, "float-inversesqrt" = |a: F| -> F { F::from(OrderedFloat(1.0 / a.0.0.sqrt())) });
+    add_primitive!(&mut egraph, "float-pow" = |x: F, y: F| -> F { F::from(OrderedFloat(x.0.0.powf(y.0.0))) });
+    add_primitive!(&mut egraph, "float-floor" = |a: F| -> F { F::from(OrderedFloat(a.0.0.floor())) });
+    add_primitive!(&mut egraph, "float-ceil" = |a: F| -> F { F::from(OrderedFloat(a.0.0.ceil())) });
+    add_primitive!(&mut egraph, "float-round" = |a: F| -> F { F::from(OrderedFloat(a.0.0.round())) });
+    add_primitive!(&mut egraph, "float-trunc" = |a: F| -> F { F::from(OrderedFloat(a.0.0.trunc())) });
+    add_primitive!(&mut egraph, "float-abs" = |a: F| -> F { F::from(OrderedFloat(a.0.0.abs())) });
+    add_primitive!(&mut egraph, "float-sign" = |a: F| -> F { F::from(OrderedFloat(float_sign_f64(a.0.0))) });
+    add_primitive!(&mut egraph, "float-fract" = |a: F| -> F { F::from(OrderedFloat(float_fract_f64(a.0.0))) });
+    add_primitive!(&mut egraph, "float-min" = |x: F, y: F| -> F { x.min(y) });
+    add_primitive!(&mut egraph, "float-max" = |x: F, y: F| -> F { x.max(y) });
+    add_primitive!(&mut egraph, "float-clamp" = |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(x.0.0.clamp(lo.0.0, hi.0.0))) });
+    add_primitive!(&mut egraph, "float-mix" = |x: F, y: F, a: F| -> F { F::from(OrderedFloat(float_mix_f64(x.0.0, y.0.0, a.0.0))) });
+    add_primitive!(&mut egraph, "float-step" = |edge: F, x: F| -> F { F::from(OrderedFloat(if x.0.0 < edge.0.0 { 0.0 } else { 1.0 })) });
+    add_primitive!(&mut egraph, "float-smoothstep" = |e0: F, e1: F, x: F| -> F { F::from(OrderedFloat(float_smoothstep_f64(e0.0.0, e1.0.0, x.0.0))) });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
     egraph

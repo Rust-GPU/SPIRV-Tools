@@ -4,7 +4,7 @@ use rspirv::dr::Instruction;
 use rspirv::spirv::{Op, Word};
 use std::collections::HashMap;
 
-/// Try to parse a constant term (Const, Const64, or Sym).
+/// Try to parse a constant term (Const, Const64, FConst, BoolConst, Sym, ISym, FSym, BSym).
 pub fn try_parse_constant(
     term: &str,
     result_id: Word,
@@ -64,6 +64,27 @@ pub fn try_parse_constant(
         }
     }
 
+    // Parse (FConst N.N) - float constants
+    if let Some(rest) = term.strip_prefix("(FConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<f64>() {
+                // Convert back to IEEE bit pattern for the appropriate width
+                let operand = if type_width == Some(64) {
+                    rspirv::dr::Operand::LiteralBit64(value.to_bits())
+                } else {
+                    // Default to 32-bit float
+                    rspirv::dr::Operand::LiteralBit32((value as f32).to_bits())
+                };
+                return Some(Instruction::new(
+                    Op::Constant,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![operand],
+                ));
+            }
+        }
+    }
+
     // Parse (BoolConst N) - boolean constants
     if let Some(rest) = term.strip_prefix("(BoolConst ") {
         if let Some(num_str) = rest.strip_suffix(')') {
@@ -87,16 +108,18 @@ pub fn try_parse_constant(
         }
     }
 
-    // Parse (Sym "idN")
-    if let Some(rest) = term.strip_prefix("(Sym \"") {
-        if let Some(sym_name) = rest.strip_suffix("\")") {
-            if let Some(&ref_id) = id_map.get(sym_name) {
-                return Some(Instruction::new(
-                    Op::CopyObject,
-                    Some(result_type),
-                    Some(result_id),
-                    vec![rspirv::dr::Operand::IdRef(ref_id)],
-                ));
+    // Parse typed and untyped Sym variants — all produce CopyObject
+    for prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(sym_name) = rest.strip_suffix("\")") {
+                if let Some(&ref_id) = id_map.get(sym_name) {
+                    return Some(Instruction::new(
+                        Op::CopyObject,
+                        Some(result_type),
+                        Some(result_id),
+                        vec![rspirv::dr::Operand::IdRef(ref_id)],
+                    ));
+                }
             }
         }
     }
@@ -113,10 +136,12 @@ pub enum InlineConstKind {
     Int64,
     /// Boolean constant
     Bool,
+    /// Float constant (value stored as f64 bits reinterpreted as i64)
+    Float,
 }
 
-/// Find all (Const N), (Const64 N), and (BoolConst N) subterms in an extracted term.
-/// Returns a list of (kind, value) tuples.
+/// Find all (Const N), (Const64 N), (BoolConst N), and (FConst N.N) subterms in an extracted term.
+/// Returns a list of (kind, value) tuples. For Float, the i64 value contains the f64 bit pattern.
 pub fn find_inline_constants(term: &str) -> Vec<(InlineConstKind, i64)> {
     let mut constants = Vec::new();
     let mut i = 0;
@@ -136,6 +161,26 @@ pub fn find_inline_constants(term: &str) -> Vec<(InlineConstKind, i64)> {
                     let num_str: String = chars[start..end].iter().collect();
                     if let Ok(value) = num_str.trim().parse::<i64>() {
                         constants.push((InlineConstKind::Bool, value));
+                    }
+                }
+                i = end;
+                continue;
+            }
+        }
+        // Look for "(FConst " (must check before "(Const " since it starts differently but let's be safe)
+        if i + 8 <= chars.len() {
+            let slice: String = chars[i..i + 8].iter().collect();
+            if slice == "(FConst " {
+                let start = i + 8;
+                let mut end = start;
+                while end < chars.len() && chars[end] != ')' {
+                    end += 1;
+                }
+                if end < chars.len() {
+                    let num_str: String = chars[start..end].iter().collect();
+                    if let Ok(value) = num_str.trim().parse::<f64>() {
+                        // Store f64 bits as i64
+                        constants.push((InlineConstKind::Float, value.to_bits() as i64));
                     }
                 }
                 i = end;

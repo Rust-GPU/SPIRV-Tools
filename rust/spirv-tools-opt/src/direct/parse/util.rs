@@ -40,9 +40,12 @@ pub fn split_terms(s: &str) -> Vec<String> {
 pub fn resolve_term_to_id(term: &str, id_map: &HashMap<String, Word>) -> Option<Word> {
     let term = term.trim();
 
-    if let Some(rest) = term.strip_prefix("(Sym \"") {
-        if let Some(sym_name) = rest.strip_suffix("\")") {
-            return id_map.get(sym_name).copied();
+    // Handle typed and untyped Sym variants
+    for prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(sym_name) = rest.strip_suffix("\")") {
+                return id_map.get(sym_name).copied();
+            }
         }
     }
 
@@ -72,6 +75,27 @@ pub fn resolve_term_to_id(term: &str, id_map: &HashMap<String, Word>) -> Option<
             if let Ok(value) = num_str.trim().parse::<i64>() {
                 let const_key = format!("boolconst_{}", value);
                 return id_map.get(&const_key).copied();
+            }
+        }
+    }
+    // Handle FConst - look up by fconst_BITS key
+    if let Some(rest) = term.strip_prefix("(FConst ") {
+        if let Some(num_str) = rest.strip_suffix(')') {
+            if let Ok(value) = num_str.trim().parse::<f64>() {
+                let const_key = format!("fconst_{}", value.to_bits());
+                return id_map.get(&const_key).copied();
+            }
+        }
+    }
+
+    // Handle bridge constructors as transparent wrappers
+    for prefix in &[
+        "(IntToExpr ", "(FloatToExpr ", "(BoolToExpr ",
+        "(ExprToInt ", "(ExprToFloat ", "(ExprToBool ",
+    ] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix(')') {
+                return resolve_term_to_id(inner.trim(), id_map);
             }
         }
     }

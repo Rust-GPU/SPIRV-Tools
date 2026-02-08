@@ -10,14 +10,12 @@
 (rule ((= e (FMix a a t)))
       ((union e a)))
 
-; FMix(a, b, 0) = a - ONE-DIRECTIONAL (when t=0.0f, return first arg)
-; Note: f32 0.0 has bit pattern 0, which matches integer 0
-(rule ((= e (FMix a b (Const c))) (is-float-zero32 c))
+; FMix(a, b, 0) = a - ONE-DIRECTIONAL (when t=0.0, return first arg)
+(rule ((= e (FMix a b (FConst c))) (= c 0.0))
       ((union e a)))
 
-; FMix(a, b, 1) = b - ONE-DIRECTIONAL (when t=1.0f, return second arg)
-; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216, NOT integer 1
-(rule ((= e (FMix a b (Const c))) (is-float-one32 c))
+; FMix(a, b, 1) = b - ONE-DIRECTIONAL (when t=1.0, return second arg)
+(rule ((= e (FMix a b (FConst c))) (= c 1.0))
       ((union e b)))
 
 ; RedundantFMix from C++ - matches GLSL FMix folding rules
@@ -50,69 +48,69 @@
 
 ; FClamp(x, lo, hi) < lo => false (clamped value is always >= lo)
 (rule ((= e (FOrdLt (FClamp x lo hi) lo)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (FUnordLt (FClamp x lo hi) lo)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; FClamp(x, lo, hi) > hi => false (clamped value is always <= hi)
 (rule ((= e (FOrdGt (FClamp x lo hi) hi)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (FUnordGt (FClamp x lo hi) hi)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; FClamp(x, lo, hi) >= lo => true (clamped value is always >= lo)
 (rule ((= e (FOrdGe (FClamp x lo hi) lo)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FUnordGe (FClamp x lo hi) lo)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; FClamp(x, lo, hi) <= hi => true (clamped value is always <= hi)
 (rule ((= e (FOrdLe (FClamp x lo hi) hi)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FUnordLe (FClamp x lo hi) hi)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; lo < FClamp(x, lo, hi) => x > lo (clamp is > lo iff x is > lo)
 ; This is more complex - simplified form: just compare x directly
 ; lo <= FClamp(x, lo, hi) => true
 (rule ((= e (FOrdLe lo (FClamp x lo hi))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FUnordLe lo (FClamp x lo hi))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; hi >= FClamp(x, lo, hi) => true
 (rule ((= e (FOrdGe hi (FClamp x lo hi))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 (rule ((= e (FUnordGe hi (FClamp x lo hi))))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; Similar rules for signed integer clamp
 ; SClamp(x, lo, hi) < lo => false
 (rule ((= e (SLt (SClamp x lo hi) lo)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; SClamp(x, lo, hi) > hi => false
 (rule ((= e (SGt (SClamp x lo hi) hi)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; SClamp(x, lo, hi) >= lo => true
 (rule ((= e (SGe (SClamp x lo hi) lo)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; SClamp(x, lo, hi) <= hi => true
 (rule ((= e (SLe (SClamp x lo hi) hi)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; Similar rules for unsigned integer clamp
 ; UClamp(x, lo, hi) < lo => false
 (rule ((= e (ULt (UClamp x lo hi) lo)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; UClamp(x, lo, hi) > hi => false
 (rule ((= e (UGt (UClamp x lo hi) hi)))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 ; UClamp(x, lo, hi) >= lo => true
 (rule ((= e (UGe (UClamp x lo hi) lo)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 ; UClamp(x, lo, hi) <= hi => true
 (rule ((= e (ULe (UClamp x lo hi) hi)))
-      ((union e (Const 1))))
+      ((union e (BoolConst 1))))
 
 ; =============================================================================
 ; Min/Max Simplifications
@@ -143,8 +141,7 @@
       ((union e (Sqrt x))))
 
 ; 1.0 / Sqrt(x) = InverseSqrt(x) - ONE-DIRECTIONAL (prefer InverseSqrt)
-; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
-(rule ((= e (FDiv (Const c) (Sqrt x))) (is-float-one32 c))
+(rule ((= e (FDiv (FConst c) (Sqrt x))) (= c 1.0))
       ((union e (InverseSqrt x))))
 
 ; Sqrt(x) * Sqrt(x) = x - ONE-DIRECTIONAL
@@ -172,17 +169,16 @@
       ((union e x)))
 
 ; Exp(0) = 1 - ONE-DIRECTIONAL
-; Note: f32 0.0 = bit pattern 0, f32 1.0 = bit pattern 1065353216
-(rule ((= e (Exp (Const c))) (is-float-zero32 c))
-      ((union e (Const 1065353216))))
-(rule ((= e (Exp2 (Const c))) (is-float-zero32 c))
-      ((union e (Const 1065353216))))
+(rule ((= e (Exp (FConst c))) (= c 0.0))
+      ((union e (FConst 1.0))))
+(rule ((= e (Exp2 (FConst c))) (= c 0.0))
+      ((union e (FConst 1.0))))
 
 ; Log(1) = 0 - ONE-DIRECTIONAL
-(rule ((= e (Log (Const c))) (is-float-one32 c))
-      ((union e (Const 0))))
-(rule ((= e (Log2 (Const c))) (is-float-one32 c))
-      ((union e (Const 0))))
+(rule ((= e (Log (FConst c))) (= c 1.0))
+      ((union e (FConst 0.0))))
+(rule ((= e (Log2 (FConst c))) (= c 1.0))
+      ((union e (FConst 0.0))))
 
 ; Exp(a) * Exp(b) = Exp(a + b) - ONE-DIRECTIONAL (combine exps)
 (rule ((= e (FMul (Exp a) (Exp b))))
@@ -220,25 +216,24 @@
 ; =============================================================================
 
 ; Sin(0) = 0 - ONE-DIRECTIONAL
-(rule ((= e (Sin (Const c))) (is-float-zero32 c))
-      ((union e (Const 0))))
+(rule ((= e (Sin (FConst c))) (= c 0.0))
+      ((union e (FConst 0.0))))
 
 ; Cos(0) = 1 - ONE-DIRECTIONAL
-; Note: f32 1.0 = bit pattern 1065353216
-(rule ((= e (Cos (Const c))) (is-float-zero32 c))
-      ((union e (Const 1065353216))))
+(rule ((= e (Cos (FConst c))) (= c 0.0))
+      ((union e (FConst 1.0))))
 
 ; Tan(0) = 0 - ONE-DIRECTIONAL
-(rule ((= e (Tan (Const c))) (is-float-zero32 c))
-      ((union e (Const 0))))
+(rule ((= e (Tan (FConst c))) (= c 0.0))
+      ((union e (FConst 0.0))))
 
 ; Sinh(0) = 0, Cosh(0) = 1, Tanh(0) = 0 - ONE-DIRECTIONAL
-(rule ((= e (Sinh (Const c))) (is-float-zero32 c))
-      ((union e (Const 0))))
-(rule ((= e (Cosh (Const c))) (is-float-zero32 c))
-      ((union e (Const 1065353216))))
-(rule ((= e (Tanh (Const c))) (is-float-zero32 c))
-      ((union e (Const 0))))
+(rule ((= e (Sinh (FConst c))) (= c 0.0))
+      ((union e (FConst 0.0))))
+(rule ((= e (Cosh (FConst c))) (= c 0.0))
+      ((union e (FConst 1.0))))
+(rule ((= e (Tanh (FConst c))) (= c 0.0))
+      ((union e (FConst 0.0))))
 
 ; Negation pulling - ONE-DIRECTIONAL (pull FNeg outside trig functions)
 ; Sin(-x) = -Sin(x)
@@ -315,15 +310,13 @@
       ((union e (Fma a b c))))
 
 ; Fma with zero - ONE-DIRECTIONAL (simplify, don't expand)
-; Note: f32 0.0 has bit pattern 0, which matches integer 0
-(rule ((= e (Fma a b (Const c))) (is-float-zero32 c))
+(rule ((= e (Fma a b (FConst c))) (= c 0.0))
       ((union e (FMul a b))))
 
 ; Fma with one - ONE-DIRECTIONAL (simplify, don't expand)
-; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
-(rule ((= e (Fma (Const c) b d)) (is-float-one32 c))
+(rule ((= e (Fma (FConst c) b d)) (= c 1.0))
       ((union e (FAdd b d))))
-(rule ((= e (Fma a (Const c) d)) (is-float-one32 c))
+(rule ((= e (Fma a (FConst c) d)) (= c 1.0))
       ((union e (FAdd a d))))
 
 ; =============================================================================
@@ -357,7 +350,7 @@
 ; =============================================================================
 
 ; Distance(a, a) = 0
-; Note: This would produce a float zero, not Const 0
+; Note: This would produce a float zero, not FConst 0.0
 
 ; Length of normalized vector is 1
 ; Normalize(Normalize(x)) = Normalize(x) (idempotent for non-zero) - ONE-DIRECTIONAL
@@ -368,15 +361,15 @@
 ; Cross Product
 ; =============================================================================
 
-; Cross product anti-commutativity: a × b = -(b × a) - ONE-DIRECTIONAL
+; Cross product anti-commutativity: a x b = -(b x a) - ONE-DIRECTIONAL
 ; Only apply when we can simplify the negation (avoid cycles)
 ; Recognize VecNeg(Cross(b,a)) = Cross(a,b)
 (rule ((= e (VecNeg (Cross b a))))
       ((union e (Cross a b))))
 
 ; Cross product with self is zero vector
-; (rewrite (Cross a a) (Vec3 (Const 0) (Const 0) (Const 0)))
-; Disabled: Need float zero representation
+; (rewrite (Cross a a) (Vec3 (FloatToExpr (FConst 0.0)) (FloatToExpr (FConst 0.0)) (FloatToExpr (FConst 0.0))))
+; Disabled: Need proper vector zero representation
 
 ; =============================================================================
 ; Reflect and Refract
@@ -450,7 +443,7 @@
 ; FMix edge cases
 ; FMix(x, y, 0) = x
 ; FMix(x, y, 1) = y
-; These require float constants which we represent as Const
+; These require float constants which we represent as FConst
 
 ; Step simplifications
 ; step(e, x) where x >= e returns 1, x < e returns 0
@@ -499,19 +492,17 @@
 ; =============================================================================
 
 ; Fma(0, b, c) = c - ONE-DIRECTIONAL
-; Note: f32 0.0 has bit pattern 0, which matches integer 0
-(rule ((= e (Fma (Const c1) b c)) (is-float-zero32 c1))
+(rule ((= e (Fma (FConst c1) b c)) (= c1 0.0))
       ((union e c)))
-(rule ((= e (Fma a (Const c1) c)) (is-float-zero32 c1))
+(rule ((= e (Fma a (FConst c1) c)) (= c1 0.0))
       ((union e c)))
 
 ; Fma(a, b, 0) = a * b - already covered above
 
 ; Fma(-1, b, c) = c - b - ONE-DIRECTIONAL
-; Note: f32 -1.0 has bit pattern 0xbf800000 = 3212836864
-(rule ((= e (Fma (Const c1) b c)) (is-float-neg-one32 c1))
+(rule ((= e (Fma (FConst c1) b c)) (= c1 -1.0))
       ((union e (FSub c b))))
-(rule ((= e (Fma a (Const c1) c)) (is-float-neg-one32 c1))
+(rule ((= e (Fma a (FConst c1) c)) (= c1 -1.0))
       ((union e (FSub c a))))
 
 ; =============================================================================
@@ -519,44 +510,45 @@
 ; =============================================================================
 
 ; Trig functions loop invariant (some already in rvsdg.egg, add remaining) - ONE-DIRECTIONAL
-(rule ((= e (Asin (LoopInvariant x))))
-      ((union e (LoopInvariant (Asin x)))))
-(rule ((= e (Acos (LoopInvariant x))))
-      ((union e (LoopInvariant (Acos x)))))
-(rule ((= e (Atan (LoopInvariant x))))
-      ((union e (LoopInvariant (Atan x)))))
-(rule ((= e (Atan2 (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Atan2 a b)))))
-(rule ((= e (Sinh (LoopInvariant x))))
-      ((union e (LoopInvariant (Sinh x)))))
-(rule ((= e (Cosh (LoopInvariant x))))
-      ((union e (LoopInvariant (Cosh x)))))
-(rule ((= e (Tanh (LoopInvariant x))))
-      ((union e (LoopInvariant (Tanh x)))))
-(rule ((= e (Asinh (LoopInvariant x))))
-      ((union e (LoopInvariant (Asinh x)))))
-(rule ((= e (Acosh (LoopInvariant x))))
-      ((union e (LoopInvariant (Acosh x)))))
-(rule ((= e (Atanh (LoopInvariant x))))
-      ((union e (LoopInvariant (Atanh x)))))
+(rule ((= e (Asin (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Asin x)))))
+(rule ((= e (Acos (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Acos x)))))
+(rule ((= e (Atan (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Atan x)))))
+(rule ((= e (Atan2 (LoopInvariantF a) (LoopInvariantF b))))
+      ((union e (LoopInvariantF (Atan2 a b)))))
+(rule ((= e (Sinh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Sinh x)))))
+(rule ((= e (Cosh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Cosh x)))))
+(rule ((= e (Tanh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Tanh x)))))
+(rule ((= e (Asinh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Asinh x)))))
+(rule ((= e (Acosh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Acosh x)))))
+(rule ((= e (Atanh (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Atanh x)))))
 
 ; Mixed functions loop invariant - ONE-DIRECTIONAL
-(rule ((= e (FMix (LoopInvariant a) (LoopInvariant b) (LoopInvariant t))))
-      ((union e (LoopInvariant (FMix a b t)))))
-(rule ((= e (SmoothStep (LoopInvariant e0) (LoopInvariant e1) (LoopInvariant x))))
-      ((union e (LoopInvariant (SmoothStep e0 e1 x)))))
-(rule ((= e (Step (LoopInvariant e) (LoopInvariant x))))
-      ((union e (LoopInvariant (Step e x)))))
-(rule ((= e (FClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi))))
-      ((union e (LoopInvariant (FClamp x lo hi)))))
-(rule ((= e (SClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi))))
-      ((union e (LoopInvariant (SClamp x lo hi)))))
-(rule ((= e (UClamp (LoopInvariant x) (LoopInvariant lo) (LoopInvariant hi))))
-      ((union e (LoopInvariant (UClamp x lo hi)))))
+(rule ((= e (FMix (LoopInvariantF a) (LoopInvariantF b) (LoopInvariantF t))))
+      ((union e (LoopInvariantF (FMix a b t)))))
+(rule ((= e (SmoothStep (LoopInvariantF e0) (LoopInvariantF e1) (LoopInvariantF x))))
+      ((union e (LoopInvariantF (SmoothStep e0 e1 x)))))
+(rule ((= e (Step (LoopInvariantF e) (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Step e x)))))
+(rule ((= e (FClamp (LoopInvariantF x) (LoopInvariantF lo) (LoopInvariantF hi))))
+      ((union e (LoopInvariantF (FClamp x lo hi)))))
+(rule ((= e (SClamp (LoopInvariantI x) (LoopInvariantI lo) (LoopInvariantI hi))))
+      ((union e (LoopInvariantI (SClamp x lo hi)))))
+(rule ((= e (UClamp (LoopInvariantI x) (LoopInvariantI lo) (LoopInvariantI hi))))
+      ((union e (LoopInvariantI (UClamp x lo hi)))))
 
 ; Geometry functions loop invariant - ONE-DIRECTIONAL
+; Note: Distance, Reflect, Refract, FaceForward take Expr arguments
 (rule ((= e (Distance (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (Distance a b)))))
+      ((union e (LoopInvariantF (Distance a b)))))
 (rule ((= e (Reflect (LoopInvariant i) (LoopInvariant n))))
       ((union e (LoopInvariant (Reflect i n)))))
 (rule ((= e (Refract (LoopInvariant i) (LoopInvariant n) (LoopInvariant eta))))
@@ -565,30 +557,30 @@
       ((union e (LoopInvariant (FaceForward n i nref)))))
 
 ; Fract and Modf loop invariant - ONE-DIRECTIONAL
-(rule ((= e (Fract (LoopInvariant x))))
-      ((union e (LoopInvariant (Fract x)))))
-(rule ((= e (Modf (LoopInvariant x))))
-      ((union e (LoopInvariant (Modf x)))))
-(rule ((= e (ModfStruct (LoopInvariant x))))
+(rule ((= e (Fract (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Fract x)))))
+(rule ((= e (Modf (LoopInvariantF x))))
+      ((union e (LoopInvariantF (Modf x)))))
+(rule ((= e (ModfStruct (LoopInvariantF x))))
       ((union e (LoopInvariant (ModfStruct x)))))
-(rule ((= e (FSign (LoopInvariant x))))
-      ((union e (LoopInvariant (FSign x)))))
-(rule ((= e (SAbs (LoopInvariant x))))
-      ((union e (LoopInvariant (SAbs x)))))
-(rule ((= e (Fma (LoopInvariant a) (LoopInvariant b) (LoopInvariant c))))
-      ((union e (LoopInvariant (Fma a b c)))))
+(rule ((= e (FSign (LoopInvariantF x))))
+      ((union e (LoopInvariantF (FSign x)))))
+(rule ((= e (SAbs (LoopInvariantI x))))
+      ((union e (LoopInvariantI (SAbs x)))))
+(rule ((= e (Fma (LoopInvariantF a) (LoopInvariantF b) (LoopInvariantF c))))
+      ((union e (LoopInvariantF (Fma a b c)))))
 
 ; Bit manipulation loop invariant - ONE-DIRECTIONAL
-(rule ((= e (BitCount (LoopInvariant x))))
-      ((union e (LoopInvariant (BitCount x)))))
-(rule ((= e (FindILsb (LoopInvariant x))))
-      ((union e (LoopInvariant (FindILsb x)))))
-(rule ((= e (FindSMsb (LoopInvariant x))))
-      ((union e (LoopInvariant (FindSMsb x)))))
-(rule ((= e (FindUMsb (LoopInvariant x))))
-      ((union e (LoopInvariant (FindUMsb x)))))
-(rule ((= e (BitReverse (LoopInvariant x))))
-      ((union e (LoopInvariant (BitReverse x)))))
+(rule ((= e (BitCount (LoopInvariantI x))))
+      ((union e (LoopInvariantI (BitCount x)))))
+(rule ((= e (FindILsb (LoopInvariantI x))))
+      ((union e (LoopInvariantI (FindILsb x)))))
+(rule ((= e (FindSMsb (LoopInvariantI x))))
+      ((union e (LoopInvariantI (FindSMsb x)))))
+(rule ((= e (FindUMsb (LoopInvariantI x))))
+      ((union e (LoopInvariantI (FindUMsb x)))))
+(rule ((= e (BitReverse (LoopInvariantI x))))
+      ((union e (LoopInvariantI (BitReverse x)))))
 
 ; =============================================================================
 ; Gamma Distribution for GLSL Functions
@@ -598,12 +590,12 @@
 
 ; Clamp with same bounds: select(c, clamp(a, lo, hi), clamp(b, lo, hi)) = clamp(select(c, a, b), lo, hi)
 ; ONE-DIRECTIONAL (prefer clamp outside gamma)
-(rule ((= e (Gamma c (FClamp a lo hi) (FClamp b lo hi))))
-      ((union e (FClamp (Gamma c a b) lo hi))))
-(rule ((= e (Gamma c (SClamp a lo hi) (SClamp b lo hi))))
-      ((union e (SClamp (Gamma c a b) lo hi))))
-(rule ((= e (Gamma c (UClamp a lo hi) (UClamp b lo hi))))
-      ((union e (UClamp (Gamma c a b) lo hi))))
+(rule ((= e (GammaF c (FClamp a lo hi) (FClamp b lo hi))))
+      ((union e (FClamp (GammaF c a b) lo hi))))
+(rule ((= e (GammaI c (SClamp a lo hi) (SClamp b lo hi))))
+      ((union e (SClamp (GammaI c a b) lo hi))))
+(rule ((= e (GammaI c (UClamp a lo hi) (UClamp b lo hi))))
+      ((union e (UClamp (GammaI c a b) lo hi))))
 
 ; =============================================================================
 ; More FMix Optimizations
@@ -618,8 +610,7 @@
 
 ; Recognize FMix pattern - ONE-DIRECTIONAL (prefer FMix over expanded form)
 ; a * (1-t) + b * t = FMix(a, b, t)
-; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
-(rule ((= e (FAdd (FMul a (FSub (Const c) t)) (FMul b t))) (is-float-one32 c))
+(rule ((= e (FAdd (FMul a (FSub (FConst c) t)) (FMul b t))) (= c 1.0))
       ((union e (FMix a b t))))
 
 ; =============================================================================
@@ -674,14 +665,15 @@
 ; =============================================================================
 
 ; Ldexp(x, 0) = x (multiply by 2^0 = 1) - ONE-DIRECTIONAL
+; Note: Ldexp exponent is IntExpr, so (Const 0) is correct
 (rule ((= e (Ldexp x (Const 0))))
       ((union e x)))
 
 ; Ldexp(x, 1) = x * 2 - ONE-DIRECTIONAL
-; Note: Ldexp exponent is INTEGER, so (Const 1) is correct
-; But output is float, so we use f32 2.0 bit pattern 0x40000000 = 1073741824
+; Note: Ldexp exponent is INTEGER (IntExpr), so (Const 1) is correct
+; Output is FloatExpr, so we use FConst 2.0
 (rule ((= e (Ldexp x (Const 1))))
-      ((union e (FMul x (Const 1073741824)))))
+      ((union e (FMul x (FConst 2.0)))))
 
 ; Ldexp(x, -1) = x / 2 = x * 0.5
 
@@ -693,98 +685,52 @@
 ; IsInf(constant) = false for finite constants
 
 ; IsNan on integer converted to float is always false - ONE-DIRECTIONAL
+; Note: IsNan(FloatExpr) -> BoolExpr, ConvertSToF(IntExpr) -> FloatExpr
 (rule ((= e (IsNan (ConvertSToF x))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 (rule ((= e (IsNan (ConvertUToF x))))
-      ((union e (Const 0))))
+      ((union e (BoolConst 0))))
 
 ; =============================================================================
 ; FMix Feeding Extract (C++ FMixFeedingExtract parity)
 ; =============================================================================
-; When extracting from a FMix with constant 0 or 1 interpolant, extract from endpoint
-; Note: VecExtract has a fixed index, so we enumerate concrete indices
+; NOTE: With typed sorts, FMix(FloatExpr, FloatExpr, FloatExpr) -> FloatExpr
+; is scalar-only. VecExtract(Expr, i64) -> Expr takes Expr arguments.
+; These rules are disabled because FMix returns FloatExpr, not Expr,
+; so VecExtract cannot take FMix results directly.
+; Vector-level mix operations would need a separate VecFMix constructor.
 
-; VecExtract(FMix(x, y, 0.0), i) = VecExtract(x, i)
-; Note: f32 0.0 has bit pattern 0, which matches integer 0
-(rule ((= e (VecExtract (FMix x y (Const c)) 0)) (is-float-zero32 c))
-      ((union e (VecExtract x 0))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 1)) (is-float-zero32 c))
-      ((union e (VecExtract x 1))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 2)) (is-float-zero32 c))
-      ((union e (VecExtract x 2))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 3)) (is-float-zero32 c))
-      ((union e (VecExtract x 3))))
-
-; VecExtract(FMix(x, y, 1.0), i) = VecExtract(y, i)
-; Note: f32 1.0 has bit pattern 0x3f800000 = 1065353216
-(rule ((= e (VecExtract (FMix x y (Const c)) 0)) (is-float-one32 c))
-      ((union e (VecExtract y 0))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 1)) (is-float-one32 c))
-      ((union e (VecExtract y 1))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 2)) (is-float-one32 c))
-      ((union e (VecExtract y 2))))
-(rule ((= e (VecExtract (FMix x y (Const c)) 3)) (is-float-one32 c))
-      ((union e (VecExtract y 3))))
+; VecExtract(FMix(x, y, 0.0), i) = VecExtract(x, i) -- DISABLED (sort mismatch)
+; VecExtract(FMix(x, y, 1.0), i) = VecExtract(y, i) -- DISABLED (sort mismatch)
 
 ; =============================================================================
 ; FMix Distribution (when interpolant is same)
 ; =============================================================================
 
 ; VecExtract(FMix(x, y, t), i) when all are vectors can distribute
-; This is less common but valid for component-wise operations
-
-; FMix with extraction from same index
-; VecExtract(FMix(x, y, t), i) = FMix(VecExtract(x, i), VecExtract(y, i), t)
-; when t is scalar - ONE-DIRECTIONAL
-(rule ((= e (VecExtract (FMix x y t) 0)))
-      ((union e (FMix (VecExtract x 0) (VecExtract y 0) t))))
-(rule ((= e (VecExtract (FMix x y t) 1)))
-      ((union e (FMix (VecExtract x 1) (VecExtract y 1) t))))
-(rule ((= e (VecExtract (FMix x y t) 2)))
-      ((union e (FMix (VecExtract x 2) (VecExtract y 2) t))))
-(rule ((= e (VecExtract (FMix x y t) 3)))
-      ((union e (FMix (VecExtract x 3) (VecExtract y 3) t))))
+; NOTE: DISABLED - FMix is FloatExpr (scalar), VecExtract takes Expr.
+; These rules would require a vector-level FMix constructor.
 
 ; =============================================================================
 ; SmoothStep Feeding Extract
 ; =============================================================================
 
-; Similar pattern for SmoothStep - ONE-DIRECTIONAL
-(rule ((= e (VecExtract (SmoothStep e0 e1 x) 0)))
-      ((union e (SmoothStep (VecExtract e0 0) (VecExtract e1 0) (VecExtract x 0)))))
-(rule ((= e (VecExtract (SmoothStep e0 e1 x) 1)))
-      ((union e (SmoothStep (VecExtract e0 1) (VecExtract e1 1) (VecExtract x 1)))))
-(rule ((= e (VecExtract (SmoothStep e0 e1 x) 2)))
-      ((union e (SmoothStep (VecExtract e0 2) (VecExtract e1 2) (VecExtract x 2)))))
-(rule ((= e (VecExtract (SmoothStep e0 e1 x) 3)))
-      ((union e (SmoothStep (VecExtract e0 3) (VecExtract e1 3) (VecExtract x 3)))))
+; NOTE: DISABLED - SmoothStep(FloatExpr, FloatExpr, FloatExpr) -> FloatExpr
+; is scalar-only. VecExtract cannot take SmoothStep results directly.
+; These rules would require a vector-level SmoothStep constructor.
 
 ; =============================================================================
 ; Clamp Feeding Extract
 ; =============================================================================
 
-; VecExtract(FClamp(x, lo, hi), i) = FClamp(VecExtract(x, i), VecExtract(lo, i), VecExtract(hi, i))
-; ONE-DIRECTIONAL
-(rule ((= e (VecExtract (FClamp x lo hi) 0)))
-      ((union e (FClamp (VecExtract x 0) (VecExtract lo 0) (VecExtract hi 0)))))
-(rule ((= e (VecExtract (FClamp x lo hi) 1)))
-      ((union e (FClamp (VecExtract x 1) (VecExtract lo 1) (VecExtract hi 1)))))
-(rule ((= e (VecExtract (FClamp x lo hi) 2)))
-      ((union e (FClamp (VecExtract x 2) (VecExtract lo 2) (VecExtract hi 2)))))
-(rule ((= e (VecExtract (FClamp x lo hi) 3)))
-      ((union e (FClamp (VecExtract x 3) (VecExtract lo 3) (VecExtract hi 3)))))
+; NOTE: DISABLED - FClamp(FloatExpr, FloatExpr, FloatExpr) -> FloatExpr
+; is scalar-only. VecExtract cannot take FClamp results directly.
+; These rules would require a vector-level FClamp constructor.
 
 ; =============================================================================
 ; Step Feeding Extract
 ; =============================================================================
 
-; VecExtract(Step(edge, x), i) = Step(VecExtract(edge, i), VecExtract(x, i))
-; ONE-DIRECTIONAL
-(rule ((= e (VecExtract (Step edge x) 0)))
-      ((union e (Step (VecExtract edge 0) (VecExtract x 0)))))
-(rule ((= e (VecExtract (Step edge x) 1)))
-      ((union e (Step (VecExtract edge 1) (VecExtract x 1)))))
-(rule ((= e (VecExtract (Step edge x) 2)))
-      ((union e (Step (VecExtract edge 2) (VecExtract x 2)))))
-(rule ((= e (VecExtract (Step edge x) 3)))
-      ((union e (Step (VecExtract edge 3) (VecExtract x 3)))))
+; NOTE: DISABLED - Step(FloatExpr, FloatExpr) -> FloatExpr
+; is scalar-only. VecExtract cannot take Step results directly.
+; These rules would require a vector-level Step constructor.

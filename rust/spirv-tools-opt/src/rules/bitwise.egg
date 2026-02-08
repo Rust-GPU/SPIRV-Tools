@@ -215,13 +215,13 @@
 ; Note: Most bitwise loop invariant rules are in rvsdg.egg
 ; Here we add the ones that weren't covered there
 
-; LoopInvariant rules - ONE-DIRECTIONAL (use rule/union to prevent cycles)
-(rule ((= e (RotL (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (RotL a b)))))
-(rule ((= e (RotR (LoopInvariant a) (LoopInvariant b))))
-      ((union e (LoopInvariant (RotR a b)))))
-(rule ((= e (BitReverse (LoopInvariant a))))
-      ((union e (LoopInvariant (BitReverse a)))))
+; LoopInvariantI rules - ONE-DIRECTIONAL (use rule/union to prevent cycles)
+(rule ((= e (RotL (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (RotL a b)))))
+(rule ((= e (RotR (LoopInvariantI a) (LoopInvariantI b))))
+      ((union e (LoopInvariantI (RotR a b)))))
+(rule ((= e (BitReverse (LoopInvariantI a))))
+      ((union e (LoopInvariantI (BitReverse a)))))
 
 ; =============================================================================
 ; Gamma Distribution for Bitwise Operations
@@ -230,16 +230,16 @@
 ; Here we add shift-related rules not covered there
 
 ; select(c, ~a, ~b) = ~select(c, a, b) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (BitNot a) (BitNot b))))
-      ((union e (BitNot (Gamma c a b)))))
+(rule ((= e (GammaI c (BitNot a) (BitNot b))))
+      ((union e (BitNot (GammaI c a b)))))
 
 ; select(c, x << a, x << b) = x << select(c, a, b) - ONE-DIRECTIONAL
-(rule ((= e (Gamma c (Shl x a) (Shl x b))))
-      ((union e (Shl x (Gamma c a b)))))
-(rule ((= e (Gamma c (ShrU x a) (ShrU x b))))
-      ((union e (ShrU x (Gamma c a b)))))
-(rule ((= e (Gamma c (ShrS x a) (ShrS x b))))
-      ((union e (ShrS x (Gamma c a b)))))
+(rule ((= e (GammaI c (Shl x a) (Shl x b))))
+      ((union e (Shl x (GammaI c a b)))))
+(rule ((= e (GammaI c (ShrU x a) (ShrU x b))))
+      ((union e (ShrU x (GammaI c a b)))))
+(rule ((= e (GammaI c (ShrS x a) (ShrS x b))))
+      ((union e (ShrS x (GammaI c a b)))))
 
 ; =============================================================================
 ; Additional Redundant And/Or/Xor Rules (not using primitives)

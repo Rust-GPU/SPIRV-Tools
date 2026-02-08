@@ -12,6 +12,10 @@
 ; These optimizations are modeled in the e-graph so they can interact with
 ; other optimizations globally in ONE pass.
 ;
+; NOTE: With typed sorts, Theta/BoundedTheta conditions are now BoolExpr.
+; LoopInvariant(Expr)->Expr stays Expr sort, but typed variants
+; (LoopInvariantI/F/B) exist for IntExpr/FloatExpr/BoolExpr.
+;
 ; =============================================================================
 ; Loop Peeling
 ; =============================================================================
@@ -46,12 +50,12 @@
 ; Recognize and optimize induction variables.
 
 ; Linear induction variable: i = i + stride
-; LoopVar in body (Add (LoopVar) (Const stride)) is a linear IV
+; LoopVarI in body (Add (LoopVarI) (Const stride)) is a linear IV
 
 ; Strength reduction for IV * constant in loop body
 ; If we have: for i in 0..n: use(i * 4)
 ; Convert to: for j in 0..n*4 step 4: use(j)
-; This is handled by the LoopVar strength reduction rules in loop_unroll.egg
+; This is handled by the LoopVarI strength reduction rules in loop_unroll.egg
 
 ; =============================================================================
 ; Loop Fusion (Combining Adjacent Loops)
@@ -93,18 +97,21 @@
 ; Hoist loop-invariant conditionals outside the loop.
 ;
 ; Gamma inside Theta where condition is loop-invariant:
-; Theta(cond, Gamma(inv_cond, then_body, else_body), init)
+; Theta(cond, Gamma(LoopInvariantB(inv_cond), then_body, else_body), init)
 ; becomes:
-; Gamma(inv_cond, Theta(cond, then_body, init), Theta(cond, else_body, init))
+; Gamma(LoopInvariantB(inv_cond), Theta(cond, then_body, init), Theta(cond, else_body, init))
+;
+; NOTE: Gamma condition is BoolExpr, so we use LoopInvariantB (BoolExpr->BoolExpr)
+; instead of LoopInvariant (Expr->Expr). Theta condition is BoolExpr.
 
-(rule ((= e (Theta cond (Gamma (LoopInvariant inv_cond) then_body else_body) init)))
-      ((union e (Gamma (LoopInvariant inv_cond)
+(rule ((= e (Theta cond (Gamma (LoopInvariantB inv_cond) then_body else_body) init)))
+      ((union e (Gamma (LoopInvariantB inv_cond)
                        (Theta cond then_body init)
                        (Theta cond else_body init)))))
 
 ; BoundedTheta version
-(rule ((= e (BoundedTheta n (Gamma (LoopInvariant inv_cond) then_body else_body) init)))
-      ((union e (Gamma (LoopInvariant inv_cond)
+(rule ((= e (BoundedTheta n (Gamma (LoopInvariantB inv_cond) then_body else_body) init)))
+      ((union e (Gamma (LoopInvariantB inv_cond)
                        (BoundedTheta n then_body init)
                        (BoundedTheta n else_body init)))))
 
@@ -119,4 +126,3 @@
 ; =============================================================================
 ; For GPU shaders, recognize parallelizable loop patterns.
 ; This is more about code generation than optimization.
-

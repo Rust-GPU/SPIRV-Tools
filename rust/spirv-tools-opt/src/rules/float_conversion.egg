@@ -10,6 +10,18 @@
 ;
 ; NOTE: FMA rules are in glsl.egg to avoid duplicates.
 ;
+; Typed sort signatures used in this file:
+; - ConvertFToS(FloatExpr) -> IntExpr
+; - ConvertFToU(FloatExpr) -> IntExpr
+; - ConvertSToF(IntExpr) -> FloatExpr
+; - ConvertUToF(IntExpr) -> FloatExpr
+; - FConvert(FloatExpr) -> FloatExpr
+; - SConvert(IntExpr) -> IntExpr
+; - UConvert(IntExpr) -> IntExpr
+; - Bitcast(Expr) -> Expr
+; - PackHalf2x16(Expr) -> IntExpr
+; - UnpackHalf2x16(IntExpr) -> Expr
+;
 ; =============================================================================
 ; FP16 Conversion Optimization
 ; =============================================================================
@@ -103,8 +115,7 @@
 ; =============================================================================
 ; NOTE: IsNan/IsInf optimization rules are defined in glsl.egg to avoid
 ; duplication. See glsl.egg for:
-; - IsNan(ConvertSToF(x)) = 0
-; - IsNan(ConvertUToF(x)) = 0
+; - IsNan(ConvertSToF(x)) = BoolConst 0
+; - IsNan(ConvertUToF(x)) = BoolConst 0
 ; - IsInf variants
 ; - FAbs/FNeg preservation
-

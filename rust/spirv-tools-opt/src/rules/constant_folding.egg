@@ -123,11 +123,6 @@
       ((union e (BoolConst 1))))
 (rule ((= e (LogNot (BoolConst a))) (!= a 0))
       ((union e (BoolConst 0))))
-; Also match Const for when conditions come from integer constant folding chains
-(rule ((= e (LogNot (Const 0))))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogNot (Const a))) (!= a 0))
-      ((union e (BoolConst 0))))
 
 ; Logical AND of boolean constants
 (rule ((= e (LogAnd (BoolConst 0) x)))
@@ -136,11 +131,6 @@
       ((union e (BoolConst 0))))
 (rule ((= e (LogAnd (BoolConst a) (BoolConst b))) (!= a 0) (!= b 0))
       ((union e (BoolConst 1))))
-; Also match Const for interop
-(rule ((= e (LogAnd (Const 0) x)))
-      ((union e (BoolConst 0))))
-(rule ((= e (LogAnd x (Const 0))))
-      ((union e (BoolConst 0))))
 
 ; Logical OR of boolean constants
 (rule ((= e (LogOr (BoolConst a) x)) (!= a 0))
@@ -149,11 +139,6 @@
       ((union e (BoolConst 1))))
 (rule ((= e (LogOr (BoolConst 0) (BoolConst 0))))
       ((union e (BoolConst 0))))
-; Also match Const for interop
-(rule ((= e (LogOr (Const a) x)) (!= a 0))
-      ((union e (BoolConst 1))))
-(rule ((= e (LogOr x (Const a))) (!= a 0))
-      ((union e (BoolConst 1))))
 
 ; Logical equality of boolean constants
 (rule ((= e (LogEq (BoolConst a) (BoolConst b))) (= a b))
