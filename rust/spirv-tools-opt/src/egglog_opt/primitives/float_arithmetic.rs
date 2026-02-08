@@ -128,18 +128,18 @@ pub fn is_float_neg_half32(x: i64) -> Option<()> {
 }
 
 /// Check if an f32 constant (stored as i64 bit pattern) has an exact reciprocal.
+/// A float has an exact reciprocal iff it is a power of 2 (mantissa bits all zero).
 pub fn has_exact_recip32(x: i64) -> Option<()> {
-    let f = f32::from_bits(x as u32);
+    let bits = x as u32;
+    let f = f32::from_bits(bits);
     if !f.is_finite() || f == 0.0 {
         return None;
     }
-    let recip = 1.0 / f;
-    if !recip.is_finite() {
-        return None;
-    }
-    let roundtrip = 1.0 / recip;
-    if roundtrip == f {
-        Some(())
+    // f32 mantissa is 23 bits. A power of 2 has all mantissa bits zero.
+    const F32_MANTISSA_MASK: u32 = (1u32 << 23) - 1;
+    if (bits & F32_MANTISSA_MASK) == 0 {
+        let recip = 1.0f32 / f;
+        if recip.is_finite() { Some(()) } else { None }
     } else {
         None
     }

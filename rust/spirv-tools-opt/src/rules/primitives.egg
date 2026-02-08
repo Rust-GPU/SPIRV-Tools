@@ -226,3 +226,36 @@
       ((union e (FConst (float-step edge x)))))
 (rule ((= e (SmoothStep (FConst e0) (FConst e1) (FConst x))))
       ((union e (FConst (float-smoothstep e0 e1 x)))))
+
+; FRem constant folding (uses custom float-rem primitive)
+; Rust's % on f64 = C's fmod() = SPIR-V OpFRem: x - trunc(x/y) * y
+(rule ((= e (FRem (FConst a) (FConst b))) (!= b 0.0))
+      ((union e (FConst (float-rem a b)))))
+
+; FMod constant folding (floor modulo = SPIR-V OpFMod: x - y * floor(x/y))
+(rule ((= e (FMod (FConst a) (FConst b))))
+      ((union e (FConst (float-fmod a b)))))
+
+; =============================================================================
+; Type Conversion Constant Folding
+; =============================================================================
+; These fold convert instructions between float and integer types.
+; Uses cross-type primitives (F <-> i64) registered in Rust.
+
+; ConvertFToS: float -> signed int (truncate toward zero)
+; Guards: rejects NaN, Inf, and out-of-i32-range values
+(rule ((= e (ConvertFToS (FConst a))))
+      ((union e (Const (float-to-int-signed a)))))
+
+; ConvertFToU: float -> unsigned int (truncate toward zero)
+; Guards: rejects NaN, Inf, negative, and out-of-u32-range values
+(rule ((= e (ConvertFToU (FConst a))))
+      ((union e (Const (float-to-int-unsigned a)))))
+
+; ConvertSToF: signed int -> float
+(rule ((= e (ConvertSToF (Const a))))
+      ((union e (FConst (int-to-float-signed a)))))
+
+; ConvertUToF: unsigned int -> float
+(rule ((= e (ConvertUToF (Const a))))
+      ((union e (FConst (int-to-float-unsigned a)))))

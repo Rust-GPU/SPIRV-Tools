@@ -330,9 +330,16 @@
 ; FRem Rules (C++ RedundantFMod)
 ; =============================================================================
 
-; 0.0 % x = 0.0 - ONE-DIRECTIONAL
+; 0.0 % x = 0.0 - ONE-DIRECTIONAL (C++ RedundantFMod)
 (rule ((= e (FRem (FConst c) x)) (= c 0.0))
       ((union e (FConst c))))
+
+; NOTE: FMod(0, x)→0 and FDiv(0, x)→0 rules are intentionally NOT included.
+; While C++ has RedundantFMod/FDiv that fold these, they require the
+; "IsFloatingPointFoldingAllowed" guard. Without it, FDiv(0, NaN)→0 is wrong
+; (should be NaN) and would equate 0 and NaN in the e-graph if both the
+; algebraic rule and constant folding rule fire. Constant folding handles
+; the case when both operands are constants correctly.
 
 ; =============================================================================
 ; Generic Add/Sub Cancellation for FP (C++ MergeGenericAddSubArithmetic)
@@ -527,24 +534,10 @@
 ; This is always safe for floating-point and often faster
 
 ; General rule: x / const = x * (1/const) when const has an exact reciprocal
-; Uses has-exact-recip32 primitive to check if reciprocal is exact (for f32)
-; Uses float-recip32 primitive to compute the reciprocal (for f32)
-; NOTE: These rules use Const(i64) bit-pattern primitives which are incompatible
-; with FConst(f64). The reciprocal optimization for FConst requires f64 primitives.
-; For now, we use a direct computation approach:
-; x / c = x * (1/c) for power-of-2 constants (always exact reciprocal)
-(rule ((= e (FDiv x (FConst c))) (= c 2.0))
-      ((union e (FMul x (FConst 0.5)))))
-(rule ((= e (FDiv x (FConst c))) (= c 4.0))
-      ((union e (FMul x (FConst 0.25)))))
-(rule ((= e (FDiv x (FConst c))) (= c 8.0))
-      ((union e (FMul x (FConst 0.125)))))
-(rule ((= e (FDiv x (FConst c))) (= c 0.5))
-      ((union e (FMul x (FConst 2.0)))))
-(rule ((= e (FDiv x (FConst c))) (= c 0.25))
-      ((union e (FMul x (FConst 4.0)))))
-(rule ((= e (FDiv x (FConst c))) (= c 0.125))
-      ((union e (FMul x (FConst 8.0)))))
+; Uses f64-has-exact-recip primitive to check if reciprocal is exact (power of 2)
+; Uses f64-recip primitive to compute the reciprocal
+(rule ((= e (FDiv x (FConst c))) (f64-has-exact-recip c))
+      ((union e (FMul x (FConst (f64-recip c))))))
 
 ; =============================================================================
 ; Additional Sound FP Optimizations

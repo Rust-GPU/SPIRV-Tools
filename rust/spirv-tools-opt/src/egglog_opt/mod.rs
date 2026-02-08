@@ -265,24 +265,19 @@ fn log2_pow2(x: i64) -> i64 {
     (x as u64).trailing_zeros() as i64
 }
 
-/// Check if an integer, when interpreted as a float, has an exact reciprocal.
-/// Returns Some(()) if the float constant has an exact reciprocal representation.
+/// Check if an integer, when interpreted as a f64, has an exact reciprocal.
+/// A float has an exact reciprocal iff it is a power of 2 (mantissa bits all zero).
 fn has_exact_recip(x: i64) -> Option<()> {
-    // Reinterpret the i64 as bits of a float
-    // For this to work, we need to check if the value is a power of 2 float
-    let f = f64::from_bits(x as u64);
+    let bits = x as u64;
+    let f = f64::from_bits(bits);
     if !f.is_finite() || f == 0.0 {
         return None;
     }
-    let recip = 1.0 / f;
-    if !recip.is_finite() {
-        return None;
-    }
-    // Check if the reciprocal can be represented exactly
-    // This happens for powers of 2 and some special values
-    let roundtrip = 1.0 / recip;
-    if roundtrip == f {
-        Some(())
+    // f64 mantissa is 52 bits. A power of 2 has all mantissa bits zero.
+    const F64_MANTISSA_MASK: u64 = (1u64 << 52) - 1;
+    if (bits & F64_MANTISSA_MASK) == 0 {
+        let recip = 1.0 / f;
+        if recip.is_finite() { Some(()) } else { None }
     } else {
         None
     }
@@ -424,18 +419,18 @@ fn is_float_neg_half32(x: i64) -> Option<()> {
 }
 
 /// Check if an f32 constant (stored as i64 bit pattern) has an exact reciprocal.
+/// A float has an exact reciprocal iff it is a power of 2 (mantissa bits all zero).
 fn has_exact_recip32(x: i64) -> Option<()> {
-    let f = f32::from_bits(x as u32);
+    let bits = x as u32;
+    let f = f32::from_bits(bits);
     if !f.is_finite() || f == 0.0 {
         return None;
     }
-    let recip = 1.0 / f;
-    if !recip.is_finite() {
-        return None;
-    }
-    let roundtrip = 1.0 / recip;
-    if roundtrip == f {
-        Some(())
+    // f32 mantissa is 23 bits. A power of 2 has all mantissa bits zero.
+    const F32_MANTISSA_MASK: u32 = (1u32 << 23) - 1;
+    if (bits & F32_MANTISSA_MASK) == 0 {
+        let recip = 1.0f32 / f;
+        if recip.is_finite() { Some(()) } else { None }
     } else {
         None
     }
@@ -629,6 +624,67 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "float-mix" = |x: F, y: F, a: F| -> F { F::from(OrderedFloat(float_mix_f64(x.0.0, y.0.0, a.0.0))) });
     add_primitive!(&mut egraph, "float-step" = |edge: F, x: F| -> F { F::from(OrderedFloat(if x.0.0 < edge.0.0 { 0.0 } else { 1.0 })) });
     add_primitive!(&mut egraph, "float-smoothstep" = |e0: F, e1: F, x: F| -> F { F::from(OrderedFloat(float_smoothstep_f64(e0.0.0, e1.0.0, x.0.0))) });
+    add_primitive!(&mut egraph, "float-rem" = |a: F, b: F| -?> F {
+        if b.0.0 == 0.0 { None } else { Some(F::from(OrderedFloat(a.0.0 % b.0.0))) }
+    });
+
+    // F-type reciprocal primitives (native f64 for FConst rules)
+    add_primitive!(&mut egraph, "f64-has-exact-recip" = |a: F| -?> () {
+        f64_has_exact_recip(a.0.0)
+    });
+    add_primitive!(&mut egraph, "f64-recip" = |a: F| -> F {
+        F::from(OrderedFloat(1.0 / a.0.0))
+    });
+
+    // Type conversion primitives (cross-type: F <-> i64)
+    add_primitive!(&mut egraph, "float-to-int-signed" = |a: F| -?> i64 {
+        float_to_int_signed(a.0.0)
+    });
+    add_primitive!(&mut egraph, "float-to-int-unsigned" = |a: F| -?> i64 {
+        float_to_int_unsigned(a.0.0)
+    });
+    add_primitive!(&mut egraph, "int-to-float-signed" = |a: i64| -> F {
+        F::from(OrderedFloat(int_to_float_signed(a)))
+    });
+    add_primitive!(&mut egraph, "int-to-float-unsigned" = |a: i64| -> F {
+        F::from(OrderedFloat(int_to_float_unsigned(a)))
+    });
+
+    // Unsigned 32-bit comparison primitives (cast to u32 for correct unsigned semantics)
+    add_primitive!(&mut egraph, "u32-lt" = |a: i64, b: i64| -?> () { u32_lt(a, b) });
+    add_primitive!(&mut egraph, "u32-le" = |a: i64, b: i64| -?> () { u32_le(a, b) });
+    add_primitive!(&mut egraph, "u32-gt" = |a: i64, b: i64| -?> () { u32_gt(a, b) });
+    add_primitive!(&mut egraph, "u32-ge" = |a: i64, b: i64| -?> () { u32_ge(a, b) });
+    add_primitive!(&mut egraph, "u32-min" = |a: i64, b: i64| -> i64 { u32_min(a, b) });
+    add_primitive!(&mut egraph, "u32-max" = |a: i64, b: i64| -> i64 { u32_max(a, b) });
+    add_primitive!(&mut egraph, "u32-div" = |a: i64, b: i64| -?> i64 { u32_div(a, b) });
+    add_primitive!(&mut egraph, "u32-mod" = |a: i64, b: i64| -?> i64 { u32_mod(a, b) });
+
+    // NaN-aware float comparison primitives (FOrd* returns 0 if NaN, FUnord* returns 1 if NaN)
+    add_primitive!(&mut egraph, "ford-eq" = |a: F, b: F| -> i64 { ford_eq(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "ford-ne" = |a: F, b: F| -> i64 { ford_ne(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "ford-lt" = |a: F, b: F| -> i64 { ford_lt(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "ford-le" = |a: F, b: F| -> i64 { ford_le(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "ford-gt" = |a: F, b: F| -> i64 { ford_gt(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "ford-ge" = |a: F, b: F| -> i64 { ford_ge(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-eq" = |a: F, b: F| -> i64 { funord_eq(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-ne" = |a: F, b: F| -> i64 { funord_ne(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-lt" = |a: F, b: F| -> i64 { funord_lt(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-le" = |a: F, b: F| -> i64 { funord_le(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-gt" = |a: F, b: F| -> i64 { funord_gt(a.0.0, b.0.0) });
+    add_primitive!(&mut egraph, "funord-ge" = |a: F, b: F| -> i64 { funord_ge(a.0.0, b.0.0) });
+
+    // SMod with SPIR-V sign-of-divisor semantics
+    add_primitive!(&mut egraph, "smod" = |a: i64, b: i64| -> i64 { smod(a, b) });
+
+    // FMod (floor modulo) primitive for OpFMod constant folding
+    add_primitive!(&mut egraph, "float-fmod" = |a: F, b: F| -?> F {
+        float_fmod(a.0.0, b.0.0).map(|r| F::from(OrderedFloat(r)))
+    });
+
+    // f64 bit pattern predicates for dot product rules
+    add_primitive!(&mut egraph, "is-float-one64" = |x: i64| -?> () { is_float_one64(x) });
+    add_primitive!(&mut egraph, "is-float-zero64" = |x: i64| -?> () { is_float_zero64(x) });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
     egraph

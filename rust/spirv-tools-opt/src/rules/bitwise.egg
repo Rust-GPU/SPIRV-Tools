@@ -380,3 +380,39 @@
       ((union e (BitOr m a))))
 (rule ((= e (BitOr (BitXor a m) m)))
       ((union e (BitOr m a))))
+
+; =============================================================================
+; Bitwise Same-Op Constant Reassociation (C++ ReassociateCommutativeBitwise)
+; =============================================================================
+; A op (B op C) → (A op C) op B when A and C are constants.
+; All 4 permutations for each op (no built-in commutativity). - ONE-DIRECTIONAL
+
+; BitAnd: merge constants
+(rule ((= e (BitAnd (Const a) (BitAnd x (Const b)))))
+      ((union e (BitAnd (Const (& a b)) x))))
+(rule ((= e (BitAnd (Const a) (BitAnd (Const b) x))))
+      ((union e (BitAnd (Const (& a b)) x))))
+(rule ((= e (BitAnd (BitAnd x (Const a)) (Const b))))
+      ((union e (BitAnd (Const (& a b)) x))))
+(rule ((= e (BitAnd (BitAnd (Const a) x) (Const b))))
+      ((union e (BitAnd (Const (& a b)) x))))
+
+; BitOr: merge constants
+(rule ((= e (BitOr (Const a) (BitOr x (Const b)))))
+      ((union e (BitOr (Const (| a b)) x))))
+(rule ((= e (BitOr (Const a) (BitOr (Const b) x))))
+      ((union e (BitOr (Const (| a b)) x))))
+(rule ((= e (BitOr (BitOr x (Const a)) (Const b))))
+      ((union e (BitOr (Const (| a b)) x))))
+(rule ((= e (BitOr (BitOr (Const a) x) (Const b))))
+      ((union e (BitOr (Const (| a b)) x))))
+
+; BitXor: merge constants
+(rule ((= e (BitXor (Const a) (BitXor x (Const b)))))
+      ((union e (BitXor (Const (^ a b)) x))))
+(rule ((= e (BitXor (Const a) (BitXor (Const b) x))))
+      ((union e (BitXor (Const (^ a b)) x))))
+(rule ((= e (BitXor (BitXor x (Const a)) (Const b))))
+      ((union e (BitXor (Const (^ a b)) x))))
+(rule ((= e (BitXor (BitXor (Const a) x) (Const b))))
+      ((union e (BitXor (Const (^ a b)) x))))

@@ -139,24 +139,20 @@ pub fn log2_pow2(x: i64) -> i64 {
     (x as u64).trailing_zeros() as i64
 }
 
-/// Check if an integer, when interpreted as a float, has an exact reciprocal.
-/// Returns Some(()) if the float constant has an exact reciprocal representation.
+/// Check if an integer, when interpreted as a f64, has an exact reciprocal.
+/// A float has an exact reciprocal iff it is a power of 2 (mantissa bits all zero).
 pub fn has_exact_recip(x: i64) -> Option<()> {
-    // Reinterpret the i64 as bits of a float
-    // For this to work, we need to check if the value is a power of 2 float
-    let f = f64::from_bits(x as u64);
+    let bits = x as u64;
+    let f = f64::from_bits(bits);
     if !f.is_finite() || f == 0.0 {
         return None;
     }
-    let recip = 1.0 / f;
-    if !recip.is_finite() {
-        return None;
-    }
-    // Check if the reciprocal can be represented exactly
-    // This happens for powers of 2 and some special values
-    let roundtrip = 1.0 / recip;
-    if roundtrip == f {
-        Some(())
+    // f64 mantissa is 52 bits. A power of 2 has all mantissa bits zero.
+    const F64_MANTISSA_MASK: u64 = (1u64 << 52) - 1;
+    if (bits & F64_MANTISSA_MASK) == 0 {
+        // Also check the reciprocal is finite (excludes extreme exponents)
+        let recip = 1.0 / f;
+        if recip.is_finite() { Some(()) } else { None }
     } else {
         None
     }
@@ -167,4 +163,182 @@ pub fn float_recip(x: i64) -> i64 {
     let f = f64::from_bits(x as u64);
     let recip = 1.0 / f;
     recip.to_bits() as i64
+}
+
+/// Check if a native f64 has an exact reciprocal (power of 2 check).
+/// Used for F-type primitives operating on FConst values.
+pub fn f64_has_exact_recip(f: f64) -> Option<()> {
+    if !f.is_finite() || f == 0.0 {
+        return None;
+    }
+    const F64_MANTISSA_MASK: u64 = (1u64 << 52) - 1;
+    let bits = f.to_bits();
+    if (bits & F64_MANTISSA_MASK) == 0 {
+        let recip = 1.0 / f;
+        if recip.is_finite() { Some(()) } else { None }
+    } else {
+        None
+    }
+}
+
+// =============================================================================
+// Unsigned 32-bit comparison/arithmetic primitives
+// =============================================================================
+// Constants are stored as sign-extended i64, so 0xFFFFFFFF becomes -1.
+// These primitives cast to u32 for correct unsigned semantics.
+
+pub fn u32_lt(a: i64, b: i64) -> Option<()> {
+    if (a as u32) < (b as u32) { Some(()) } else { None }
+}
+
+pub fn u32_le(a: i64, b: i64) -> Option<()> {
+    if (a as u32) <= (b as u32) { Some(()) } else { None }
+}
+
+pub fn u32_gt(a: i64, b: i64) -> Option<()> {
+    if (a as u32) > (b as u32) { Some(()) } else { None }
+}
+
+pub fn u32_ge(a: i64, b: i64) -> Option<()> {
+    if (a as u32) >= (b as u32) { Some(()) } else { None }
+}
+
+pub fn u32_min(a: i64, b: i64) -> i64 {
+    (a as u32).min(b as u32) as i32 as i64
+}
+
+pub fn u32_max(a: i64, b: i64) -> i64 {
+    (a as u32).max(b as u32) as i32 as i64
+}
+
+pub fn u32_div(a: i64, b: i64) -> Option<i64> {
+    let b = b as u32;
+    if b == 0 { None } else { Some((a as u32 / b) as i32 as i64) }
+}
+
+pub fn u32_mod(a: i64, b: i64) -> Option<i64> {
+    let b = b as u32;
+    if b == 0 { None } else { Some((a as u32 % b) as i32 as i64) }
+}
+
+// =============================================================================
+// Type conversion primitives (cross-type: F <-> i64)
+// =============================================================================
+
+/// Convert f64 to signed i32, sign-extended to i64. Returns None for NaN/Inf/out-of-range.
+pub fn float_to_int_signed(f: f64) -> Option<i64> {
+    if !f.is_finite() { return None; }
+    let truncated = f as i64; // Rust saturates, so check range
+    if truncated < i32::MIN as i64 || truncated > i32::MAX as i64 { return None; }
+    Some(truncated)
+}
+
+/// Convert f64 to unsigned u32, sign-extended to i64. Returns None for NaN/Inf/negative/out-of-range.
+pub fn float_to_int_unsigned(f: f64) -> Option<i64> {
+    if !f.is_finite() || f < 0.0 { return None; }
+    let truncated = f as u64; // Rust saturates
+    if truncated > u32::MAX as u64 { return None; }
+    // Sign-extend u32 to i64 (matching how constants are stored)
+    Some(truncated as u32 as i32 as i64)
+}
+
+/// Convert signed i32 (stored as sign-extended i64) to f64.
+pub fn int_to_float_signed(x: i64) -> f64 {
+    (x as i32) as f64
+}
+
+/// Convert unsigned u32 (stored as sign-extended i64) to f64.
+pub fn int_to_float_unsigned(x: i64) -> f64 {
+    (x as u32) as f64
+}
+
+// =============================================================================
+// NaN-aware float comparison primitives
+// =============================================================================
+// IEEE 754: FOrd* returns false if either operand is NaN.
+// IEEE 754: FUnord* returns true if either operand is NaN.
+// egglog uses OrderedFloat where NaN==NaN is true, so we need custom primitives.
+
+pub fn ford_eq(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a == b { 1 } else { 0 } }
+}
+pub fn ford_ne(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a != b { 1 } else { 0 } }
+}
+pub fn ford_lt(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a < b { 1 } else { 0 } }
+}
+pub fn ford_le(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a <= b { 1 } else { 0 } }
+}
+pub fn ford_gt(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a > b { 1 } else { 0 } }
+}
+pub fn ford_ge(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 0 } else { if a >= b { 1 } else { 0 } }
+}
+pub fn funord_eq(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a == b { 1 } else { 0 } }
+}
+pub fn funord_ne(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a != b { 1 } else { 0 } }
+}
+pub fn funord_lt(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a < b { 1 } else { 0 } }
+}
+pub fn funord_le(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a <= b { 1 } else { 0 } }
+}
+pub fn funord_gt(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a > b { 1 } else { 0 } }
+}
+pub fn funord_ge(a: f64, b: f64) -> i64 {
+    if a.is_nan() || b.is_nan() { 1 } else { if a >= b { 1 } else { 0 } }
+}
+
+// =============================================================================
+// SMod with SPIR-V sign-of-divisor semantics
+// =============================================================================
+
+/// SPIR-V SMod: result has the same sign as the divisor.
+/// result = a - b * floor(a/b), or equivalently: r = a%b; if sign differs, r += b.
+/// Returns 0 for division by zero (matching C++ parity).
+pub fn smod(a: i64, b: i64) -> i64 {
+    if b == 0 { return 0; }
+    let (a32, b32) = (a as i32, b as i32);
+    // Use wrapping_rem to avoid panic on i32::MIN % -1
+    let mut result = a32.wrapping_rem(b32);
+    if result != 0 && (b32 < 0) != (result < 0) {
+        result = result.wrapping_add(b32);
+    }
+    result as i64
+}
+
+// =============================================================================
+// FMod (floor modulo) primitive
+// =============================================================================
+
+/// SPIR-V OpFMod: result = x - y * floor(x/y).
+/// Different from Rust's % (which is truncated remainder = OpFRem).
+pub fn float_fmod(a: f64, b: f64) -> Option<f64> {
+    if b == 0.0 || a.is_nan() || b.is_nan() || a.is_infinite() {
+        return None;
+    }
+    Some(a - b * (a / b).floor())
+}
+
+// =============================================================================
+// f64 float bit pattern predicates
+// =============================================================================
+
+/// Check if an i64, interpreted as f64 bit pattern, equals 1.0.
+pub fn is_float_one64(x: i64) -> Option<()> {
+    let f = f64::from_bits(x as u64);
+    if f == 1.0 { Some(()) } else { None }
+}
+
+/// Check if an i64, interpreted as f64 bit pattern, equals +0.0.
+pub fn is_float_zero64(x: i64) -> Option<()> {
+    let f = f64::from_bits(x as u64);
+    if f == 0.0 { Some(()) } else { None }
 }

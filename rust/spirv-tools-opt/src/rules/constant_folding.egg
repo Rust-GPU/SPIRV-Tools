@@ -30,6 +30,22 @@
       ((union e (Const (>> a b)))))
 
 ; =============================================================================
+; Float Arithmetic Constant Folding (C++ const_folding_rules.cpp parity)
+; =============================================================================
+; FConst uses egglog's native f64 sort, so we can use native f64 arithmetic.
+
+(rule ((= e (FAdd (FConst a) (FConst b))))
+      ((union e (FConst (+ a b)))))
+(rule ((= e (FSub (FConst a) (FConst b))))
+      ((union e (FConst (- a b)))))
+(rule ((= e (FMul (FConst a) (FConst b))))
+      ((union e (FConst (* a b)))))
+(rule ((= e (FDiv (FConst a) (FConst b))) (!= b 0.0))
+      ((union e (FConst (/ a b)))))
+(rule ((= e (FNeg (FConst a))))
+      ((union e (FConst (- 0.0 a)))))
+
+; =============================================================================
 ; Comparison Constant Folding
 ; =============================================================================
 
@@ -61,24 +77,62 @@
 (rule ((= e (SGe (Const a) (Const b))) (< a b))
       ((union e (BoolConst 0))))
 
-; Unsigned comparisons (treat as unsigned - need primitives for proper handling)
-; For now, use signed comparisons (works for positive values)
-(rule ((= e (ULt (Const a) (Const b))) (< a b))
+; Unsigned comparisons (using u32 primitives for correct unsigned semantics)
+; Constants are sign-extended i64, so 0xFFFFFFFF is stored as -1.
+; These primitives cast to u32 before comparing.
+(rule ((= e (ULt (Const a) (Const b))) (u32-lt a b))
       ((union e (BoolConst 1))))
-(rule ((= e (ULt (Const a) (Const b))) (>= a b))
+(rule ((= e (ULt (Const a) (Const b))) (u32-ge a b))
       ((union e (BoolConst 0))))
-(rule ((= e (ULe (Const a) (Const b))) (<= a b))
+(rule ((= e (ULe (Const a) (Const b))) (u32-le a b))
       ((union e (BoolConst 1))))
-(rule ((= e (ULe (Const a) (Const b))) (> a b))
+(rule ((= e (ULe (Const a) (Const b))) (u32-gt a b))
       ((union e (BoolConst 0))))
-(rule ((= e (UGt (Const a) (Const b))) (> a b))
+(rule ((= e (UGt (Const a) (Const b))) (u32-gt a b))
       ((union e (BoolConst 1))))
-(rule ((= e (UGt (Const a) (Const b))) (<= a b))
+(rule ((= e (UGt (Const a) (Const b))) (u32-le a b))
       ((union e (BoolConst 0))))
-(rule ((= e (UGe (Const a) (Const b))) (>= a b))
+(rule ((= e (UGe (Const a) (Const b))) (u32-ge a b))
       ((union e (BoolConst 1))))
-(rule ((= e (UGe (Const a) (Const b))) (< a b))
+(rule ((= e (UGe (Const a) (Const b))) (u32-lt a b))
       ((union e (BoolConst 0))))
+
+; =============================================================================
+; Float Ordered Comparison Constant Folding (C++ const_folding_rules.cpp parity)
+; =============================================================================
+; IEEE 754: ordered comparisons return false if either operand is NaN.
+; Uses custom primitives because egglog's OrderedFloat treats NaN==NaN as true.
+
+(rule ((= e (FOrdEq (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-eq a b)))))
+(rule ((= e (FOrdNe (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-ne a b)))))
+(rule ((= e (FOrdLt (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-lt a b)))))
+(rule ((= e (FOrdLe (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-le a b)))))
+(rule ((= e (FOrdGt (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-gt a b)))))
+(rule ((= e (FOrdGe (FConst a) (FConst b))))
+      ((union e (BoolConst (ford-ge a b)))))
+
+; =============================================================================
+; Float Unordered Comparison Constant Folding
+; =============================================================================
+; Unordered comparisons return true if either operand is NaN.
+
+(rule ((= e (FUnordEq (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-eq a b)))))
+(rule ((= e (FUnordNe (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-ne a b)))))
+(rule ((= e (FUnordLt (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-lt a b)))))
+(rule ((= e (FUnordLe (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-le a b)))))
+(rule ((= e (FUnordGt (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-gt a b)))))
+(rule ((= e (FUnordGe (FConst a) (FConst b))))
+      ((union e (BoolConst (funord-ge a b)))))
 
 ; =============================================================================
 ; Rotation Constant Folding
@@ -104,15 +158,11 @@
 (rule ((= e (SMax (Const a) (Const b))) (< a b))
       ((union e (Const b))))
 
-; Unsigned min/max (using signed for positive values)
-(rule ((= e (UMin (Const a) (Const b))) (<= a b))
-      ((union e (Const a))))
-(rule ((= e (UMin (Const a) (Const b))) (> a b))
-      ((union e (Const b))))
-(rule ((= e (UMax (Const a) (Const b))) (>= a b))
-      ((union e (Const a))))
-(rule ((= e (UMax (Const a) (Const b))) (< a b))
-      ((union e (Const b))))
+; Unsigned min/max (using u32 primitives for correct unsigned semantics)
+(rule ((= e (UMin (Const a) (Const b))))
+      ((union e (Const (u32-min a b)))))
+(rule ((= e (UMax (Const a) (Const b))))
+      ((union e (Const (u32-max a b)))))
 
 ; =============================================================================
 ; Logical Operation Constant Folding
@@ -157,23 +207,34 @@
 ; Signed division of constants (avoiding division by zero)
 (rule ((= e (SDiv (Const a) (Const b))) (!= b 0))
       ((union e (Const (/ a b)))))
+; SDiv by zero returns 0 (C++ parity)
+(rule ((= e (SDiv (Const a) (Const 0))))
+      ((union e (Const 0))))
 
-; Unsigned division - use signed division since egglog uses i64
-; This works correctly for values that fit in the positive range
-(rule ((= e (UDiv (Const a) (Const b))) (!= b 0) (>= a 0) (>= b 0))
-      ((union e (Const (/ a b)))))
+; Unsigned division (using u32 primitive for correct unsigned semantics)
+; u32-div returns None on zero divisor, so add explicit zero rule
+(rule ((= e (UDiv (Const a) (Const b))))
+      ((union e (Const (u32-div a b)))))
+(rule ((= e (UDiv (Const a) (Const 0))))
+      ((union e (Const 0))))
 
 ; Signed remainder of constants
 (rule ((= e (SRem (Const a) (Const b))) (!= b 0))
       ((union e (Const (% a b)))))
+; SRem by zero returns 0 (C++ parity)
+(rule ((= e (SRem (Const a) (Const 0))))
+      ((union e (Const 0))))
 
-; Unsigned modulo (for positive values)
-(rule ((= e (UMod (Const a) (Const b))) (!= b 0) (>= a 0) (>= b 0))
-      ((union e (Const (% a b)))))
+; Unsigned modulo (using u32 primitive for correct unsigned semantics)
+; u32-mod returns None on zero divisor, so add explicit zero rule
+(rule ((= e (UMod (Const a) (Const b))))
+      ((union e (Const (u32-mod a b)))))
+(rule ((= e (UMod (Const a) (Const 0))))
+      ((union e (Const 0))))
 
-; Signed modulo
-(rule ((= e (SMod (Const a) (Const b))) (!= b 0))
-      ((union e (Const (% a b)))))
+; Signed modulo (SPIR-V SMod: result sign matches divisor)
+(rule ((= e (SMod (Const a) (Const b))))
+      ((union e (Const (smod a b)))))
 
 ; =============================================================================
 ; SAbs (Signed Absolute Value) Constant Folding
@@ -216,14 +277,14 @@
 (rule ((= e (SClamp (Const x) (Const lo) (Const hi))) (>= x lo) (<= x hi))
       ((union e (Const x))))
 
-; UClamp follows same pattern for unsigned (positive values)
-(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (<= x lo) (>= lo 0) (>= x 0))
+; UClamp follows same pattern for unsigned (using u32 primitives)
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (u32-le x lo))
       ((union e (Const lo))))
 
-(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (>= x hi) (>= hi 0))
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (u32-ge x hi))
       ((union e (Const hi))))
 
-(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (>= x lo) (<= x hi) (>= x 0))
+(rule ((= e (UClamp (Const x) (Const lo) (Const hi))) (u32-ge x lo) (u32-le x hi))
       ((union e (Const x))))
 
 ; =============================================================================

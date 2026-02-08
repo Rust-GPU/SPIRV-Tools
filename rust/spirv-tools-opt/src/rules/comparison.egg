@@ -126,7 +126,8 @@
 
 ; ULt: x < UINT32_MAX is always true unless x == UINT32_MAX
 ; UINT32_MAX < x is always false - ONE-DIRECTIONAL
-(rule ((= e (ULt (Const 4294967295) x)))
+; Note: UINT32_MAX (0xFFFFFFFF) is stored as Const -1 due to sign extension
+(rule ((= e (ULt (Const -1) x)))
       ((union e (BoolConst 0))))
 ; x < 0 for unsigned is always false - ONE-DIRECTIONAL
 (rule ((= e (ULt x (Const 0))))
@@ -143,7 +144,8 @@
 (rule ((= e (UGt (Const 0) x)))
       ((union e (BoolConst 0))))
 ; x > UINT32_MAX is always false - ONE-DIRECTIONAL
-(rule ((= e (UGt x (Const 4294967295))))
+; Note: UINT32_MAX (0xFFFFFFFF) is stored as Const -1 due to sign extension
+(rule ((= e (UGt x (Const -1))))
       ((union e (BoolConst 0))))
 
 ; SGt: INT32_MIN > x is always false - ONE-DIRECTIONAL
@@ -157,7 +159,8 @@
 (rule ((= e (ULe (Const 0) x)))
       ((union e (BoolConst 1))))
 ; x <= UINT32_MAX is always true - ONE-DIRECTIONAL
-(rule ((= e (ULe x (Const 4294967295))))
+; Note: UINT32_MAX (0xFFFFFFFF) is stored as Const -1 due to sign extension
+(rule ((= e (ULe x (Const -1))))
       ((union e (BoolConst 1))))
 
 ; SLe: INT32_MIN <= x is always true - ONE-DIRECTIONAL
@@ -171,7 +174,8 @@
 (rule ((= e (UGe x (Const 0))))
       ((union e (BoolConst 1))))
 ; UINT32_MAX >= x is always true - ONE-DIRECTIONAL
-(rule ((= e (UGe (Const 4294967295) x)))
+; Note: UINT32_MAX (0xFFFFFFFF) is stored as Const -1 due to sign extension
+(rule ((= e (UGe (Const -1) x)))
       ((union e (BoolConst 1))))
 
 ; SGe: x >= INT32_MIN is always true - ONE-DIRECTIONAL

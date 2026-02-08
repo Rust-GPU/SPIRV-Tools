@@ -176,6 +176,51 @@
 (rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero32 c1) (is-float-zero32 c2) (is-float-zero32 c3) (is-float-one32 c4))
       ((union e (ExprToFloat (VecExtract v 3)))))
 
+; F64 FLOAT vectors - Dot with unit vector (one f64 1.0, rest f64 0.0) = VecExtract
+; Uses is-float-one64/is-float-zero64 guards for proper f64 matching
+
+; Vec2 f64 unit vectors
+(rule ((= e (Dot (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))) v)) (is-float-one64 c1) (is-float-zero64 c2))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))) v)) (is-float-zero64 c1) (is-float-one64 c2))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))))) (is-float-one64 c1) (is-float-zero64 c2))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec2 (IntToExpr (Const c1)) (IntToExpr (Const c2))))) (is-float-zero64 c1) (is-float-one64 c2))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+
+; Vec3 f64 unit vectors
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-one64 c1) (is-float-zero64 c2) (is-float-zero64 c3))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-zero64 c1) (is-float-one64 c2) (is-float-zero64 c3))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))) v)) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-one64 c3))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-one64 c1) (is-float-zero64 c2) (is-float-zero64 c3))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-zero64 c1) (is-float-one64 c2) (is-float-zero64 c3))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec3 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3))))) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-one64 c3))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+
+; Vec4 f64 unit vectors
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-one64 c1) (is-float-zero64 c2) (is-float-zero64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero64 c1) (is-float-one64 c2) (is-float-zero64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-one64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))) v)) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-zero64 c3) (is-float-one64 c4))
+      ((union e (ExprToFloat (VecExtract v 3)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-one64 c1) (is-float-zero64 c2) (is-float-zero64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 0)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero64 c1) (is-float-one64 c2) (is-float-zero64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 1)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-one64 c3) (is-float-zero64 c4))
+      ((union e (ExprToFloat (VecExtract v 2)))))
+(rule ((= e (Dot v (Vec4 (IntToExpr (Const c1)) (IntToExpr (Const c2)) (IntToExpr (Const c3)) (IntToExpr (Const c4))))) (is-float-zero64 c1) (is-float-zero64 c2) (is-float-zero64 c3) (is-float-one64 c4))
+      ((union e (ExprToFloat (VecExtract v 3)))))
+
 ; Dot is commutative - REMOVED to prevent e-graph explosion
 ; These bidirectional rules cause cycles: (Dot a b) <-> (Dot b a) <-> ...
 
