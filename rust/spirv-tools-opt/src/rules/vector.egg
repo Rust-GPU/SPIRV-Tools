@@ -627,6 +627,63 @@
 (rule ((= e (Length (LoopInvariant a)))) ((union e (LoopInvariantF (Length a)))))
 
 ; =============================================================================
+; VecSize Seeding — needed for ShuffleExtract resolution
+; =============================================================================
+
+(rule ((= e (Vec2 _ _))) ((set (VecSize e) 2)))
+(rule ((= e (Vec3 _ _ _))) ((set (VecSize e) 3)))
+(rule ((= e (Vec4 _ _ _ _))) ((set (VecSize e) 4)))
+(rule ((= e (VecBroadcast2 _))) ((set (VecSize e) 2)))
+(rule ((= e (VecBroadcast3 _))) ((set (VecSize e) 3)))
+(rule ((= e (VecBroadcast4 _))) ((set (VecSize e) 4)))
+(rule ((= e (VecShuffle2 _ _ _ _))) ((set (VecSize e) 2)))
+(rule ((= e (VecShuffle3 _ _ _ _ _))) ((set (VecSize e) 3)))
+(rule ((= e (VecShuffle4 _ _ _ _ _ _))) ((set (VecSize e) 4)))
+
+; Propagate VecSize through common vector ops that preserve dimensionality
+(rule ((= e (VecAdd a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecSub a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecMul a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecNeg a)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecFAdd a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecFSub a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecFMul a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecFNeg a)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecTimesScalar a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+
+; =============================================================================
+; ShuffleExtract Resolution
+; =============================================================================
+; ShuffleExtract(v1, v2, i) resolves to the correct VecExtract based on VecSize(v1)
+
+; Index from first source (i < VecSize(v1))
+(rule ((= e (ShuffleExtract v1 v2 i)) (= sz (VecSize v1)) (< i sz) (>= i 0))
+      ((union e (VecExtract v1 i))))
+
+; Index from second source (i >= VecSize(v1))
+(rule ((= e (ShuffleExtract v1 v2 i)) (= sz (VecSize v1)) (>= i sz) (< i 8))
+      ((union e (VecExtract v2 (- i sz)))))
+
+; Undef index (0xFFFFFFFF stored as i64 = 4294967295)
+(rule ((= e (ShuffleExtract v1 v2 4294967295)))
+      ((union e (Undef))))
+
+; =============================================================================
+; VecShuffle Decomposition — enables constant fold, chain collapse, extract-from-shuffle
+; =============================================================================
+; Unconditionally decompose VecShuffle into Vec of ShuffleExtracts.
+; The e-graph keeps both representations; the extractor picks the cheapest.
+
+(rule ((= e (VecShuffle4 v1 v2 i0 i1 i2 i3)))
+      ((union e (Vec4 (ShuffleExtract v1 v2 i0) (ShuffleExtract v1 v2 i1) (ShuffleExtract v1 v2 i2) (ShuffleExtract v1 v2 i3)))))
+
+(rule ((= e (VecShuffle3 v1 v2 i0 i1 i2)))
+      ((union e (Vec3 (ShuffleExtract v1 v2 i0) (ShuffleExtract v1 v2 i1) (ShuffleExtract v1 v2 i2)))))
+
+(rule ((= e (VecShuffle2 v1 v2 i0 i1)))
+      ((union e (Vec2 (ShuffleExtract v1 v2 i0) (ShuffleExtract v1 v2 i1)))))
+
+; =============================================================================
 ; Gamma Distribution for Vector Operations - ONE-DIRECTIONAL
 ; =============================================================================
 

@@ -368,6 +368,13 @@
 (constructor VecBroadcast3 (Expr) Expr)
 (constructor VecBroadcast4 (Expr) Expr)
 
+; ShuffleExtract — helper to extract element from either source of a shuffle
+; ShuffleExtract(v1, v2, index) picks from v1 if index < VecSize(v1), else v2
+(constructor ShuffleExtract (Expr Expr i64) Expr)
+
+; VecSize — tracks the number of components in a vector expression
+(function VecSize (Expr) i64 :merge (min old new))
+
 ; Vector arithmetic (component-wise)
 (constructor VecAdd (Expr Expr) Expr)
 (constructor VecSub (Expr Expr) Expr)
@@ -1067,6 +1074,7 @@
 (rule ((Live e) (= e (VecBroadcast2 a))) ((Live a)))
 (rule ((Live e) (= e (VecBroadcast3 a))) ((Live a)))
 (rule ((Live e) (= e (VecBroadcast4 a))) ((Live a)))
+(rule ((Live e) (= e (ShuffleExtract a b _))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecAdd a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecSub a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecMul a b))) ((Live a) (Live b)))
