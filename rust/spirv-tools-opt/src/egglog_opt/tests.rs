@@ -7606,3 +7606,475 @@ fn test_scalar_add_rejects_expr_operands() {
         "Add must reject Expr operands — it requires IntExpr"
     );
 }
+
+// =============================================================================
+// Sort Validation Tests: Integer Comparison on Bool Operands
+// =============================================================================
+// Some SPIR-V compilers emit OpIEqual/OpINotEqual on boolean operands instead of
+// OpLogicalEqual/OpLogicalNotEqual. The parser redirects these to LogEq/LogNe.
+// These tests verify the egraph sort constraints that make the redirect necessary.
+
+#[test]
+fn test_eq_rejects_boolexpr_operands() {
+    // Eq takes IntExpr operands. BoolConst (BoolExpr) must be rejected.
+    // This is why context.rs redirects IEqual on bools to LogEq.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (BoolConst 0))
+        (let b (BoolConst 1))
+        (let result (Eq a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "Eq must reject BoolExpr operands — it requires IntExpr"
+    );
+}
+
+#[test]
+fn test_ne_rejects_boolexpr_operands() {
+    // Ne takes IntExpr operands. BoolConst (BoolExpr) must be rejected.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (BoolConst 0))
+        (let b (BoolConst 1))
+        (let result (Ne a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "Ne must reject BoolExpr operands — it requires IntExpr"
+    );
+}
+
+#[test]
+fn test_logeq_accepts_boolexpr_operands() {
+    // LogEq takes BoolExpr operands — the redirect target for IEqual on bools.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (BoolConst 0))
+        (let b (BoolConst 1))
+        (let result (LogEq a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 0)))");
+    assert!(
+        check.is_ok(),
+        "LogEq(false, true) should fold to BoolConst(0)"
+    );
+}
+
+#[test]
+fn test_logne_accepts_boolexpr_operands() {
+    // LogNe takes BoolExpr operands — the redirect target for INotEqual on bools.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (BoolConst 0))
+        (let b (BoolConst 1))
+        (let result (LogNe a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 1)))");
+    assert!(
+        check.is_ok(),
+        "LogNe(false, true) should fold to BoolConst(1)"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Conversion Operations
+// =============================================================================
+// Conversion ops cross sort boundaries: ConvertFToS/ConvertFToU take FloatExpr
+// and produce IntExpr. ConvertSToF/ConvertUToF take IntExpr and produce FloatExpr.
+
+#[test]
+fn test_convert_ftos_takes_floatexpr() {
+    // ConvertFToS takes FloatExpr, produces IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let f (FSym "fval"))
+        (let result (ConvertFToS f))
+    "#,
+        )
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (ConvertFToS f)))");
+    assert!(check.is_ok(), "ConvertFToS should accept FloatExpr operand");
+}
+
+#[test]
+fn test_convert_ftou_takes_floatexpr() {
+    // ConvertFToU takes FloatExpr, produces IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let f (FSym "fval"))
+        (let result (ConvertFToU f))
+    "#,
+        )
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (ConvertFToU f)))");
+    assert!(check.is_ok(), "ConvertFToU should accept FloatExpr operand");
+}
+
+#[test]
+fn test_convert_stof_takes_intexpr() {
+    // ConvertSToF takes IntExpr, produces FloatExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let i (ISym "ival"))
+        (let result (ConvertSToF i))
+    "#,
+        )
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (ConvertSToF i)))");
+    assert!(check.is_ok(), "ConvertSToF should accept IntExpr operand");
+}
+
+#[test]
+fn test_convert_utof_takes_intexpr() {
+    // ConvertUToF takes IntExpr, produces FloatExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let i (ISym "ival"))
+        (let result (ConvertUToF i))
+    "#,
+        )
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (ConvertUToF i)))");
+    assert!(check.is_ok(), "ConvertUToF should accept IntExpr operand");
+}
+
+#[test]
+fn test_convert_ftos_rejects_intexpr() {
+    // ConvertFToS takes FloatExpr, not IntExpr. This validates the sort constraint
+    // that context.rs enforces via checked_unary_op(TypeClass::Float).
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let i (Const 42))
+        (let result (ConvertFToS i))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "ConvertFToS must reject IntExpr — it requires FloatExpr operand"
+    );
+}
+
+#[test]
+fn test_convert_stof_rejects_floatexpr() {
+    // ConvertSToF takes IntExpr, not FloatExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let f (FConst 1.0))
+        (let result (ConvertSToF f))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "ConvertSToF must reject FloatExpr — it requires IntExpr operand"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Bitwise Ops Require IntExpr
+// =============================================================================
+
+#[test]
+fn test_bitand_rejects_boolexpr() {
+    // BitAnd takes IntExpr, not BoolExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (BoolConst 1))
+        (let b (BoolConst 0))
+        (let result (BitAnd a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "BitAnd must reject BoolExpr — it requires IntExpr"
+    );
+}
+
+#[test]
+fn test_bitand_accepts_intexpr() {
+    // BitAnd takes IntExpr operands.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Const 255))
+        (let b (Const 15))
+        (let result (BitAnd a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (Const 15)))");
+    assert!(check.is_ok(), "BitAnd(0xFF, 0x0F) should fold to 15");
+}
+
+#[test]
+fn test_bitnot_rejects_boolexpr() {
+    // BitNot takes IntExpr, not BoolExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (BoolConst 1))
+        (let result (BitNot a))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "BitNot must reject BoolExpr — it requires IntExpr"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Logical Ops Require BoolExpr
+// =============================================================================
+
+#[test]
+fn test_logand_rejects_intexpr() {
+    // LogAnd takes BoolExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let b (Const 0))
+        (let result (LogAnd a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "LogAnd must reject IntExpr — it requires BoolExpr"
+    );
+}
+
+#[test]
+fn test_lognot_rejects_intexpr() {
+    // LogNot takes BoolExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let result (LogNot a))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "LogNot must reject IntExpr — it requires BoolExpr"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Float Comparisons Require FloatExpr
+// =============================================================================
+
+#[test]
+fn test_ford_eq_rejects_intexpr() {
+    // FOrdEq takes FloatExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let b (Const 2))
+        (let result (FOrdEq a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "FOrdEq must reject IntExpr — it requires FloatExpr"
+    );
+}
+
+#[test]
+fn test_ford_eq_accepts_floatexpr() {
+    // FOrdEq takes FloatExpr operands.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (FConst 1.0))
+        (let b (FConst 1.0))
+        (let result (FOrdEq a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (BoolConst 1)))");
+    assert!(
+        check.is_ok(),
+        "FOrdEq(1.0, 1.0) should fold to BoolConst(1)"
+    );
+}
+
+#[test]
+fn test_funord_ne_rejects_intexpr() {
+    // FUnordNe takes FloatExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let b (Const 2))
+        (let result (FUnordNe a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "FUnordNe must reject IntExpr — it requires FloatExpr"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Float Arithmetic Requires FloatExpr
+// =============================================================================
+
+#[test]
+fn test_fadd_rejects_intexpr() {
+    // FAdd takes FloatExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let b (Const 2))
+        (let result (FAdd a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "FAdd must reject IntExpr — it requires FloatExpr"
+    );
+}
+
+#[test]
+fn test_fneg_rejects_intexpr() {
+    // FNeg takes FloatExpr, not IntExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Const 1))
+        (let result (FNeg a))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "FNeg must reject IntExpr — it requires FloatExpr"
+    );
+}
+
+// =============================================================================
+// Sort Validation Tests: Integer Arithmetic Requires IntExpr
+// =============================================================================
+
+#[test]
+fn test_add_rejects_floatexpr() {
+    // Add takes IntExpr, not FloatExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (FConst 1.0))
+        (let b (FConst 2.0))
+        (let result (Add a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "Add must reject FloatExpr — it requires IntExpr"
+    );
+}
+
+#[test]
+fn test_neg_rejects_floatexpr() {
+    // Neg takes IntExpr, not FloatExpr.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (FConst 1.0))
+        (let result (Neg a))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "Neg must reject FloatExpr — it requires IntExpr"
+    );
+}
