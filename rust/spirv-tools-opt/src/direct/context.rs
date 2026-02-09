@@ -217,15 +217,15 @@ impl EgglogContext {
             Op::ConstantTrue => "(BoolConst 1)".to_string(),
             Op::ConstantFalse => "(BoolConst 0)".to_string(),
 
-            Op::IAdd => self.binary_op("Add", inst)?,
-            Op::ISub => self.binary_op("Sub", inst)?,
-            Op::IMul => self.binary_op("Mul", inst)?,
-            Op::SDiv => self.binary_op("SDiv", inst)?,
-            Op::UDiv => self.binary_op("UDiv", inst)?,
-            Op::SRem => self.binary_op("SRem", inst)?,
-            Op::SMod => self.binary_op("SMod", inst)?,
-            Op::UMod => self.binary_op("UMod", inst)?,
-            Op::SNegate => self.unary_op("Neg", inst)?,
+            Op::IAdd => self.typed_binary_op("Add", "VecAdd", inst)?,
+            Op::ISub => self.typed_binary_op("Sub", "VecSub", inst)?,
+            Op::IMul => self.typed_binary_op("Mul", "VecMul", inst)?,
+            Op::SDiv => self.typed_binary_op("SDiv", "VecSDiv", inst)?,
+            Op::UDiv => self.typed_binary_op("UDiv", "VecUDiv", inst)?,
+            Op::SRem => self.typed_binary_op("SRem", "VecSRem", inst)?,
+            Op::SMod => self.typed_binary_op("SMod", "VecSMod", inst)?,
+            Op::UMod => self.typed_binary_op("UMod", "VecUMod", inst)?,
+            Op::SNegate => self.typed_unary_op("Neg", "VecNeg", inst)?,
             Op::ShiftLeftLogical => self.binary_op("Shl", inst)?,
             Op::ShiftRightLogical => self.binary_op("ShrU", inst)?,
             Op::ShiftRightArithmetic => self.binary_op("ShrS", inst)?,
@@ -249,14 +249,14 @@ impl EgglogContext {
             Op::LogicalOr => self.binary_op("LogOr", inst)?,
             Op::LogicalEqual => self.binary_op("LogEq", inst)?,
             Op::LogicalNotEqual => self.binary_op("LogNe", inst)?,
-            // Floating-point operations
-            Op::FAdd => self.binary_op("FAdd", inst)?,
-            Op::FSub => self.binary_op("FSub", inst)?,
-            Op::FMul => self.binary_op("FMul", inst)?,
-            Op::FDiv => self.binary_op("FDiv", inst)?,
-            Op::FRem => self.binary_op("FRem", inst)?,
-            Op::FMod => self.binary_op("FMod", inst)?,
-            Op::FNegate => self.unary_op("FNeg", inst)?,
+            // Floating-point operations (scalar or vector)
+            Op::FAdd => self.typed_binary_op("FAdd", "VecFAdd", inst)?,
+            Op::FSub => self.typed_binary_op("FSub", "VecFSub", inst)?,
+            Op::FMul => self.typed_binary_op("FMul", "VecFMul", inst)?,
+            Op::FDiv => self.typed_binary_op("FDiv", "VecFDiv", inst)?,
+            Op::FRem => self.typed_binary_op("FRem", "VecFRem", inst)?,
+            Op::FMod => self.typed_binary_op("FMod", "VecFMod", inst)?,
+            Op::FNegate => self.typed_unary_op("FNeg", "VecFNeg", inst)?,
             // Floating-point comparisons (ordered)
             Op::FOrdEqual => self.binary_op("FOrdEq", inst)?,
             Op::FOrdNotEqual => self.binary_op("FOrdNe", inst)?,
@@ -928,6 +928,46 @@ impl EgglogContext {
         let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
         let operand = self.get_or_create_term(operand_id);
         Some(format!("({} {})", op, operand))
+    }
+
+    /// Type-dispatched binary op: uses `scalar_op` (typed sort) when the result
+    /// type is a scalar, and `vec_op` (Expr sort) when it is a vector/other type.
+    /// This prevents sort mismatches when SPIR-V opcodes like OpFAdd/OpIAdd
+    /// operate on vectors whose operands are in the generic Expr sort.
+    fn typed_binary_op(
+        &mut self,
+        scalar_op: &str,
+        vec_op: &str,
+        inst: &Instruction,
+    ) -> Option<String> {
+        let is_scalar = inst
+            .result_type
+            .map(|ty| self.type_class_of_type(ty) != TypeClass::Other)
+            .unwrap_or(false);
+        if is_scalar {
+            self.binary_op(scalar_op, inst)
+        } else {
+            self.binary_op(vec_op, inst)
+        }
+    }
+
+    /// Type-dispatched unary op: uses `scalar_op` (typed sort) when the result
+    /// type is a scalar, and `vec_op` (Expr sort) when it is a vector/other type.
+    fn typed_unary_op(
+        &mut self,
+        scalar_op: &str,
+        vec_op: &str,
+        inst: &Instruction,
+    ) -> Option<String> {
+        let is_scalar = inst
+            .result_type
+            .map(|ty| self.type_class_of_type(ty) != TypeClass::Other)
+            .unwrap_or(false);
+        if is_scalar {
+            self.unary_op(scalar_op, inst)
+        } else {
+            self.unary_op(vec_op, inst)
+        }
     }
 
     /// Convert GLSL.std.450 extended instruction to egglog term.

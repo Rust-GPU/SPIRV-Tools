@@ -5,7 +5,8 @@ use rspirv::spirv::{Op, Word};
 use std::collections::HashMap;
 
 use super::util::{
-    parse_binary_args, parse_expr_list, parse_ternary_args, resolve_term_to_id, split_terms,
+    parse_binary_args, parse_expr_list, parse_ternary_args, parse_unary_arg, resolve_term_to_id,
+    split_terms,
 };
 
 /// Matrix binary operations.
@@ -20,6 +21,36 @@ const MATRIX_BINARY_OPS: &[(&str, Op)] = &[
 
 /// Matrix unary operations.
 const MATRIX_UNARY_OPS: &[(&str, Op)] = &[("Transpose", Op::Transpose)];
+
+/// Vector arithmetic binary operations (component-wise).
+/// These are the Expr-sort constructors for ops that work on both scalars and vectors.
+const VEC_ARITHMETIC_BINARY_OPS: &[(&str, Op)] = &[
+    // Integer vector arithmetic
+    ("VecAdd", Op::IAdd),
+    ("VecSub", Op::ISub),
+    ("VecMul", Op::IMul),
+    ("VecDiv", Op::SDiv),
+    ("VecSDiv", Op::SDiv),
+    ("VecUDiv", Op::UDiv),
+    ("VecSRem", Op::SRem),
+    ("VecSMod", Op::SMod),
+    ("VecUMod", Op::UMod),
+    // Float vector arithmetic
+    ("VecFAdd", Op::FAdd),
+    ("VecFSub", Op::FSub),
+    ("VecFMul", Op::FMul),
+    ("VecFDiv", Op::FDiv),
+    ("VecFRem", Op::FRem),
+    ("VecFMod", Op::FMod),
+    // Scalar-vector multiply
+    ("VecTimesScalar", Op::VectorTimesScalar),
+];
+
+/// Vector arithmetic unary operations (component-wise).
+const VEC_ARITHMETIC_UNARY_OPS: &[(&str, Op)] = &[
+    ("VecNeg", Op::SNegate),
+    ("VecFNeg", Op::FNegate),
+];
 
 /// Try to parse a vector or composite operation.
 pub fn try_parse_vector(
@@ -59,6 +90,39 @@ pub fn try_parse_vector(
                         vec![rspirv::dr::Operand::IdRef(operand)],
                     ));
                 }
+            }
+        }
+    }
+
+    // Vector arithmetic binary operations (component-wise)
+    for (name, opcode) in VEC_ARITHMETIC_BINARY_OPS {
+        let prefix = format!("({} ", name);
+        if let Some(rest) = term.strip_prefix(&prefix) {
+            if let Some((lhs, rhs)) = parse_binary_args(rest, id_map) {
+                return Some(Instruction::new(
+                    *opcode,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![
+                        rspirv::dr::Operand::IdRef(lhs),
+                        rspirv::dr::Operand::IdRef(rhs),
+                    ],
+                ));
+            }
+        }
+    }
+
+    // Vector arithmetic unary operations (component-wise)
+    for (name, opcode) in VEC_ARITHMETIC_UNARY_OPS {
+        let prefix = format!("({} ", name);
+        if let Some(rest) = term.strip_prefix(&prefix) {
+            if let Some(operand) = parse_unary_arg(rest, id_map) {
+                return Some(Instruction::new(
+                    *opcode,
+                    Some(result_type),
+                    Some(result_id),
+                    vec![rspirv::dr::Operand::IdRef(operand)],
+                ));
             }
         }
     }

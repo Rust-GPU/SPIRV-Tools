@@ -2454,19 +2454,24 @@ fn instruction_has_valid_types(
     let op = inst.class.opcode;
 
     // Check result type: if the opcode requires a specific type class,
-    // the result type MUST match (no TypeClass::Other escape).
+    // the result type MUST match OR be TypeClass::Other (vectors/matrices).
+    // SPIR-V arithmetic ops (FAdd, IAdd, etc.) work on both scalars and vectors.
+    // TypeClass::Other means the type is a vector/matrix/struct which is valid
+    // for these component-wise operations.
     if let (Some(required), Some(result_type)) = (required_result_type_class(op), inst.result_type)
     {
         let actual = type_classes
             .get(&result_type)
             .copied()
             .unwrap_or(TypeClass::Other);
-        if actual != required {
+        if actual != required && actual != TypeClass::Other {
             return false;
         }
     }
 
     // Check operand types for comparisons
+    // Again, TypeClass::Other (vector operands) is always acceptable since
+    // SPIR-V comparison ops work component-wise on vectors.
     if let Some(required_op_class) = required_operand_type_class(op) {
         for operand in &inst.operands {
             if let Some(operand_id) = operand.id_ref_any() {
@@ -2475,7 +2480,7 @@ fn instruction_has_valid_types(
                         .get(&operand_type)
                         .copied()
                         .unwrap_or(TypeClass::Other);
-                    if actual != required_op_class {
+                    if actual != required_op_class && actual != TypeClass::Other {
                         return false;
                     }
                 }
