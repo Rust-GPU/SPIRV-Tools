@@ -225,65 +225,76 @@ impl EgglogContext {
             Op::ConstantTrue => "(BoolConst 1)".to_string(),
             Op::ConstantFalse => "(BoolConst 0)".to_string(),
 
-            Op::IAdd => self.typed_binary_op("Add", "VecAdd", inst)?,
-            Op::ISub => self.typed_binary_op("Sub", "VecSub", inst)?,
-            Op::IMul => self.typed_binary_op("Mul", "VecMul", inst)?,
-            Op::SDiv => self.typed_binary_op("SDiv", "VecSDiv", inst)?,
-            Op::UDiv => self.typed_binary_op("UDiv", "VecUDiv", inst)?,
-            Op::SRem => self.typed_binary_op("SRem", "VecSRem", inst)?,
-            Op::SMod => self.typed_binary_op("SMod", "VecSMod", inst)?,
-            Op::UMod => self.typed_binary_op("UMod", "VecUMod", inst)?,
-            Op::SNegate => self.typed_unary_op("Neg", "VecNeg", inst)?,
-            Op::ShiftLeftLogical => self.binary_op("Shl", inst)?,
-            Op::ShiftRightLogical => self.binary_op("ShrU", inst)?,
-            Op::ShiftRightArithmetic => self.binary_op("ShrS", inst)?,
-            Op::BitwiseAnd => self.binary_op("BitAnd", inst)?,
-            Op::BitwiseOr => self.binary_op("BitOr", inst)?,
-            Op::BitwiseXor => self.binary_op("BitXor", inst)?,
-            Op::Not => self.unary_op("BitNot", inst)?,
-            Op::BitReverse => self.unary_op("BitReverse", inst)?,
-            Op::IEqual => self.binary_op("Eq", inst)?,
-            Op::INotEqual => self.binary_op("Ne", inst)?,
-            Op::SLessThan => self.binary_op("SLt", inst)?,
-            Op::SLessThanEqual => self.binary_op("SLe", inst)?,
-            Op::SGreaterThan => self.binary_op("SGt", inst)?,
-            Op::SGreaterThanEqual => self.binary_op("SGe", inst)?,
-            Op::ULessThan => self.binary_op("ULt", inst)?,
-            Op::ULessThanEqual => self.binary_op("ULe", inst)?,
-            Op::UGreaterThan => self.binary_op("UGt", inst)?,
-            Op::UGreaterThanEqual => self.binary_op("UGe", inst)?,
-            Op::LogicalNot => self.unary_op("LogNot", inst)?,
-            Op::LogicalAnd => self.binary_op("LogAnd", inst)?,
-            Op::LogicalOr => self.binary_op("LogOr", inst)?,
-            Op::LogicalEqual => self.binary_op("LogEq", inst)?,
-            Op::LogicalNotEqual => self.binary_op("LogNe", inst)?,
+            // Integer arithmetic (operands: IntExpr, result: IntExpr)
+            Op::IAdd => self.typed_binary_op("Add", "VecAdd", TypeClass::Int, inst)?,
+            Op::ISub => self.typed_binary_op("Sub", "VecSub", TypeClass::Int, inst)?,
+            Op::IMul => self.typed_binary_op("Mul", "VecMul", TypeClass::Int, inst)?,
+            Op::SDiv => self.typed_binary_op("SDiv", "VecSDiv", TypeClass::Int, inst)?,
+            Op::UDiv => self.typed_binary_op("UDiv", "VecUDiv", TypeClass::Int, inst)?,
+            Op::SRem => self.typed_binary_op("SRem", "VecSRem", TypeClass::Int, inst)?,
+            Op::SMod => self.typed_binary_op("SMod", "VecSMod", TypeClass::Int, inst)?,
+            Op::UMod => self.typed_binary_op("UMod", "VecUMod", TypeClass::Int, inst)?,
+            Op::SNegate => self.typed_unary_op("Neg", "VecNeg", TypeClass::Int, inst)?,
+            // Bitwise/shift (operands: IntExpr, result: IntExpr)
+            Op::ShiftLeftLogical => self.checked_binary_op("Shl", TypeClass::Int, inst)?,
+            Op::ShiftRightLogical => self.checked_binary_op("ShrU", TypeClass::Int, inst)?,
+            Op::ShiftRightArithmetic => self.checked_binary_op("ShrS", TypeClass::Int, inst)?,
+            Op::BitwiseAnd => self.checked_binary_op("BitAnd", TypeClass::Int, inst)?,
+            Op::BitwiseOr => self.checked_binary_op("BitOr", TypeClass::Int, inst)?,
+            Op::BitwiseXor => self.checked_binary_op("BitXor", TypeClass::Int, inst)?,
+            Op::Not => self.checked_unary_op("BitNot", TypeClass::Int, inst)?,
+            Op::BitReverse => self.checked_unary_op("BitReverse", TypeClass::Int, inst)?,
+            // Integer comparisons (operands: IntExpr, result: BoolExpr)
+            // Some compilers use OpIEqual/OpINotEqual on boolean values instead of
+            // OpLogicalEqual/OpLogicalNotEqual. Redirect to logical equivalents
+            // to prevent sort mismatches (BoolExpr operand in IntExpr position).
+            Op::IEqual => self.int_comparison_op("Eq", inst)?,
+            Op::INotEqual => self.int_comparison_op("Ne", inst)?,
+            Op::SLessThan => self.checked_binary_op("SLt", TypeClass::Int, inst)?,
+            Op::SLessThanEqual => self.checked_binary_op("SLe", TypeClass::Int, inst)?,
+            Op::SGreaterThan => self.checked_binary_op("SGt", TypeClass::Int, inst)?,
+            Op::SGreaterThanEqual => self.checked_binary_op("SGe", TypeClass::Int, inst)?,
+            Op::ULessThan => self.checked_binary_op("ULt", TypeClass::Int, inst)?,
+            Op::ULessThanEqual => self.checked_binary_op("ULe", TypeClass::Int, inst)?,
+            Op::UGreaterThan => self.checked_binary_op("UGt", TypeClass::Int, inst)?,
+            Op::UGreaterThanEqual => self.checked_binary_op("UGe", TypeClass::Int, inst)?,
+            // Logical (operands: BoolExpr, result: BoolExpr)
+            Op::LogicalNot => self.checked_unary_op("LogNot", TypeClass::Bool, inst)?,
+            Op::LogicalAnd => self.checked_binary_op("LogAnd", TypeClass::Bool, inst)?,
+            Op::LogicalOr => self.checked_binary_op("LogOr", TypeClass::Bool, inst)?,
+            Op::LogicalEqual => self.checked_binary_op("LogEq", TypeClass::Bool, inst)?,
+            Op::LogicalNotEqual => self.checked_binary_op("LogNe", TypeClass::Bool, inst)?,
             // Floating-point operations (scalar or vector)
-            Op::FAdd => self.typed_binary_op("FAdd", "VecFAdd", inst)?,
-            Op::FSub => self.typed_binary_op("FSub", "VecFSub", inst)?,
-            Op::FMul => self.typed_binary_op("FMul", "VecFMul", inst)?,
-            Op::FDiv => self.typed_binary_op("FDiv", "VecFDiv", inst)?,
-            Op::FRem => self.typed_binary_op("FRem", "VecFRem", inst)?,
-            Op::FMod => self.typed_binary_op("FMod", "VecFMod", inst)?,
-            Op::FNegate => self.typed_unary_op("FNeg", "VecFNeg", inst)?,
-            // Floating-point comparisons (ordered)
-            Op::FOrdEqual => self.binary_op("FOrdEq", inst)?,
-            Op::FOrdNotEqual => self.binary_op("FOrdNe", inst)?,
-            Op::FOrdLessThan => self.binary_op("FOrdLt", inst)?,
-            Op::FOrdLessThanEqual => self.binary_op("FOrdLe", inst)?,
-            Op::FOrdGreaterThan => self.binary_op("FOrdGt", inst)?,
-            Op::FOrdGreaterThanEqual => self.binary_op("FOrdGe", inst)?,
+            Op::FAdd => self.typed_binary_op("FAdd", "VecFAdd", TypeClass::Float, inst)?,
+            Op::FSub => self.typed_binary_op("FSub", "VecFSub", TypeClass::Float, inst)?,
+            Op::FMul => self.typed_binary_op("FMul", "VecFMul", TypeClass::Float, inst)?,
+            Op::FDiv => self.typed_binary_op("FDiv", "VecFDiv", TypeClass::Float, inst)?,
+            Op::FRem => self.typed_binary_op("FRem", "VecFRem", TypeClass::Float, inst)?,
+            Op::FMod => self.typed_binary_op("FMod", "VecFMod", TypeClass::Float, inst)?,
+            Op::FNegate => self.typed_unary_op("FNeg", "VecFNeg", TypeClass::Float, inst)?,
+            // Floating-point comparisons (operands: FloatExpr, result: BoolExpr)
+            Op::FOrdEqual => self.checked_binary_op("FOrdEq", TypeClass::Float, inst)?,
+            Op::FOrdNotEqual => self.checked_binary_op("FOrdNe", TypeClass::Float, inst)?,
+            Op::FOrdLessThan => self.checked_binary_op("FOrdLt", TypeClass::Float, inst)?,
+            Op::FOrdLessThanEqual => self.checked_binary_op("FOrdLe", TypeClass::Float, inst)?,
+            Op::FOrdGreaterThan => self.checked_binary_op("FOrdGt", TypeClass::Float, inst)?,
+            Op::FOrdGreaterThanEqual => self.checked_binary_op("FOrdGe", TypeClass::Float, inst)?,
             // Floating-point comparisons (unordered)
-            Op::FUnordEqual => self.binary_op("FUnordEq", inst)?,
-            Op::FUnordNotEqual => self.binary_op("FUnordNe", inst)?,
-            Op::FUnordLessThan => self.binary_op("FUnordLt", inst)?,
-            Op::FUnordLessThanEqual => self.binary_op("FUnordLe", inst)?,
-            Op::FUnordGreaterThan => self.binary_op("FUnordGt", inst)?,
-            Op::FUnordGreaterThanEqual => self.binary_op("FUnordGe", inst)?,
-            // Conversion operations
-            Op::ConvertFToU => self.unary_op("ConvertFToU", inst)?,
-            Op::ConvertFToS => self.unary_op("ConvertFToS", inst)?,
-            Op::ConvertSToF => self.unary_op("ConvertSToF", inst)?,
-            Op::ConvertUToF => self.unary_op("ConvertUToF", inst)?,
+            Op::FUnordEqual => self.checked_binary_op("FUnordEq", TypeClass::Float, inst)?,
+            Op::FUnordNotEqual => self.checked_binary_op("FUnordNe", TypeClass::Float, inst)?,
+            Op::FUnordLessThan => self.checked_binary_op("FUnordLt", TypeClass::Float, inst)?,
+            Op::FUnordLessThanEqual => {
+                self.checked_binary_op("FUnordLe", TypeClass::Float, inst)?
+            }
+            Op::FUnordGreaterThan => self.checked_binary_op("FUnordGt", TypeClass::Float, inst)?,
+            Op::FUnordGreaterThanEqual => {
+                self.checked_binary_op("FUnordGe", TypeClass::Float, inst)?
+            }
+            // Conversion operations (validated operand sorts)
+            Op::ConvertFToU => self.checked_unary_op("ConvertFToU", TypeClass::Float, inst)?,
+            Op::ConvertFToS => self.checked_unary_op("ConvertFToS", TypeClass::Float, inst)?,
+            Op::ConvertSToF => self.checked_unary_op("ConvertSToF", TypeClass::Int, inst)?,
+            Op::ConvertUToF => self.checked_unary_op("ConvertUToF", TypeClass::Int, inst)?,
             Op::Select => {
                 let ops: Vec<Word> = inst
                     .operands
@@ -917,6 +928,34 @@ impl EgglogContext {
         Some(term)
     }
 
+    /// Handle OpIEqual/OpINotEqual which may have boolean operands.
+    /// Some compilers use integer equality on bools instead of LogicalEqual.
+    /// Redirect to the logical equivalent when operands are BoolExpr.
+    fn int_comparison_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
+        let ops: Vec<Word> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
+        if ops.len() < 2 {
+            return None;
+        }
+        let first_class = self.type_class_of(ops[0]);
+        if first_class == TypeClass::Bool {
+            // Redirect to logical equivalents for boolean operands
+            let logical_op = match op {
+                "Eq" => "LogEq",
+                "Ne" => "LogNe",
+                _ => return None,
+            };
+            let lhs = self.get_or_create_term(ops[0]);
+            let rhs = self.get_or_create_term(ops[1]);
+            Some(format!("({} {} {})", logical_op, lhs, rhs))
+        } else {
+            self.checked_binary_op(op, TypeClass::Int, inst)
+        }
+    }
+
     fn binary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
         let ops: Vec<Word> = inst
             .operands
@@ -938,14 +977,63 @@ impl EgglogContext {
         Some(format!("({} {})", op, operand))
     }
 
+    /// Sort-validated binary op: checks that operand SPIR-V types are compatible
+    /// with the expected egraph sort. Returns None on cross-sort scalar mismatches
+    /// so the instruction stays as-is rather than crashing the egraph.
+    fn checked_binary_op(
+        &mut self,
+        op: &str,
+        expected_operand: TypeClass,
+        inst: &Instruction,
+    ) -> Option<String> {
+        let ops: Vec<Word> = inst
+            .operands
+            .iter()
+            .filter_map(|op| op.id_ref_any())
+            .collect();
+        if ops.len() < 2 {
+            return None;
+        }
+        // Verify operand types are compatible with the expected sort.
+        // Other (vector/composite) is always accepted — vectors in Expr sort
+        // won't reach scalar constructors because typed_binary_op dispatches
+        // to Vec* variants for vector results.
+        for &id in &ops[..2] {
+            let actual = self.type_class_of(id);
+            if actual != expected_operand && actual != TypeClass::Other {
+                return None;
+            }
+        }
+        let lhs = self.get_or_create_term(ops[0]);
+        let rhs = self.get_or_create_term(ops[1]);
+        Some(format!("({} {} {})", op, lhs, rhs))
+    }
+
+    /// Sort-validated unary op: checks that the operand's SPIR-V type is
+    /// compatible with the expected egraph sort.
+    fn checked_unary_op(
+        &mut self,
+        op: &str,
+        expected_operand: TypeClass,
+        inst: &Instruction,
+    ) -> Option<String> {
+        let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
+        let actual = self.type_class_of(operand_id);
+        if actual != expected_operand && actual != TypeClass::Other {
+            return None;
+        }
+        let operand = self.get_or_create_term(operand_id);
+        Some(format!("({} {})", op, operand))
+    }
+
     /// Type-dispatched binary op: uses `scalar_op` (typed sort) when the result
     /// type is a scalar, and `vec_op` (Expr sort) when it is a vector/other type.
-    /// This prevents sort mismatches when SPIR-V opcodes like OpFAdd/OpIAdd
-    /// operate on vectors whose operands are in the generic Expr sort.
+    /// Validates operand sorts for scalar ops to prevent egraph type errors.
     fn typed_binary_op(
         &mut self,
         scalar_op: &str,
         vec_op: &str,
+        expected_operand: TypeClass,
         inst: &Instruction,
     ) -> Option<String> {
         let is_scalar = inst
@@ -953,7 +1041,7 @@ impl EgglogContext {
             .map(|ty| self.type_class_of_type(ty) != TypeClass::Other)
             .unwrap_or(false);
         if is_scalar {
-            self.binary_op(scalar_op, inst)
+            self.checked_binary_op(scalar_op, expected_operand, inst)
         } else {
             self.binary_op(vec_op, inst)
         }
@@ -961,10 +1049,12 @@ impl EgglogContext {
 
     /// Type-dispatched unary op: uses `scalar_op` (typed sort) when the result
     /// type is a scalar, and `vec_op` (Expr sort) when it is a vector/other type.
+    /// Validates operand sorts for scalar ops to prevent egraph type errors.
     fn typed_unary_op(
         &mut self,
         scalar_op: &str,
         vec_op: &str,
+        expected_operand: TypeClass,
         inst: &Instruction,
     ) -> Option<String> {
         let is_scalar = inst
@@ -972,7 +1062,7 @@ impl EgglogContext {
             .map(|ty| self.type_class_of_type(ty) != TypeClass::Other)
             .unwrap_or(false);
         if is_scalar {
-            self.unary_op(scalar_op, inst)
+            self.checked_unary_op(scalar_op, expected_operand, inst)
         } else {
             self.unary_op(vec_op, inst)
         }
