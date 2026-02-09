@@ -283,3 +283,15 @@
                  (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
       ((union e (FAdd (FAdd (FConst (float-mul-auto a0 b0)) (FConst (float-mul-auto a1 b1)))
                       (FAdd (FConst (float-mul-auto a2 b2)) (FConst (float-mul-auto a3 b3)))))))
+
+; =============================================================================
+; NMin/NMax/NClamp Constant Folding
+; =============================================================================
+; NaN-aware: if one operand is NaN, return the non-NaN operand.
+
+(rule ((= e (NMin (FConst a) (FConst b))))
+      ((union e (FConst (float-nmin a b)))))
+(rule ((= e (NMax (FConst a) (FConst b))))
+      ((union e (FConst (float-nmax a b)))))
+(rule ((= e (NClamp (FConst x) (FConst lo) (FConst hi))))
+      ((union e (FConst (float-nclamp x lo hi)))))

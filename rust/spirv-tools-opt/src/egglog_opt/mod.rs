@@ -464,6 +464,21 @@ fn float_mul_auto(a: i64, b: i64) -> f64 {
     }
 }
 
+/// NaN-aware minimum: if a is NaN return b, if b is NaN return a, else min.
+fn float_nmin(a: f64, b: f64) -> f64 {
+    if a.is_nan() { b } else if b.is_nan() { a } else { a.min(b) }
+}
+
+/// NaN-aware maximum: if a is NaN return b, if b is NaN return a, else max.
+fn float_nmax(a: f64, b: f64) -> f64 {
+    if a.is_nan() { b } else if b.is_nan() { a } else { a.max(b) }
+}
+
+/// NaN-aware clamp: nmax(nmin(x, hi), lo).
+fn float_nclamp(x: f64, lo: f64, hi: f64) -> f64 {
+    float_nmax(float_nmin(x, hi), lo)
+}
+
 /// Compute sign of an integer constant (-1, 0, or 1).
 fn int_sign(x: i64) -> i64 {
     if x > 0 { 1 } else if x < 0 { -1 } else { 0 }
@@ -636,6 +651,9 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "float-min" = |x: F, y: F| -> F { x.min(y) });
     add_primitive!(&mut egraph, "float-max" = |x: F, y: F| -> F { x.max(y) });
     add_primitive!(&mut egraph, "float-clamp" = |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(x.0.0.clamp(lo.0.0, hi.0.0))) });
+    add_primitive!(&mut egraph, "float-nmin" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmin(a.0.0, b.0.0))) });
+    add_primitive!(&mut egraph, "float-nmax" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmax(a.0.0, b.0.0))) });
+    add_primitive!(&mut egraph, "float-nclamp" = |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(float_nclamp(x.0.0, lo.0.0, hi.0.0))) });
     add_primitive!(&mut egraph, "float-mix" = |x: F, y: F, a: F| -> F { F::from(OrderedFloat(float_mix_f64(x.0.0, y.0.0, a.0.0))) });
     add_primitive!(&mut egraph, "float-step" = |edge: F, x: F| -> F { F::from(OrderedFloat(if x.0.0 < edge.0.0 { 0.0 } else { 1.0 })) });
     add_primitive!(&mut egraph, "float-smoothstep" = |e0: F, e1: F, x: F| -> F { F::from(OrderedFloat(float_smoothstep_f64(e0.0.0, e1.0.0, x.0.0))) });
