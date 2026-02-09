@@ -24,6 +24,9 @@ pub struct EgglogContext {
     /// Used by get_or_create_term to emit variable references (id{N})
     /// instead of Sym constructors for forward cross-block references.
     known_instruction_ids: HashSet<Word>,
+    /// Additional egglog facts to run after all terms are bound.
+    /// Used for seeding metadata like ResultWidth.
+    pub additional_facts: Vec<String>,
 }
 
 impl EgglogContext {
@@ -36,6 +39,7 @@ impl EgglogContext {
             root_ids: Vec::new(),
             glsl_ext_id: None,
             known_instruction_ids: HashSet::new(),
+            additional_facts: Vec::new(),
         }
     }
 
@@ -74,6 +78,23 @@ impl EgglogContext {
                     Op::Constant | Op::ConstantTrue | Op::ConstantFalse
                 ) {
                     self.root_ids.push(result_id);
+                }
+
+                // Seed ResultWidth for integer constants and conversions
+                if let Some(result_type) = inst.result_type {
+                    let tc = self.type_class_of_type(result_type);
+                    if tc == TypeClass::Int {
+                        let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
+                        match inst.class.opcode {
+                            Op::Constant | Op::SConvert | Op::UConvert => {
+                                self.additional_facts.push(format!(
+                                    "(set (ResultWidth id{}) {})",
+                                    result_id, width
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
         }

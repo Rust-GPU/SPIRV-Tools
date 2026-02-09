@@ -274,6 +274,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
+    // Run additional facts (e.g., ResultWidth seeding for SConvert/UConvert)
+    for fact in &ctx.additional_facts {
+        let _ = egraph.parse_and_run_program(None, fact);
+    }
+
     // ==========================================================================
     // PRE: Represent branch value pairs as Gamma selections
     // ==========================================================================

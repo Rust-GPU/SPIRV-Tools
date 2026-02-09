@@ -492,3 +492,19 @@
       ((union e (IntToExpr (Const a)))))
 (rule ((= e (BitCast (IntToExpr (Const a)))))
       ((union e (IntToExpr (Const a)))))
+
+; =============================================================================
+; SConvert/UConvert Constant Folding
+; =============================================================================
+; Folds SConvert(Const) and UConvert(Const) when ResultWidth is known.
+; SConvert: sign-extend or truncate to target width.
+; UConvert: zero-extend (mask to source width) then truncate to target width.
+
+(rule ((= e (SConvert (Const v)))
+       (= dw (ResultWidth e)))
+      ((union e (Const (sconvert-fold v dw)))))
+
+(rule ((= e (UConvert (Const v)))
+       (= dw (ResultWidth e))
+       (= sw (ResultWidth (Const v))))
+      ((union e (Const (uconvert-fold v sw dw)))))

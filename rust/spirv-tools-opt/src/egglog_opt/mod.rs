@@ -487,6 +487,29 @@ fn float_neg_bits(a: i64) -> i64 {
     }
 }
 
+/// SConvert constant fold: sign-extend or truncate to target width.
+fn sconvert_fold(v: i64, dst_width: i64) -> i64 {
+    let dw = dst_width as u32;
+    if dw >= 64 {
+        v
+    } else {
+        let shift = 64 - dw;
+        (v << shift) >> shift
+    }
+}
+
+/// UConvert constant fold: zero-extend (mask source) then truncate to target.
+fn uconvert_fold(v: i64, src_width: i64, dst_width: i64) -> i64 {
+    let sw = src_width as u32;
+    let unsigned = if sw >= 64 { v } else { v & ((1i64 << sw) - 1) };
+    let dw = dst_width as u32;
+    if dw >= 64 {
+        unsigned
+    } else {
+        unsigned & ((1i64 << dw) - 1)
+    }
+}
+
 /// Quantize a float value to IEEE 754 half-precision (f16), returning f64.
 /// Preserves NaN, Inf. Overflows to Inf, underflows to zero.
 /// SPIR-V spec: result is value of operand rounded to f16 precision.
@@ -876,6 +899,13 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     });
     add_primitive!(&mut egraph, "float-neg-bits" = |a: i64| -> i64 {
         float_neg_bits(a)
+    });
+
+    add_primitive!(&mut egraph, "sconvert-fold" = |v: i64, dw: i64| -> i64 {
+        sconvert_fold(v, dw)
+    });
+    add_primitive!(&mut egraph, "uconvert-fold" = |v: i64, sw: i64, dw: i64| -> i64 {
+        uconvert_fold(v, sw, dw)
     });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)

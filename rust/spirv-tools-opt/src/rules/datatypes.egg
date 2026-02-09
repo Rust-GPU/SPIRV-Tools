@@ -375,6 +375,10 @@
 ; VecSize — tracks the number of components in a vector expression
 (function VecSize (Expr) i64 :merge (min old new))
 
+; ResultWidth — tracks the bit width of an integer expression's result type
+; Used for SConvert/UConvert constant folding
+(function ResultWidth (IntExpr) i64 :merge (min old new))
+
 ; Vector arithmetic (component-wise)
 (constructor VecAdd (Expr Expr) Expr)
 (constructor VecSub (Expr Expr) Expr)
