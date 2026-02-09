@@ -111,9 +111,10 @@
 (rule ((= e (FDiv x (FConst c))) (= c -1.0))
       ((union e (FNeg x))))
 
-; x / x = 1 (assuming not zero or NaN)
-; Note: commented out due to NaN/zero concerns
-; (rewrite (FDiv x x) (FConst 1.0))
+; x / x = 1.0 (fast-math: assumes x is not zero or NaN) - ONE-DIRECTIONAL
+; Combined with FNeg distribution rules below, also handles -x/x and x/(-x)
+(rule ((= e (FDiv x x)))
+      ((union e (FConst 1.0))))
 
 ; x - x = 0 - ONE-DIRECTIONAL
 (rule ((= e (FSub x x)))
