@@ -394,6 +394,76 @@
                       (IntToExpr (Const (float-mul-bits a3 s)))))))
 
 ; =============================================================================
+; Integer Vector Element-Wise Constant Folding
+; =============================================================================
+; Uses egglog built-in arithmetic for integer vector operations.
+
+; VecAdd constant fold
+(rule ((= e (VecAdd (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                    (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (+ a0 b0)))
+                      (IntToExpr (Const (+ a1 b1)))))))
+(rule ((= e (VecAdd (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                    (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (+ a0 b0)))
+                      (IntToExpr (Const (+ a1 b1)))
+                      (IntToExpr (Const (+ a2 b2)))))))
+(rule ((= e (VecAdd (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                    (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (+ a0 b0)))
+                      (IntToExpr (Const (+ a1 b1)))
+                      (IntToExpr (Const (+ a2 b2)))
+                      (IntToExpr (Const (+ a3 b3)))))))
+
+; VecSub constant fold
+(rule ((= e (VecSub (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                    (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (- a0 b0)))
+                      (IntToExpr (Const (- a1 b1)))))))
+(rule ((= e (VecSub (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                    (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (- a0 b0)))
+                      (IntToExpr (Const (- a1 b1)))
+                      (IntToExpr (Const (- a2 b2)))))))
+(rule ((= e (VecSub (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                    (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (- a0 b0)))
+                      (IntToExpr (Const (- a1 b1)))
+                      (IntToExpr (Const (- a2 b2)))
+                      (IntToExpr (Const (- a3 b3)))))))
+
+; VecMul constant fold
+(rule ((= e (VecMul (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                    (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (* a0 b0)))
+                      (IntToExpr (Const (* a1 b1)))))))
+(rule ((= e (VecMul (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                    (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (* a0 b0)))
+                      (IntToExpr (Const (* a1 b1)))
+                      (IntToExpr (Const (* a2 b2)))))))
+(rule ((= e (VecMul (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                    (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (* a0 b0)))
+                      (IntToExpr (Const (* a1 b1)))
+                      (IntToExpr (Const (* a2 b2)))
+                      (IntToExpr (Const (* a3 b3)))))))
+
+; VecNeg constant fold
+(rule ((= e (VecNeg (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1))))))
+      ((union e (Vec2 (IntToExpr (Const (* -1 a0)))
+                      (IntToExpr (Const (* -1 a1)))))))
+(rule ((= e (VecNeg (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2))))))
+      ((union e (Vec3 (IntToExpr (Const (* -1 a0)))
+                      (IntToExpr (Const (* -1 a1)))
+                      (IntToExpr (Const (* -1 a2)))))))
+(rule ((= e (VecNeg (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3))))))
+      ((union e (Vec4 (IntToExpr (Const (* -1 a0)))
+                      (IntToExpr (Const (* -1 a1)))
+                      (IntToExpr (Const (* -1 a2)))
+                      (IntToExpr (Const (* -1 a3)))))))
+
+; =============================================================================
 ; NMin/NMax/NClamp Constant Folding
 ; =============================================================================
 ; NaN-aware: if one operand is NaN, return the non-NaN operand.
