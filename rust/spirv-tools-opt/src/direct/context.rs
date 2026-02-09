@@ -262,14 +262,22 @@ impl EgglogContext {
                     let cond = self.get_or_create_term(ops[0]);
                     let t = self.get_or_create_term(ops[1]);
                     let f = self.get_or_create_term(ops[2]);
-                    // Use typed Select based on result type
-                    let select_ctor = match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
-                        Some(TypeClass::Int) => "SelectI",
-                        Some(TypeClass::Float) => "SelectF",
-                        Some(TypeClass::Bool) => "SelectB",
-                        _ => "Select",
-                    };
-                    format!("({} {} {} {})", select_ctor, cond, t, f)
+                    // Check if condition is a vector (TypeClass::Other = non-scalar)
+                    let cond_is_vector = self.type_class_of(ops[0]) == TypeClass::Other;
+                    if cond_is_vector {
+                        // Vector select: component-wise, all operands are Expr
+                        format!("(VecSelect {} {} {})", cond, t, f)
+                    } else {
+                        // Scalar select: use typed Select based on result type
+                        let select_ctor =
+                            match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
+                                Some(TypeClass::Int) => "SelectI",
+                                Some(TypeClass::Float) => "SelectF",
+                                Some(TypeClass::Bool) => "SelectB",
+                                _ => "Select",
+                            };
+                        format!("({} {} {} {})", select_ctor, cond, t, f)
+                    }
                 } else {
                     return None;
                 }

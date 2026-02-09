@@ -395,6 +395,9 @@
 ; Vector-level GLSL ops (vector variants of scalar FloatExpr constructors)
 (constructor VecFMix (Expr Expr Expr) Expr)
 
+; Vector select (component-wise select with vector boolean mask)
+(constructor VecSelect (Expr Expr Expr) Expr)
+
 ; Matrix operations
 (constructor MatTimesScalar (Expr Expr) Expr)
 (constructor MatTimesVec (Expr Expr) Expr)
@@ -1099,6 +1102,7 @@
 (rule ((Live e) (= e (VecFNeg a))) ((Live a)))
 (rule ((Live e) (= e (VecTimesScalar v s))) ((Live v) (Live s)))
 (rule ((Live e) (= e (VecFMix a b c))) ((Live a) (Live b) (Live c)))
+(rule ((Live e) (= e (VecSelect mask t f))) ((Live mask) (Live t) (Live f)))
 
 ; Matrix operations
 (rule ((Live e) (= e (MatTimesScalar m s))) ((Live m) (Live s)))

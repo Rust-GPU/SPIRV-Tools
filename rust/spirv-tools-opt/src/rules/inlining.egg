@@ -508,6 +508,8 @@
       ((union e (ImageFetch (Subst img idx val) (Subst coord idx val)))))
 (rule ((= e (Subst (ImageRead img coord) idx val)))
       ((union e (ImageRead (Subst img idx val) (Subst coord idx val)))))
+(rule ((= e (Subst (VecSelect mask t f) idx val)))
+      ((union e (VecSelect (Subst mask idx val) (Subst t idx val) (Subst f idx val)))))
 (rule ((= e (Subst (ImageSampleOffset img coord off) idx val)))
       ((union e (ImageSampleOffset (Subst img idx val) (Subst coord idx val) (Subst off idx val)))))
 (rule ((= e (Subst (ImageSampleConstOffset img coord off) idx val)))

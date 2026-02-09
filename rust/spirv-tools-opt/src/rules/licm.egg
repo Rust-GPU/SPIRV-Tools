@@ -78,6 +78,10 @@
 (rule ((= e (ImageFetchConstOffset (LoopInvariant img) (LoopInvariant coord) (LoopInvariant off))))
       ((union e (LoopInvariant (ImageFetchConstOffset img coord off)))))
 
+; VecSelect LICM
+(rule ((= e (VecSelect (LoopInvariant mask) (LoopInvariant t) (LoopInvariant f))))
+      ((union e (LoopInvariant (VecSelect mask t f)))))
+
 ; Gamma LICM - when condition (BoolExpr) AND both branches (Expr) are invariant
 ; Gamma condition is BoolExpr -> use LoopInvariantB for condition
 ; Gamma branches are Expr -> use LoopInvariant for branches

@@ -64,6 +64,7 @@ const SELECT_VARIANTS: &[&str] = &[
     "Select", "SelectI", "SelectF", "SelectB",
     "Gamma", "GammaI", "GammaF", "GammaB",
     "If", "IfI", "IfF", "IfB",
+    "VecSelect",
 ];
 
 /// Try to parse an arithmetic, comparison, or logical operation.

@@ -685,6 +685,34 @@
       ((union e (Vec2 (ShuffleExtract v1 v2 i0) (ShuffleExtract v1 v2 i1)))))
 
 ; =============================================================================
+; VecSelect Decomposition (component-wise select with vector boolean mask)
+; =============================================================================
+; When the mask structure is known (Vec2/3/4), decompose into per-element
+; Gamma via ExprToBool bridge. Existing Gamma rules handle constant conditions.
+
+; VecSelect with same true/false branches is identity
+(rule ((= e (VecSelect mask t t)))
+      ((union e t)))
+
+; VecSelect decomposition for Vec2 mask
+(rule ((= e (VecSelect (Vec2 m0 m1) t f)))
+      ((union e (Vec2 (Gamma (ExprToBool m0) (VecExtract t 0) (VecExtract f 0))
+                      (Gamma (ExprToBool m1) (VecExtract t 1) (VecExtract f 1))))))
+
+; VecSelect decomposition for Vec3 mask
+(rule ((= e (VecSelect (Vec3 m0 m1 m2) t f)))
+      ((union e (Vec3 (Gamma (ExprToBool m0) (VecExtract t 0) (VecExtract f 0))
+                      (Gamma (ExprToBool m1) (VecExtract t 1) (VecExtract f 1))
+                      (Gamma (ExprToBool m2) (VecExtract t 2) (VecExtract f 2))))))
+
+; VecSelect decomposition for Vec4 mask
+(rule ((= e (VecSelect (Vec4 m0 m1 m2 m3) t f)))
+      ((union e (Vec4 (Gamma (ExprToBool m0) (VecExtract t 0) (VecExtract f 0))
+                      (Gamma (ExprToBool m1) (VecExtract t 1) (VecExtract f 1))
+                      (Gamma (ExprToBool m2) (VecExtract t 2) (VecExtract f 2))
+                      (Gamma (ExprToBool m3) (VecExtract t 3) (VecExtract f 3))))))
+
+; =============================================================================
 ; Gamma Distribution for Vector Operations - ONE-DIRECTIONAL
 ; =============================================================================
 
