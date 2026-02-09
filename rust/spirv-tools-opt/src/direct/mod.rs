@@ -341,7 +341,27 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     None => continue,
                 };
 
-                // Record this pair even if terms differ - egraph handles equivalence
+                // Add a Gamma term representing the selection between these values
+                // The egraph will unify equivalent computations via (GammaX c x x) => x
+                // Use typed Gamma based on branch type class
+                let then_type_class = ctx
+                    .id_to_type
+                    .get(&then_id)
+                    .and_then(|ty| type_classes.get(ty))
+                    .copied()
+                    .unwrap_or(TypeClass::Other);
+                let else_type_class = ctx
+                    .id_to_type
+                    .get(&else_id)
+                    .and_then(|ty| type_classes.get(ty))
+                    .copied()
+                    .unwrap_or(TypeClass::Other);
+                // Skip if branch values have different type classes — creating
+                // a typed Gamma with mismatched sorts would crash the egraph.
+                if then_type_class != else_type_class {
+                    continue;
+                }
+
                 branch_value_pairs.push(BranchValuePair {
                     then_id,
                     else_id,
@@ -349,21 +369,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     header_block_label: header_label,
                 });
 
-                // Add a Gamma term representing the selection between these values
-                // The egraph will unify equivalent computations via (GammaX c x x) => x
-                // Use typed Gamma based on branch type class
                 let cond_term = if ctx.id_to_term.contains_key(&sel.condition_id) {
                     format!("id{}", sel.condition_id)
                 } else {
                     format!("(BSym \"id{}\")", sel.condition_id)
                 };
-                let branch_type_class = ctx
-                    .id_to_type
-                    .get(&then_id)
-                    .and_then(|ty| type_classes.get(ty))
-                    .copied()
-                    .unwrap_or(TypeClass::Other);
-                let gamma_ctor = match branch_type_class {
+                let gamma_ctor = match then_type_class {
                     TypeClass::Int => "GammaI",
                     TypeClass::Float => "GammaF",
                     TypeClass::Bool => "GammaB",
@@ -423,13 +434,23 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             if let Some(&block_label) = id_to_block.get(&id) {
                 if body_labels.contains(&block_label) {
                     // This value is defined inside the loop
-                    if let Some(term) = ctx.id_to_term.get(&id) {
-                        // Create a Theta node representing this loop computation
-                        // Theta(cond, body, init) where:
-                        // - cond: (Const 1) for infinite loops
-                        // - body: the expression computed in the loop
-                        // - init: (Const 0) placeholder for loop-carried state
-                        let theta_term = format!("(Theta (Const 1) {} (Const 0))", term);
+                    if ctx.id_to_term.contains_key(&id) {
+                        // Use typed Theta matching the value's sort to avoid
+                        // sort mismatches (IntExpr/FloatExpr/BoolExpr vs Expr)
+                        let value_type_class = ctx
+                            .id_to_type
+                            .get(&id)
+                            .and_then(|ty| type_classes.get(ty))
+                            .copied()
+                            .unwrap_or(TypeClass::Other);
+                        let (theta_ctor, init_val) = match value_type_class {
+                            TypeClass::Int => ("ThetaI", "(Const 0)".to_string()),
+                            TypeClass::Float => ("ThetaF", "(FConst 0.0)".to_string()),
+                            TypeClass::Bool => ("ThetaB", "(BoolConst 0)".to_string()),
+                            TypeClass::Other => ("Theta", format!("(Sym \"theta_init_{}\")", id)),
+                        };
+                        let theta_term =
+                            format!("({} (BoolConst 1) id{} {})", theta_ctor, id, init_val);
                         let theta_binding = format!("(let theta_{} {})", id, theta_term);
                         egraph
                             .parse_and_run_program(None, &theta_binding)
