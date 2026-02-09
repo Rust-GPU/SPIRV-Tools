@@ -1038,17 +1038,20 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         );
                     }
                 } else {
-                    // Determine the correct result type from the constructor name
-                    // BEFORE parsing — the sort system guarantees the type class.
+                    // Query the concrete SPIR-V type ID from the egraph.
+                    // The egraph tracks types via IType/FType/BType functions,
+                    // seeded from original instructions and propagated through
+                    // ONE BIG SATURATION.
                     let term_class = type_class_of_constructor(&stripped_term);
-                    let corrected_type = resolve_type_for_class(
-                        term_class,
-                        result_type,
-                        &type_classes,
-                        int32_type,
-                        float32_type,
-                        bool_type,
-                    );
+                    let corrected_type =
+                        match term_class {
+                            TypeClass::Int => query_type_from_egraph(&mut egraph, "IType", id)
+                                .unwrap_or(result_type),
+                            TypeClass::Float => query_type_from_egraph(&mut egraph, "FType", id)
+                                .unwrap_or(result_type),
+                            TypeClass::Bool => bool_type.unwrap_or(result_type),
+                            TypeClass::Other => result_type,
+                        };
                     if corrected_type != result_type {
                         ctx.id_to_type.insert(id, corrected_type);
                     }
@@ -2257,6 +2260,19 @@ fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
     // Vectors use the general Expr sort (not IntExpr/FloatExpr/BoolExpr),
     // so they must remain TypeClass::Other to avoid mis-typing vector Select/Sym.
     classes
+}
+
+/// Query the concrete SPIR-V type ID from the egraph for a given expression.
+///
+/// Returns the type ID stored in the IType/FType/BType function for the given id,
+/// or None if the query fails (e.g., no type was propagated to this expression).
+fn query_type_from_egraph(egraph: &mut egglog::EGraph, func: &str, id: Word) -> Option<Word> {
+    let q = format!("(extract ({} id{}))", func, id);
+    egraph
+        .parse_and_run_program(None, &q)
+        .ok()
+        .and_then(|r| r.first().map(|v| format!("{}", v)))
+        .and_then(|s| s.trim().parse::<Word>().ok())
 }
 
 /// Determine the TypeClass of a term from its egglog constructor name.

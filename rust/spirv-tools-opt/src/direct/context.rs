@@ -103,6 +103,26 @@ impl EgglogContext {
                 }
             }
 
+            // Seed concrete SPIR-V type ID for typed sorts (IType/FType/BType)
+            if let Some(result_type) = inst.result_type {
+                let tc = self.type_class_of_type(result_type);
+                let seed = match tc {
+                    TypeClass::Int => {
+                        Some(format!("(set (IType id{}) {})", result_id, result_type))
+                    }
+                    TypeClass::Float => {
+                        Some(format!("(set (FType id{}) {})", result_id, result_type))
+                    }
+                    TypeClass::Bool => {
+                        Some(format!("(set (BType id{}) {})", result_id, result_type))
+                    }
+                    TypeClass::Other => None,
+                };
+                if let Some(s) = seed {
+                    self.additional_facts.push(s);
+                }
+            }
+
             // Detect same-type bitcast for redundant bitcast elimination
             if inst.class.opcode == Op::Bitcast {
                 if let Some(result_type) = inst.result_type {
