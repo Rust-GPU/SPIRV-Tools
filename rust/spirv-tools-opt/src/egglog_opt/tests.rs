@@ -428,7 +428,10 @@ fn test_de_morgan() {
 
     // !(a && b) should equal !a || !b
     egraph
-        .parse_and_run_program(None, r#"(let root (LogNot (LogAnd (BSym "a") (BSym "b"))))"#)
+        .parse_and_run_program(
+            None,
+            r#"(let root (LogNot (LogAnd (BSym "a") (BSym "b"))))"#,
+        )
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
@@ -655,7 +658,10 @@ fn test_gamma_constant_true() {
 
     // select(true, a, b) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (Gamma (BoolConst 1) (Sym "a") (Sym "b")))"#)
+        .parse_and_run_program(
+            None,
+            r#"(let root (Gamma (BoolConst 1) (Sym "a") (Sym "b")))"#,
+        )
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -680,7 +686,10 @@ fn test_gamma_constant_false() {
 
     // select(false, a, b) = b
     egraph
-        .parse_and_run_program(None, r#"(let root (Gamma (BoolConst 0) (Sym "a") (Sym "b")))"#)
+        .parse_and_run_program(
+            None,
+            r#"(let root (Gamma (BoolConst 0) (Sym "a") (Sym "b")))"#,
+        )
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -730,7 +739,10 @@ fn test_clamp_same_bounds() {
 
     // clamp(x, a, a) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (SClamp (ISym "x") (ISym "a") (ISym "a")))"#)
+        .parse_and_run_program(
+            None,
+            r#"(let root (SClamp (ISym "x") (ISym "a") (ISym "a")))"#,
+        )
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -808,7 +820,10 @@ fn test_fmix_same_args() {
 
     // mix(a, a, t) = a
     egraph
-        .parse_and_run_program(None, r#"(let root (FMix (FSym "a") (FSym "a") (FSym "t")))"#)
+        .parse_and_run_program(
+            None,
+            r#"(let root (FMix (FSym "a") (FSym "a") (FSym "t")))"#,
+        )
         .unwrap();
     egraph
         .parse_and_run_program(None, "(run-schedule (repeat 5 (run)))")
@@ -4892,10 +4907,12 @@ fn test_dce_subgroup_ops_on_undef() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check1 = egraph.parse_and_run_program(None, "(check (= group_all_undef (ExprToBool (Undef))))");
+    let check1 =
+        egraph.parse_and_run_program(None, "(check (= group_all_undef (ExprToBool (Undef))))");
     assert!(check1.is_ok(), "GroupAll of Undef should be Undef");
 
-    let check2 = egraph.parse_and_run_program(None, "(check (= group_any_undef (ExprToBool (Undef))))");
+    let check2 =
+        egraph.parse_and_run_program(None, "(check (= group_any_undef (ExprToBool (Undef))))");
     assert!(check2.is_ok(), "GroupAny of Undef should be Undef");
 
     let check3 = egraph.parse_and_run_program(None, "(check (= broadcast_undef (Undef)))");
@@ -7206,7 +7223,10 @@ fn test_boolconst_gamma_logand_allowed() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr (LogAnd c (ExprToBool x)))))");
+    let check = egraph.parse_and_run_program(
+        None,
+        "(check (= root (BoolToExpr (LogAnd c (ExprToBool x)))))",
+    );
     assert!(
         check.is_ok(),
         "Gamma(c, x, BoolConst(0)) should simplify to LogAnd(c, x) when x is BoolType"
@@ -7258,7 +7278,10 @@ fn test_boolconst_gamma_logor_allowed() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root (BoolToExpr (LogOr c (ExprToBool x)))))");
+    let check = egraph.parse_and_run_program(
+        None,
+        "(check (= root (BoolToExpr (LogOr c (ExprToBool x)))))",
+    );
     assert!(
         check.is_ok(),
         "Gamma(c, BoolConst(1), x) should simplify to LogOr(c, x)"

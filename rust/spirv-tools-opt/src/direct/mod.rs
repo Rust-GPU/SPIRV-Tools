@@ -357,7 +357,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 } else {
                     format!("(BSym \"id{}\")", sel.condition_id)
                 };
-                let branch_type_class = ctx.id_to_type.get(&then_id)
+                let branch_type_class = ctx
+                    .id_to_type
+                    .get(&then_id)
                     .and_then(|ty| type_classes.get(ty))
                     .copied()
                     .unwrap_or(TypeClass::Other);
@@ -367,10 +369,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     TypeClass::Bool => "GammaB",
                     TypeClass::Other => "Gamma",
                 };
-                let gamma_term = format!(
-                    "({} {} id{} id{})",
-                    gamma_ctor, cond_term, then_id, else_id
-                );
+                let gamma_term =
+                    format!("({} {} id{} id{})", gamma_ctor, cond_term, then_id, else_id);
                 let gamma_binding = format!("(let gamma_{}_{} {})", then_id, else_id, gamma_term);
                 egraph
                     .parse_and_run_program(None, &gamma_binding)
@@ -767,9 +767,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             match inst.class.opcode {
                 Op::Constant => {
                     // Check if this constant's type is float
-                    let is_float = inst
-                        .result_type
-                        .and_then(|ty| type_classes.get(&ty))
+                    let is_float = inst.result_type.and_then(|ty| type_classes.get(&ty))
                         == Some(&TypeClass::Float);
 
                     if is_float {
@@ -932,9 +930,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 next_id += 1;
                                 // value contains f64 bits packed as i64
                                 let f64_val = f64::from_bits(value as u64);
-                                let operand = rspirv::dr::Operand::LiteralBit32(
-                                    (f64_val as f32).to_bits(),
-                                );
+                                let operand =
+                                    rspirv::dr::Operand::LiteralBit32((f64_val as f32).to_bits());
                                 synthesized_constants.push(Instruction::new(
                                     Op::Constant,
                                     Some(ty),
@@ -2021,7 +2018,12 @@ fn cleanup_module(
 fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &mut HashSet<Word>) {
     // Find all Sym variants: (Sym "idN"), (ISym "idN"), (FSym "idN"), (BSym "idN")
     let sym_prefixes: &[&[u8]] = &[b"(Sym \"id", b"(ISym \"id", b"(FSym \"id", b"(BSym \"id"];
-    let const_prefixes: &[&[u8]] = &[b"(Sym \"const", b"(ISym \"const", b"(FSym \"const", b"(BSym \"const"];
+    let const_prefixes: &[&[u8]] = &[
+        b"(Sym \"const",
+        b"(ISym \"const",
+        b"(FSym \"const",
+        b"(BSym \"const",
+    ];
     let mut i = 0;
     let bytes = term.as_bytes();
     while i < bytes.len() {
@@ -2047,7 +2049,9 @@ fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &
                 break;
             }
         }
-        if matched { continue; }
+        if matched {
+            continue;
+        }
 
         // Check for Sym "const..." patterns (constant references)
         for prefix in const_prefixes {
@@ -2055,7 +2059,10 @@ fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &
                 // Find the opening quote position: after "(Sym " or "(ISym " etc.
                 // We need to extract the key between the quotes
                 // Find the full key between quotes
-                let key_start = bytes[i..].iter().position(|&b| b == b'"').map(|p| i + p + 1);
+                let key_start = bytes[i..]
+                    .iter()
+                    .position(|&b| b == b'"')
+                    .map(|p| i + p + 1);
                 if let Some(ks) = key_start {
                     let mut end = ks;
                     while end < bytes.len() && bytes[end] != b'"' {
@@ -2074,7 +2081,9 @@ fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &
                 break;
             }
         }
-        if matched { continue; }
+        if matched {
+            continue;
+        }
 
         i += 1;
     }
@@ -2499,7 +2508,10 @@ fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
             // Skip Sym variant patterns - these are safe opaque references
             // Handles: (Sym "..."), (ISym "..."), (FSym "..."), (BSym "...")
             let skip_sym = (i + 5 < bytes.len() && &bytes[i..i + 5] == b"(Sym ")
-                || (i + 6 < bytes.len() && (&bytes[i..i + 6] == b"(ISym " || &bytes[i..i + 6] == b"(FSym " || &bytes[i..i + 6] == b"(BSym "));
+                || (i + 6 < bytes.len()
+                    && (&bytes[i..i + 6] == b"(ISym "
+                        || &bytes[i..i + 6] == b"(FSym "
+                        || &bytes[i..i + 6] == b"(BSym "));
             if skip_sym {
                 // Skip to closing paren
                 if let Some(close) = term[i..].find(')') {
@@ -2614,8 +2626,14 @@ fn parse_effect_result(s: &str) -> Option<ParsedEffect> {
 
             // Check for Gamma/Select variants (typed and untyped)
             let gamma_select_prefixes = [
-                "(Gamma ", "(GammaI ", "(GammaF ", "(GammaB ",
-                "(Select ", "(SelectI ", "(SelectF ", "(SelectB ",
+                "(Gamma ",
+                "(GammaI ",
+                "(GammaF ",
+                "(GammaB ",
+                "(Select ",
+                "(SelectI ",
+                "(SelectF ",
+                "(SelectB ",
             ];
             let matched_prefix = gamma_select_prefixes.iter().find(|p| inner.starts_with(*p));
             if let Some(prefix) = matched_prefix {
@@ -3153,10 +3171,18 @@ fn materialize_term(
 
     // Select / Gamma / If (untyped and typed variants) — all map to Op::Select
     for select_prefix in &[
-        "(Select ", "(Gamma ", "(If ",
-        "(SelectI ", "(GammaI ", "(IfI ",
-        "(SelectF ", "(GammaF ", "(IfF ",
-        "(SelectB ", "(GammaB ", "(IfB ",
+        "(Select ",
+        "(Gamma ",
+        "(If ",
+        "(SelectI ",
+        "(GammaI ",
+        "(IfI ",
+        "(SelectF ",
+        "(GammaF ",
+        "(IfF ",
+        "(SelectB ",
+        "(GammaB ",
+        "(IfB ",
     ] {
         if let Some(rest) = term.strip_prefix(select_prefix) {
             if let Some(rest) = rest.strip_suffix(')') {

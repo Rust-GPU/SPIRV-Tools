@@ -139,7 +139,11 @@ pub fn has_exact_recip32(x: i64) -> Option<()> {
     const F32_MANTISSA_MASK: u32 = (1u32 << 23) - 1;
     if (bits & F32_MANTISSA_MASK) == 0 {
         let recip = 1.0f32 / f;
-        if recip.is_finite() { Some(()) } else { None }
+        if recip.is_finite() {
+            Some(())
+        } else {
+            None
+        }
     } else {
         None
     }

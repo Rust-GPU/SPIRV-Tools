@@ -87,10 +87,8 @@ impl EgglogContext {
                         let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
                         match inst.class.opcode {
                             Op::Constant | Op::SConvert | Op::UConvert => {
-                                self.additional_facts.push(format!(
-                                    "(set (ResultWidth id{}) {})",
-                                    result_id, width
-                                ));
+                                self.additional_facts
+                                    .push(format!("(set (ResultWidth id{}) {})", result_id, width));
                             }
                             _ => {}
                         }
@@ -104,10 +102,8 @@ impl EgglogContext {
                         if let Some(src_id) = src_id {
                             if let Some(src_type) = self.id_to_type.get(&src_id) {
                                 if *src_type == result_type {
-                                    self.additional_facts.push(format!(
-                                        "(SameTypeBitcast id{})",
-                                        result_id
-                                    ));
+                                    self.additional_facts
+                                        .push(format!("(SameTypeBitcast id{})", result_id));
                                 }
                             }
                         }
@@ -178,8 +174,12 @@ impl EgglogContext {
                     })?;
                     // Format with decimal point for egglog f64 parsing
                     let s = format!("{}", float_val);
-                    let literal = if s.contains('.') || s.contains('e') || s.contains('E')
-                        || s == "inf" || s == "-inf" || s == "NaN"
+                    let literal = if s.contains('.')
+                        || s.contains('e')
+                        || s.contains('E')
+                        || s == "inf"
+                        || s == "-inf"
+                        || s == "NaN"
                     {
                         s
                     } else {

@@ -36,7 +36,7 @@
 
 mod primitives;
 
-use egglog::sort::{F, OrderedFloat};
+use egglog::sort::{OrderedFloat, F};
 use egglog::{add_primitive, EGraph};
 // The primitive functions are used inside `add_primitive!` macro closures, which
 // the compiler doesn't track as direct usage of the imported names.
@@ -277,7 +277,11 @@ fn has_exact_recip(x: i64) -> Option<()> {
     const F64_MANTISSA_MASK: u64 = (1u64 << 52) - 1;
     if (bits & F64_MANTISSA_MASK) == 0 {
         let recip = 1.0 / f;
-        if recip.is_finite() { Some(()) } else { None }
+        if recip.is_finite() {
+            Some(())
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -430,7 +434,11 @@ fn has_exact_recip32(x: i64) -> Option<()> {
     const F32_MANTISSA_MASK: u32 = (1u32 << 23) - 1;
     if (bits & F32_MANTISSA_MASK) == 0 {
         let recip = 1.0f32 / f;
-        if recip.is_finite() { Some(()) } else { None }
+        if recip.is_finite() {
+            Some(())
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -630,12 +638,24 @@ fn quantize_to_f16(v: f64) -> f64 {
 
 /// NaN-aware minimum: if a is NaN return b, if b is NaN return a, else min.
 fn float_nmin(a: f64, b: f64) -> f64 {
-    if a.is_nan() { b } else if b.is_nan() { a } else { a.min(b) }
+    if a.is_nan() {
+        b
+    } else if b.is_nan() {
+        a
+    } else {
+        a.min(b)
+    }
 }
 
 /// NaN-aware maximum: if a is NaN return b, if b is NaN return a, else max.
 fn float_nmax(a: f64, b: f64) -> f64 {
-    if a.is_nan() { b } else if b.is_nan() { a } else { a.max(b) }
+    if a.is_nan() {
+        b
+    } else if b.is_nan() {
+        a
+    } else {
+        a.max(b)
+    }
 }
 
 /// NaN-aware clamp: nmax(nmin(x, hi), lo).
@@ -645,12 +665,24 @@ fn float_nclamp(x: f64, lo: f64, hi: f64) -> f64 {
 
 /// Compute sign of an integer constant (-1, 0, or 1).
 fn int_sign(x: i64) -> i64 {
-    if x > 0 { 1 } else if x < 0 { -1 } else { 0 }
+    if x > 0 {
+        1
+    } else if x < 0 {
+        -1
+    } else {
+        0
+    }
 }
 
 /// Compute sign of a float constant (-1.0, 0.0, or 1.0).
 fn float_sign_f64(x: f64) -> f64 {
-    if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
+    if x > 0.0 {
+        1.0
+    } else if x < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
 }
 
 /// Compute fract (fractional part) of a float constant.
@@ -785,42 +817,153 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "int-sign" = |a: i64| -> i64 { int_sign(a) });
 
     // GLSL transcendental constant folding primitives (native f64 via F for FConst)
-    add_primitive!(&mut egraph, "float-sin" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sin())) });
-    add_primitive!(&mut egraph, "float-cos" = |a: F| -> F { F::from(OrderedFloat(a.0.0.cos())) });
-    add_primitive!(&mut egraph, "float-tan" = |a: F| -> F { F::from(OrderedFloat(a.0.0.tan())) });
-    add_primitive!(&mut egraph, "float-asin" = |a: F| -> F { F::from(OrderedFloat(a.0.0.asin())) });
-    add_primitive!(&mut egraph, "float-acos" = |a: F| -> F { F::from(OrderedFloat(a.0.0.acos())) });
-    add_primitive!(&mut egraph, "float-atan" = |a: F| -> F { F::from(OrderedFloat(a.0.0.atan())) });
-    add_primitive!(&mut egraph, "float-atan2" = |y: F, x: F| -> F { F::from(OrderedFloat(y.0.0.atan2(x.0.0))) });
-    add_primitive!(&mut egraph, "float-sinh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sinh())) });
-    add_primitive!(&mut egraph, "float-cosh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.cosh())) });
-    add_primitive!(&mut egraph, "float-tanh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.tanh())) });
-    add_primitive!(&mut egraph, "float-asinh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.asinh())) });
-    add_primitive!(&mut egraph, "float-acosh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.acosh())) });
-    add_primitive!(&mut egraph, "float-atanh" = |a: F| -> F { F::from(OrderedFloat(a.0.0.atanh())) });
-    add_primitive!(&mut egraph, "float-exp" = |a: F| -> F { F::from(OrderedFloat(a.0.0.exp())) });
-    add_primitive!(&mut egraph, "float-exp2" = |a: F| -> F { F::from(OrderedFloat(a.0.0.exp2())) });
-    add_primitive!(&mut egraph, "float-log" = |a: F| -> F { F::from(OrderedFloat(a.0.0.ln())) });
-    add_primitive!(&mut egraph, "float-log2" = |a: F| -> F { F::from(OrderedFloat(a.0.0.log2())) });
-    add_primitive!(&mut egraph, "float-sqrt" = |a: F| -> F { F::from(OrderedFloat(a.0.0.sqrt())) });
-    add_primitive!(&mut egraph, "float-inversesqrt" = |a: F| -> F { F::from(OrderedFloat(1.0 / a.0.0.sqrt())) });
-    add_primitive!(&mut egraph, "float-pow" = |x: F, y: F| -> F { F::from(OrderedFloat(x.0.0.powf(y.0.0))) });
-    add_primitive!(&mut egraph, "float-floor" = |a: F| -> F { F::from(OrderedFloat(a.0.0.floor())) });
-    add_primitive!(&mut egraph, "float-ceil" = |a: F| -> F { F::from(OrderedFloat(a.0.0.ceil())) });
-    add_primitive!(&mut egraph, "float-round" = |a: F| -> F { F::from(OrderedFloat(a.0.0.round())) });
-    add_primitive!(&mut egraph, "float-trunc" = |a: F| -> F { F::from(OrderedFloat(a.0.0.trunc())) });
-    add_primitive!(&mut egraph, "float-abs" = |a: F| -> F { F::from(OrderedFloat(a.0.0.abs())) });
-    add_primitive!(&mut egraph, "float-sign" = |a: F| -> F { F::from(OrderedFloat(float_sign_f64(a.0.0))) });
-    add_primitive!(&mut egraph, "float-fract" = |a: F| -> F { F::from(OrderedFloat(float_fract_f64(a.0.0))) });
+    add_primitive!(
+        &mut egraph,
+        "float-sin" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.sin())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-cos" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.cos())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-tan" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.tan())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-asin" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.asin())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-acos" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.acos())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atan" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.atan())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atan2" = |y: F, x: F| -> F { F::from(OrderedFloat(y.0 .0.atan2(x.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sinh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.sinh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-cosh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.cosh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-tanh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.tanh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-asinh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.asinh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-acosh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.acosh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-atanh" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.atanh())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-exp" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.exp())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-exp2" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.exp2())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-log" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.ln())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-log2" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.log2())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sqrt" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.sqrt())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-inversesqrt" = |a: F| -> F { F::from(OrderedFloat(1.0 / a.0 .0.sqrt())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-pow" = |x: F, y: F| -> F { F::from(OrderedFloat(x.0 .0.powf(y.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-floor" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.floor())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-ceil" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.ceil())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-round" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.round())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-trunc" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.trunc())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-abs" = |a: F| -> F { F::from(OrderedFloat(a.0 .0.abs())) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sign" = |a: F| -> F { F::from(OrderedFloat(float_sign_f64(a.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-fract" = |a: F| -> F { F::from(OrderedFloat(float_fract_f64(a.0 .0))) }
+    );
     add_primitive!(&mut egraph, "float-min" = |x: F, y: F| -> F { x.min(y) });
     add_primitive!(&mut egraph, "float-max" = |x: F, y: F| -> F { x.max(y) });
-    add_primitive!(&mut egraph, "float-clamp" = |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(x.0.0.clamp(lo.0.0, hi.0.0))) });
-    add_primitive!(&mut egraph, "float-nmin" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmin(a.0.0, b.0.0))) });
-    add_primitive!(&mut egraph, "float-nmax" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmax(a.0.0, b.0.0))) });
-    add_primitive!(&mut egraph, "float-nclamp" = |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(float_nclamp(x.0.0, lo.0.0, hi.0.0))) });
-    add_primitive!(&mut egraph, "float-mix" = |x: F, y: F, a: F| -> F { F::from(OrderedFloat(float_mix_f64(x.0.0, y.0.0, a.0.0))) });
-    add_primitive!(&mut egraph, "float-step" = |edge: F, x: F| -> F { F::from(OrderedFloat(if x.0.0 < edge.0.0 { 0.0 } else { 1.0 })) });
-    add_primitive!(&mut egraph, "float-smoothstep" = |e0: F, e1: F, x: F| -> F { F::from(OrderedFloat(float_smoothstep_f64(e0.0.0, e1.0.0, x.0.0))) });
+    add_primitive!(
+        &mut egraph,
+        "float-clamp" =
+            |x: F, lo: F, hi: F| -> F { F::from(OrderedFloat(x.0 .0.clamp(lo.0 .0, hi.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-nmin" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmin(a.0 .0, b.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-nmax" = |a: F, b: F| -> F { F::from(OrderedFloat(float_nmax(a.0 .0, b.0 .0))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-nclamp" = |x: F, lo: F, hi: F| -> F {
+            F::from(OrderedFloat(float_nclamp(x.0 .0, lo.0 .0, hi.0 .0)))
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-mix" = |x: F, y: F, a: F| -> F {
+            F::from(OrderedFloat(float_mix_f64(x.0 .0, y.0 .0, a.0 .0)))
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-step" = |edge: F, x: F| -> F {
+            F::from(OrderedFloat(if x.0 .0 < edge.0 .0 { 0.0 } else { 1.0 }))
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-smoothstep" = |e0: F, e1: F, x: F| -> F {
+            F::from(OrderedFloat(float_smoothstep_f64(e0.0 .0, e1.0 .0, x.0 .0)))
+        }
+    );
     add_primitive!(&mut egraph, "float-rem" = |a: F, b: F| -?> F {
         if b.0.0 == 0.0 { None } else { Some(F::from(OrderedFloat(a.0.0 % b.0.0))) }
     });
@@ -829,14 +972,16 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "f64-has-exact-recip" = |a: F| -?> () {
         f64_has_exact_recip(a.0.0)
     });
-    add_primitive!(&mut egraph, "f64-recip" = |a: F| -> F {
-        F::from(OrderedFloat(1.0 / a.0.0))
-    });
+    add_primitive!(
+        &mut egraph,
+        "f64-recip" = |a: F| -> F { F::from(OrderedFloat(1.0 / a.0 .0)) }
+    );
 
     // QuantizeToF16: round float to IEEE 754 half-precision
-    add_primitive!(&mut egraph, "quantize-to-f16" = |a: F| -> F {
-        F::from(OrderedFloat(quantize_to_f16(a.0.0)))
-    });
+    add_primitive!(
+        &mut egraph,
+        "quantize-to-f16" = |a: F| -> F { F::from(OrderedFloat(quantize_to_f16(a.0 .0))) }
+    );
 
     // Type conversion primitives (cross-type: F <-> i64)
     add_primitive!(&mut egraph, "float-to-int-signed" = |a: F| -?> i64 {
@@ -845,36 +990,80 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(&mut egraph, "float-to-int-unsigned" = |a: F| -?> i64 {
         float_to_int_unsigned(a.0.0)
     });
-    add_primitive!(&mut egraph, "int-to-float-signed" = |a: i64| -> F {
-        F::from(OrderedFloat(int_to_float_signed(a)))
-    });
-    add_primitive!(&mut egraph, "int-to-float-unsigned" = |a: i64| -> F {
-        F::from(OrderedFloat(int_to_float_unsigned(a)))
-    });
+    add_primitive!(
+        &mut egraph,
+        "int-to-float-signed" = |a: i64| -> F { F::from(OrderedFloat(int_to_float_signed(a))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "int-to-float-unsigned" = |a: i64| -> F { F::from(OrderedFloat(int_to_float_unsigned(a))) }
+    );
 
     // Unsigned 32-bit comparison primitives (cast to u32 for correct unsigned semantics)
     add_primitive!(&mut egraph, "u32-lt" = |a: i64, b: i64| -?> () { u32_lt(a, b) });
     add_primitive!(&mut egraph, "u32-le" = |a: i64, b: i64| -?> () { u32_le(a, b) });
     add_primitive!(&mut egraph, "u32-gt" = |a: i64, b: i64| -?> () { u32_gt(a, b) });
     add_primitive!(&mut egraph, "u32-ge" = |a: i64, b: i64| -?> () { u32_ge(a, b) });
-    add_primitive!(&mut egraph, "u32-min" = |a: i64, b: i64| -> i64 { u32_min(a, b) });
-    add_primitive!(&mut egraph, "u32-max" = |a: i64, b: i64| -> i64 { u32_max(a, b) });
+    add_primitive!(
+        &mut egraph,
+        "u32-min" = |a: i64, b: i64| -> i64 { u32_min(a, b) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "u32-max" = |a: i64, b: i64| -> i64 { u32_max(a, b) }
+    );
     add_primitive!(&mut egraph, "u32-div" = |a: i64, b: i64| -?> i64 { u32_div(a, b) });
     add_primitive!(&mut egraph, "u32-mod" = |a: i64, b: i64| -?> i64 { u32_mod(a, b) });
 
     // NaN-aware float comparison primitives (FOrd* returns 0 if NaN, FUnord* returns 1 if NaN)
-    add_primitive!(&mut egraph, "ford-eq" = |a: F, b: F| -> i64 { ford_eq(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "ford-ne" = |a: F, b: F| -> i64 { ford_ne(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "ford-lt" = |a: F, b: F| -> i64 { ford_lt(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "ford-le" = |a: F, b: F| -> i64 { ford_le(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "ford-gt" = |a: F, b: F| -> i64 { ford_gt(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "ford-ge" = |a: F, b: F| -> i64 { ford_ge(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-eq" = |a: F, b: F| -> i64 { funord_eq(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-ne" = |a: F, b: F| -> i64 { funord_ne(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-lt" = |a: F, b: F| -> i64 { funord_lt(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-le" = |a: F, b: F| -> i64 { funord_le(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-gt" = |a: F, b: F| -> i64 { funord_gt(a.0.0, b.0.0) });
-    add_primitive!(&mut egraph, "funord-ge" = |a: F, b: F| -> i64 { funord_ge(a.0.0, b.0.0) });
+    add_primitive!(
+        &mut egraph,
+        "ford-eq" = |a: F, b: F| -> i64 { ford_eq(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "ford-ne" = |a: F, b: F| -> i64 { ford_ne(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "ford-lt" = |a: F, b: F| -> i64 { ford_lt(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "ford-le" = |a: F, b: F| -> i64 { ford_le(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "ford-gt" = |a: F, b: F| -> i64 { ford_gt(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "ford-ge" = |a: F, b: F| -> i64 { ford_ge(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-eq" = |a: F, b: F| -> i64 { funord_eq(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-ne" = |a: F, b: F| -> i64 { funord_ne(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-lt" = |a: F, b: F| -> i64 { funord_lt(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-le" = |a: F, b: F| -> i64 { funord_le(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-gt" = |a: F, b: F| -> i64 { funord_gt(a.0 .0, b.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "funord-ge" = |a: F, b: F| -> i64 { funord_ge(a.0 .0, b.0 .0) }
+    );
 
     // SMod with SPIR-V sign-of-divisor semantics
     add_primitive!(&mut egraph, "smod" = |a: i64, b: i64| -> i64 { smod(a, b) });
@@ -885,9 +1074,10 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     });
 
     // IEEE 754 float negation (sign bit flip, handles ±0.0 correctly)
-    add_primitive!(&mut egraph, "float-neg" = |a: F| -> F {
-        F::from(OrderedFloat(float_neg(a.0.0)))
-    });
+    add_primitive!(
+        &mut egraph,
+        "float-neg" = |a: F| -> F { F::from(OrderedFloat(float_neg(a.0 .0))) }
+    );
 
     // Safe signed 32-bit division/remainder (guards i32::MIN / -1 overflow)
     add_primitive!(&mut egraph, "sdiv32" = |a: i64, b: i64| -?> i64 { sdiv32(a, b) });
@@ -899,48 +1089,68 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
 
     // Auto-detecting float multiply: i64 bit patterns → f64 result
     // If both values have zero high 32 bits, treat as f32; otherwise f64
-    add_primitive!(&mut egraph, "float-mul-auto" = |a: i64, b: i64| -> F {
-        F::from(OrderedFloat(float_mul_auto(a, b)))
-    });
+    add_primitive!(
+        &mut egraph,
+        "float-mul-auto" = |a: i64, b: i64| -> F { F::from(OrderedFloat(float_mul_auto(a, b))) }
+    );
 
     // Auto-detecting float binary ops: i64 bit patterns → i64 bit pattern result
     // Used for vector element-wise constant folding
-    add_primitive!(&mut egraph, "float-add-bits" = |a: i64, b: i64| -> i64 {
-        float_binop_bits(a, b, std::ops::Add::add, std::ops::Add::add)
-    });
-    add_primitive!(&mut egraph, "float-sub-bits" = |a: i64, b: i64| -> i64 {
-        float_binop_bits(a, b, std::ops::Sub::sub, std::ops::Sub::sub)
-    });
-    add_primitive!(&mut egraph, "float-mul-bits" = |a: i64, b: i64| -> i64 {
-        float_binop_bits(a, b, std::ops::Mul::mul, std::ops::Mul::mul)
-    });
-    add_primitive!(&mut egraph, "float-div-bits" = |a: i64, b: i64| -> i64 {
-        float_binop_bits(a, b, std::ops::Div::div, std::ops::Div::div)
-    });
-    add_primitive!(&mut egraph, "float-neg-bits" = |a: i64| -> i64 {
-        float_neg_bits(a)
-    });
+    add_primitive!(
+        &mut egraph,
+        "float-add-bits" = |a: i64, b: i64| -> i64 {
+            float_binop_bits(a, b, std::ops::Add::add, std::ops::Add::add)
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-sub-bits" = |a: i64, b: i64| -> i64 {
+            float_binop_bits(a, b, std::ops::Sub::sub, std::ops::Sub::sub)
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-mul-bits" = |a: i64, b: i64| -> i64 {
+            float_binop_bits(a, b, std::ops::Mul::mul, std::ops::Mul::mul)
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-div-bits" = |a: i64, b: i64| -> i64 {
+            float_binop_bits(a, b, std::ops::Div::div, std::ops::Div::div)
+        }
+    );
+    add_primitive!(
+        &mut egraph,
+        "float-neg-bits" = |a: i64| -> i64 { float_neg_bits(a) }
+    );
 
-    add_primitive!(&mut egraph, "sconvert-fold" = |v: i64, dw: i64| -> i64 {
-        sconvert_fold(v, dw)
-    });
-    add_primitive!(&mut egraph, "uconvert-fold" = |v: i64, sw: i64, dw: i64| -> i64 {
-        uconvert_fold(v, sw, dw)
-    });
+    add_primitive!(
+        &mut egraph,
+        "sconvert-fold" = |v: i64, dw: i64| -> i64 { sconvert_fold(v, dw) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "uconvert-fold" = |v: i64, sw: i64, dw: i64| -> i64 { uconvert_fold(v, sw, dw) }
+    );
 
     // Bitcast constant folding primitives (cross int/float reinterpretation)
-    add_primitive!(&mut egraph, "bitcast-i32-to-f" = |v: i64| -> F {
-        F::from(OrderedFloat(bitcast_int_to_float32(v)))
-    });
-    add_primitive!(&mut egraph, "bitcast-i64-to-f" = |v: i64| -> F {
-        F::from(OrderedFloat(bitcast_int_to_float64(v)))
-    });
-    add_primitive!(&mut egraph, "bitcast-f-to-i32" = |v: F| -> i64 {
-        bitcast_float_to_int32(v.0.0)
-    });
-    add_primitive!(&mut egraph, "bitcast-f-to-i64" = |v: F| -> i64 {
-        bitcast_float_to_int64(v.0.0)
-    });
+    add_primitive!(
+        &mut egraph,
+        "bitcast-i32-to-f" = |v: i64| -> F { F::from(OrderedFloat(bitcast_int_to_float32(v))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "bitcast-i64-to-f" = |v: i64| -> F { F::from(OrderedFloat(bitcast_int_to_float64(v))) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "bitcast-f-to-i32" = |v: F| -> i64 { bitcast_float_to_int32(v.0 .0) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "bitcast-f-to-i64" = |v: F| -> i64 { bitcast_float_to_int64(v.0 .0) }
+    );
 
     // Now load the base SPIR-V language and rules (which use the primitives above)
     egraph

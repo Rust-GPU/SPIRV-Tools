@@ -90,8 +90,12 @@ pub fn resolve_term_to_id(term: &str, id_map: &HashMap<String, Word>) -> Option<
 
     // Handle bridge constructors as transparent wrappers
     for prefix in &[
-        "(IntToExpr ", "(FloatToExpr ", "(BoolToExpr ",
-        "(ExprToInt ", "(ExprToFloat ", "(ExprToBool ",
+        "(IntToExpr ",
+        "(FloatToExpr ",
+        "(BoolToExpr ",
+        "(ExprToInt ",
+        "(ExprToFloat ",
+        "(ExprToBool ",
     ] {
         if let Some(rest) = term.strip_prefix(prefix) {
             if let Some(inner) = rest.strip_suffix(')') {

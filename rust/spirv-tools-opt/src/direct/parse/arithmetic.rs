@@ -61,9 +61,18 @@ const UNARY_OPS: &[(&str, Op)] = &[
 
 /// All Select/Gamma/If variants (typed and untyped) map to Op::Select.
 const SELECT_VARIANTS: &[&str] = &[
-    "Select", "SelectI", "SelectF", "SelectB",
-    "Gamma", "GammaI", "GammaF", "GammaB",
-    "If", "IfI", "IfF", "IfB",
+    "Select",
+    "SelectI",
+    "SelectF",
+    "SelectB",
+    "Gamma",
+    "GammaI",
+    "GammaF",
+    "GammaB",
+    "If",
+    "IfI",
+    "IfF",
+    "IfB",
     "VecSelect",
 ];
 

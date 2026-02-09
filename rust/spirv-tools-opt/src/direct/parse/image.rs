@@ -45,9 +45,7 @@ pub fn try_parse_image(
                 vec![
                     rspirv::dr::Operand::IdRef(image),
                     rspirv::dr::Operand::IdRef(coord),
-                    rspirv::dr::Operand::ImageOperands(
-                        rspirv::spirv::ImageOperands::OFFSET,
-                    ),
+                    rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::OFFSET),
                     rspirv::dr::Operand::IdRef(offset),
                 ],
             ));
@@ -64,9 +62,7 @@ pub fn try_parse_image(
                 vec![
                     rspirv::dr::Operand::IdRef(image),
                     rspirv::dr::Operand::IdRef(coord),
-                    rspirv::dr::Operand::ImageOperands(
-                        rspirv::spirv::ImageOperands::CONST_OFFSET,
-                    ),
+                    rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::CONST_OFFSET),
                     rspirv::dr::Operand::IdRef(offset),
                 ],
             ));
@@ -98,9 +94,7 @@ pub fn try_parse_image(
                 vec![
                     rspirv::dr::Operand::IdRef(image),
                     rspirv::dr::Operand::IdRef(coord),
-                    rspirv::dr::Operand::ImageOperands(
-                        rspirv::spirv::ImageOperands::OFFSET,
-                    ),
+                    rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::OFFSET),
                     rspirv::dr::Operand::IdRef(offset),
                 ],
             ));
@@ -117,9 +111,7 @@ pub fn try_parse_image(
                 vec![
                     rspirv::dr::Operand::IdRef(image),
                     rspirv::dr::Operand::IdRef(coord),
-                    rspirv::dr::Operand::ImageOperands(
-                        rspirv::spirv::ImageOperands::CONST_OFFSET,
-                    ),
+                    rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::CONST_OFFSET),
                     rspirv::dr::Operand::IdRef(offset),
                 ],
             ));
