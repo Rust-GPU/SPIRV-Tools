@@ -464,6 +464,29 @@ fn float_mul_auto(a: i64, b: i64) -> f64 {
     }
 }
 
+/// Auto-detect f32/f64 bit pattern binary operation, returning result as i64 bit pattern.
+/// If both values have zero high 32 bits, treat as f32; otherwise f64.
+fn float_binop_bits(a: i64, b: i64, op32: fn(f32, f32) -> f32, op64: fn(f64, f64) -> f64) -> i64 {
+    if (a >> 32) == 0 && (b >> 32) == 0 {
+        let r = op32(f32::from_bits(a as u32), f32::from_bits(b as u32));
+        r.to_bits() as i64
+    } else {
+        let r = op64(f64::from_bits(a as u64), f64::from_bits(b as u64));
+        r.to_bits() as i64
+    }
+}
+
+/// Auto-detect f32/f64 bit pattern and negate, returning result as i64 bit pattern.
+fn float_neg_bits(a: i64) -> i64 {
+    if (a >> 32) == 0 {
+        let r = -f32::from_bits(a as u32);
+        r.to_bits() as i64
+    } else {
+        let r = -f64::from_bits(a as u64);
+        r.to_bits() as i64
+    }
+}
+
 /// NaN-aware minimum: if a is NaN return b, if b is NaN return a, else min.
 fn float_nmin(a: f64, b: f64) -> f64 {
     if a.is_nan() { b } else if b.is_nan() { a } else { a.min(b) }
@@ -732,6 +755,24 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     // If both values have zero high 32 bits, treat as f32; otherwise f64
     add_primitive!(&mut egraph, "float-mul-auto" = |a: i64, b: i64| -> F {
         F::from(OrderedFloat(float_mul_auto(a, b)))
+    });
+
+    // Auto-detecting float binary ops: i64 bit patterns → i64 bit pattern result
+    // Used for vector element-wise constant folding
+    add_primitive!(&mut egraph, "float-add-bits" = |a: i64, b: i64| -> i64 {
+        float_binop_bits(a, b, std::ops::Add::add, std::ops::Add::add)
+    });
+    add_primitive!(&mut egraph, "float-sub-bits" = |a: i64, b: i64| -> i64 {
+        float_binop_bits(a, b, std::ops::Sub::sub, std::ops::Sub::sub)
+    });
+    add_primitive!(&mut egraph, "float-mul-bits" = |a: i64, b: i64| -> i64 {
+        float_binop_bits(a, b, std::ops::Mul::mul, std::ops::Mul::mul)
+    });
+    add_primitive!(&mut egraph, "float-div-bits" = |a: i64, b: i64| -> i64 {
+        float_binop_bits(a, b, std::ops::Div::div, std::ops::Div::div)
+    });
+    add_primitive!(&mut egraph, "float-neg-bits" = |a: i64| -> i64 {
+        float_neg_bits(a)
     });
 
     // Now load the base SPIR-V language and rules (which use the primitives above)

@@ -285,6 +285,115 @@
                       (FAdd (FConst (float-mul-auto a2 b2)) (FConst (float-mul-auto a3 b3)))))))
 
 ; =============================================================================
+; Vector Float Element-Wise Constant Folding
+; =============================================================================
+; Uses auto-detecting bit-pattern primitives (float-add-bits etc.) that
+; take i64 bit patterns, detect f32/f64, and return i64 bit patterns.
+
+; VecFAdd constant fold
+(rule ((= e (VecFAdd (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                     (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (float-add-bits a0 b0)))
+                      (IntToExpr (Const (float-add-bits a1 b1)))))))
+(rule ((= e (VecFAdd (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                     (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (float-add-bits a0 b0)))
+                      (IntToExpr (Const (float-add-bits a1 b1)))
+                      (IntToExpr (Const (float-add-bits a2 b2)))))))
+(rule ((= e (VecFAdd (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                     (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (float-add-bits a0 b0)))
+                      (IntToExpr (Const (float-add-bits a1 b1)))
+                      (IntToExpr (Const (float-add-bits a2 b2)))
+                      (IntToExpr (Const (float-add-bits a3 b3)))))))
+
+; VecFSub constant fold
+(rule ((= e (VecFSub (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                     (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (float-sub-bits a0 b0)))
+                      (IntToExpr (Const (float-sub-bits a1 b1)))))))
+(rule ((= e (VecFSub (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                     (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (float-sub-bits a0 b0)))
+                      (IntToExpr (Const (float-sub-bits a1 b1)))
+                      (IntToExpr (Const (float-sub-bits a2 b2)))))))
+(rule ((= e (VecFSub (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                     (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (float-sub-bits a0 b0)))
+                      (IntToExpr (Const (float-sub-bits a1 b1)))
+                      (IntToExpr (Const (float-sub-bits a2 b2)))
+                      (IntToExpr (Const (float-sub-bits a3 b3)))))))
+
+; VecFMul constant fold
+(rule ((= e (VecFMul (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                     (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (float-mul-bits a0 b0)))
+                      (IntToExpr (Const (float-mul-bits a1 b1)))))))
+(rule ((= e (VecFMul (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                     (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (float-mul-bits a0 b0)))
+                      (IntToExpr (Const (float-mul-bits a1 b1)))
+                      (IntToExpr (Const (float-mul-bits a2 b2)))))))
+(rule ((= e (VecFMul (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                     (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (float-mul-bits a0 b0)))
+                      (IntToExpr (Const (float-mul-bits a1 b1)))
+                      (IntToExpr (Const (float-mul-bits a2 b2)))
+                      (IntToExpr (Const (float-mul-bits a3 b3)))))))
+
+; VecFDiv constant fold
+(rule ((= e (VecFDiv (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                     (Vec2 (IntToExpr (Const b0)) (IntToExpr (Const b1))))))
+      ((union e (Vec2 (IntToExpr (Const (float-div-bits a0 b0)))
+                      (IntToExpr (Const (float-div-bits a1 b1)))))))
+(rule ((= e (VecFDiv (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                     (Vec3 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2))))))
+      ((union e (Vec3 (IntToExpr (Const (float-div-bits a0 b0)))
+                      (IntToExpr (Const (float-div-bits a1 b1)))
+                      (IntToExpr (Const (float-div-bits a2 b2)))))))
+(rule ((= e (VecFDiv (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                     (Vec4 (IntToExpr (Const b0)) (IntToExpr (Const b1)) (IntToExpr (Const b2)) (IntToExpr (Const b3))))))
+      ((union e (Vec4 (IntToExpr (Const (float-div-bits a0 b0)))
+                      (IntToExpr (Const (float-div-bits a1 b1)))
+                      (IntToExpr (Const (float-div-bits a2 b2)))
+                      (IntToExpr (Const (float-div-bits a3 b3)))))))
+
+; VecFNeg constant fold
+(rule ((= e (VecFNeg (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1))))))
+      ((union e (Vec2 (IntToExpr (Const (float-neg-bits a0)))
+                      (IntToExpr (Const (float-neg-bits a1)))))))
+(rule ((= e (VecFNeg (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2))))))
+      ((union e (Vec3 (IntToExpr (Const (float-neg-bits a0)))
+                      (IntToExpr (Const (float-neg-bits a1)))
+                      (IntToExpr (Const (float-neg-bits a2)))))))
+(rule ((= e (VecFNeg (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3))))))
+      ((union e (Vec4 (IntToExpr (Const (float-neg-bits a0)))
+                      (IntToExpr (Const (float-neg-bits a1)))
+                      (IntToExpr (Const (float-neg-bits a2)))
+                      (IntToExpr (Const (float-neg-bits a3)))))))
+
+; =============================================================================
+; VectorTimesScalar Constant Folding
+; =============================================================================
+; VecTimesScalar(Vec_of_constants, scalar_constant) → Vec_of_products
+
+(rule ((= e (VecTimesScalar (Vec2 (IntToExpr (Const a0)) (IntToExpr (Const a1)))
+                            (IntToExpr (Const s)))))
+      ((union e (Vec2 (IntToExpr (Const (float-mul-bits a0 s)))
+                      (IntToExpr (Const (float-mul-bits a1 s)))))))
+(rule ((= e (VecTimesScalar (Vec3 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)))
+                            (IntToExpr (Const s)))))
+      ((union e (Vec3 (IntToExpr (Const (float-mul-bits a0 s)))
+                      (IntToExpr (Const (float-mul-bits a1 s)))
+                      (IntToExpr (Const (float-mul-bits a2 s)))))))
+(rule ((= e (VecTimesScalar (Vec4 (IntToExpr (Const a0)) (IntToExpr (Const a1)) (IntToExpr (Const a2)) (IntToExpr (Const a3)))
+                            (IntToExpr (Const s)))))
+      ((union e (Vec4 (IntToExpr (Const (float-mul-bits a0 s)))
+                      (IntToExpr (Const (float-mul-bits a1 s)))
+                      (IntToExpr (Const (float-mul-bits a2 s)))
+                      (IntToExpr (Const (float-mul-bits a3 s)))))))
+
+; =============================================================================
 ; NMin/NMax/NClamp Constant Folding
 ; =============================================================================
 ; NaN-aware: if one operand is NaN, return the non-NaN operand.
