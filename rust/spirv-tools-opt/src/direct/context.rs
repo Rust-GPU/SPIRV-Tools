@@ -951,7 +951,18 @@ impl EgglogContext {
             43 => self.ext_ternary("FClamp", &op_ids), // FClamp
             44 => self.ext_ternary("UClamp", &op_ids), // UClamp
             45 => self.ext_ternary("SClamp", &op_ids), // SClamp
-            46 => self.ext_ternary("FMix", &op_ids),   // FMix
+            46 => {
+                // FMix: scalar float → FMix(FloatExpr), vector → VecFMix(Expr)
+                let is_scalar = inst
+                    .result_type
+                    .map(|ty| self.type_class_of_type(ty) == TypeClass::Float)
+                    .unwrap_or(false);
+                if is_scalar {
+                    self.ext_ternary("FMix", &op_ids)
+                } else {
+                    self.ext_ternary("VecFMix", &op_ids)
+                }
+            }
 
             // Step/SmoothStep
             48 => self.ext_binary("Step", &op_ids), // Step

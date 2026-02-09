@@ -650,6 +650,7 @@
 (rule ((= e (VecFMul a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
 (rule ((= e (VecFNeg a)) (= sz (VecSize a))) ((set (VecSize e) sz)))
 (rule ((= e (VecTimesScalar a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecFMix a _ _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
 
 ; =============================================================================
 ; ShuffleExtract Resolution

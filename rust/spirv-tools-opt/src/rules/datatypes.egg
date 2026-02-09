@@ -388,6 +388,9 @@
 (constructor VecFNeg (Expr) Expr)
 (constructor VecTimesScalar (Expr Expr) Expr)
 
+; Vector-level GLSL ops (vector variants of scalar FloatExpr constructors)
+(constructor VecFMix (Expr Expr Expr) Expr)
+
 ; Matrix operations
 (constructor MatTimesScalar (Expr Expr) Expr)
 (constructor MatTimesVec (Expr Expr) Expr)
@@ -1086,6 +1089,7 @@
 (rule ((Live e) (= e (VecFDiv a b))) ((Live a) (Live b)))
 (rule ((Live e) (= e (VecFNeg a))) ((Live a)))
 (rule ((Live e) (= e (VecTimesScalar v s))) ((Live v) (Live s)))
+(rule ((Live e) (= e (VecFMix a b c))) ((Live a) (Live b) (Live c)))
 
 ; Matrix operations
 (rule ((Live e) (= e (MatTimesScalar m s))) ((Live m) (Live s)))

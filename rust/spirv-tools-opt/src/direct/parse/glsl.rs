@@ -95,6 +95,7 @@ const GLSL_TERNARY: &[(&str, u32)] = &[
     ("UClamp", 44),
     ("SClamp", 45),
     ("FMix", 46),
+    ("VecFMix", 46),
     ("SmoothStep", 49),
     ("Fma", 50),
     ("FaceForward", 70),
