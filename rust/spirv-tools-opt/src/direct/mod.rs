@@ -418,6 +418,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Values that only depend on loop-invariant inputs (Sym/Const) will
     // be marked LoopInvariant and can be placed in the preheader.
 
+    // Track IDs that already have theta bindings to prevent shadowing
+    // when the same ID appears in multiple nested loops' body blocks.
+    let mut theta_bound_ids: HashSet<Word> = HashSet::new();
+
     for loop_info in &loop_constructs {
         let func = &module.functions[loop_info.func_idx];
 
@@ -434,7 +438,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             if let Some(&block_label) = id_to_block.get(&id) {
                 if body_labels.contains(&block_label) {
                     // This value is defined inside the loop
-                    if ctx.id_to_term.contains_key(&id) {
+                    if ctx.id_to_term.contains_key(&id) && !theta_bound_ids.contains(&id) {
                         // Use typed Theta matching the value's sort to avoid
                         // sort mismatches (IntExpr/FloatExpr/BoolExpr vs Expr)
                         let value_type_class = ctx
@@ -455,6 +459,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         egraph
                             .parse_and_run_program(None, &theta_binding)
                             .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
+                        theta_bound_ids.insert(id);
 
                         // Union original ID with Theta - after saturation, the egraph will
                         // have propagated LoopInvariant through the expression if applicable
@@ -1033,39 +1038,34 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         );
                     }
                 } else {
-                    let type_width = type_widths.get(&result_type).copied();
+                    // Determine the correct result type from the constructor name
+                    // BEFORE parsing — the sort system guarantees the type class.
+                    let term_class = type_class_of_constructor(&stripped_term);
+                    let corrected_type = resolve_type_for_class(
+                        term_class,
+                        result_type,
+                        &type_classes,
+                        int32_type,
+                        float32_type,
+                        bool_type,
+                    );
+                    if corrected_type != result_type {
+                        ctx.id_to_type.insert(id, corrected_type);
+                    }
+
+                    let type_width = type_widths.get(&corrected_type).copied();
                     // Try simple term_to_instruction first
-                    if let Some(mut inst) =
-                        term_to_instruction(&stripped_term, id, result_type, &id_map, type_width)
+                    if let Some(inst) =
+                        term_to_instruction(&stripped_term, id, corrected_type, &id_map, type_width)
                     {
-                        // Fix result type if the operation changed type domain
-                        let corrected_type = infer_result_type(
-                            &inst,
-                            result_type,
-                            &ctx.id_to_type,
-                            &type_classes,
-                            bool_type,
-                            int32_type,
-                            float32_type,
-                        );
-                        if corrected_type != result_type {
-                            inst.result_type = Some(corrected_type);
-                            ctx.id_to_type.insert(id, corrected_type);
-                        }
-                        // Safety: if the instruction still has invalid types, skip optimization
-                        if !instruction_has_valid_types(&inst, &ctx.id_to_type, &type_classes) {
-                            // Fall back to original instruction
-                        } else {
-                            // Also collect IDs from the generated instruction
-                            collect_ids_from_instruction(&inst, &mut used_ids);
-                            optimized_instructions.insert(id, inst);
-                        }
+                        collect_ids_from_instruction(&inst, &mut used_ids);
+                        optimized_instructions.insert(id, inst);
                     } else {
                         // If simple parsing fails, try to materialize nested expressions
                         // This handles cases like (Mul (Const 4) (Add (Sym "id5") (Sym "id6")))
                         if let Some((final_id, new_insts)) = materialize_term(
                             &stripped_term,
-                            result_type,
+                            corrected_type,
                             &mut id_map,
                             &mut next_id,
                             int32_type,
@@ -1075,66 +1075,35 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             &type_classes,
                             bool_type,
                         ) {
-                            let _ = final_id; // Suppress unused warning
-                                              // Add synthesized intermediate instructions
-                                              // The last instruction should use the original ID and gets stored in
-                                              // optimized_instructions (to UPDATE the existing instruction, not INSERT new)
+                            let _ = final_id;
                             let num_insts = new_insts.len();
                             for (i, mut inst) in new_insts.into_iter().enumerate() {
                                 if i == num_insts - 1 {
                                     // The final instruction gets the original result ID
-                                    // It goes into optimized_instructions to UPDATE the existing inst
-                                    // NOT into synthesized_instructions (to avoid duplication)
                                     let old_id = inst.result_id;
                                     inst.result_id = Some(id);
-                                    // Fix result type if the operation changed type domain
-                                    let corrected_type = infer_result_type(
-                                        &inst,
-                                        result_type,
-                                        &ctx.id_to_type,
-                                        &type_classes,
-                                        bool_type,
-                                        int32_type,
-                                        float32_type,
-                                    );
-                                    if corrected_type != result_type {
-                                        inst.result_type = Some(corrected_type);
-                                        ctx.id_to_type.insert(id, corrected_type);
-                                    }
-                                    // Safety: if the instruction still has invalid types, skip
-                                    if !instruction_has_valid_types(
-                                        &inst,
-                                        &ctx.id_to_type,
-                                        &type_classes,
-                                    ) {
-                                        // Fall through - don't apply this optimization
-                                    } else {
-                                        collect_ids_from_instruction(&inst, &mut used_ids);
-                                        optimized_instructions.insert(id, inst);
-                                    }
-                                    // Update id_map if the ID changed
+                                    inst.result_type = Some(corrected_type);
+                                    collect_ids_from_instruction(&inst, &mut used_ids);
+                                    optimized_instructions.insert(id, inst);
                                     if let Some(old) = old_id {
                                         if old != id {
                                             id_map.insert(format!("id{}", id), id);
                                         }
                                     }
                                 } else if let Some(inst_id) = inst.result_id {
-                                    // Intermediate instructions are NEW - they need to be inserted
+                                    // Intermediate instructions are NEW
                                     collect_ids_from_instruction(&inst, &mut used_ids);
-                                    // Constants must go to types_global_values, not function body
                                     if matches!(
                                         inst.class.opcode,
                                         Op::Constant | Op::ConstantTrue | Op::ConstantFalse
                                     ) {
                                         synthesized_constants.push(inst.clone());
                                     } else {
-                                        // Place in same block as the root instruction
                                         synthesized_for_root
                                             .entry(id)
                                             .or_default()
                                             .push(inst.clone());
                                     }
-                                    // Track in optimized_instructions if it's a new ID
                                     optimized_instructions.entry(inst_id).or_insert(inst);
                                 }
                             }
@@ -2290,238 +2259,88 @@ fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
     classes
 }
 
-/// What type class does this opcode require for its *result* type?
-fn required_result_type_class(op: Op) -> Option<TypeClass> {
-    match op {
-        // Integer arithmetic requires int result type
-        Op::IAdd
-        | Op::ISub
-        | Op::IMul
-        | Op::SDiv
-        | Op::UDiv
-        | Op::SRem
-        | Op::SMod
-        | Op::UMod
-        | Op::SNegate
-        | Op::ShiftLeftLogical
-        | Op::ShiftRightLogical
-        | Op::ShiftRightArithmetic
-        | Op::BitwiseAnd
-        | Op::BitwiseOr
-        | Op::BitwiseXor
-        | Op::Not
-        | Op::BitReverse
-        | Op::BitCount => Some(TypeClass::Int),
+/// Determine the TypeClass of a term from its egglog constructor name.
+///
+/// The egglog schema uses typed sorts: Add returns IntExpr, FAdd returns FloatExpr,
+/// LogAnd returns BoolExpr, etc. The constructor name deterministically tells us the
+/// type class — no operand scanning needed.
+fn type_class_of_constructor(term: &str) -> TypeClass {
+    // Extract the constructor name from "(ConstructorName ...)" or bare "ConstructorName"
+    let name = if let Some(rest) = term.strip_prefix('(') {
+        rest.split_whitespace().next().unwrap_or("")
+    } else {
+        term.split_whitespace().next().unwrap_or("")
+    };
+    match name {
+        // IntExpr constructors (from datatypes.egg)
+        "Add" | "Sub" | "Mul" | "Neg" | "SDiv" | "UDiv" | "SRem" | "SMod" | "UMod" | "Shl"
+        | "ShrS" | "ShrU" | "BitAnd" | "BitOr" | "BitXor" | "BitNot" | "BitReverse" | "RotL"
+        | "RotR" | "SMin" | "SMax" | "UMin" | "UMax" | "SAbs" | "Sign" | "FindILsb"
+        | "FindSMsb" | "FindUMsb" | "BitCount" | "BitFieldInsert" | "BitFieldSExtract"
+        | "BitFieldUExtract" | "Const" | "Const64" | "ConvertFToS" | "ConvertFToU" | "SConvert"
+        | "UConvert" | "SClamp" | "UClamp" | "ISym" | "GammaI" | "SelectI" | "IfI" | "ThetaI"
+        | "LoopVarI" | "LoopInvariantI" | "CopyI" | "GroupIAdd" | "GroupIMul" | "GroupSMin"
+        | "GroupUMin" | "GroupSMax" | "GroupUMax" | "GroupBitAnd" | "GroupBitOr"
+        | "GroupBitXor" | "PackHalf2x16" | "PackSnorm4x8" | "PackSnorm2x16" | "PackUnorm4x8"
+        | "PackUnorm2x16" | "PackDouble2x32" | "ExprToInt" | "SubstI" => TypeClass::Int,
 
-        // Float arithmetic requires float result type
-        Op::FAdd | Op::FSub | Op::FMul | Op::FDiv | Op::FRem | Op::FMod | Op::FNegate => {
-            Some(TypeClass::Float)
+        // FloatExpr constructors
+        "FAdd" | "FSub" | "FMul" | "FDiv" | "FNeg" | "FRem" | "FMod" | "FAbs" | "FFloor"
+        | "FCeil" | "FRound" | "FTrunc" | "QuantizeToF16" | "FMin" | "FMax" | "NMin" | "NMax"
+        | "Sqrt" | "InverseSqrt" | "Exp" | "Exp2" | "Log" | "Log2" | "Sin" | "Cos" | "Tan"
+        | "Asin" | "Acos" | "Atan" | "Sinh" | "Cosh" | "Tanh" | "Asinh" | "Acosh" | "Atanh"
+        | "Fract" | "FSign" | "Radians" | "Degrees" | "Modf" | "Pow" | "Atan2" | "Step"
+        | "Ldexp" | "Distance" | "Fma" | "FMix" | "SmoothStep" | "FClamp" | "NClamp" | "Length"
+        | "Dot" | "Determinant" | "DPdx" | "DPdy" | "DPdxFine" | "DPdyFine" | "DPdxCoarse"
+        | "DPdyCoarse" | "Fwidth" | "FwidthFine" | "FwidthCoarse" | "FConst" | "ConvertSToF"
+        | "ConvertUToF" | "FConvert" | "FSym" | "GammaF" | "SelectF" | "IfF" | "ThetaF"
+        | "LoopVarF" | "LoopInvariantF" | "CopyF" | "GroupFAdd" | "GroupFMul" | "GroupFMin"
+        | "GroupFMax" | "ExprToFloat" | "SubstF" => TypeClass::Float,
+
+        // BoolExpr constructors
+        "Eq" | "Ne" | "SLt" | "SLe" | "SGt" | "SGe" | "ULt" | "ULe" | "UGt" | "UGe" | "FOrdEq"
+        | "FOrdNe" | "FOrdLt" | "FOrdLe" | "FOrdGt" | "FOrdGe" | "FUnordEq" | "FUnordNe"
+        | "FUnordLt" | "FUnordLe" | "FUnordGt" | "FUnordGe" | "FEq" | "FNe" | "FLt" | "FLe"
+        | "FGt" | "FGe" | "IsNan" | "IsInf" | "LogNot" | "LogAnd" | "LogOr" | "LogEq" | "LogNe"
+        | "BoolConst" | "BSym" | "GammaB" | "SelectB" | "IfB" | "ThetaB" | "LoopVarB"
+        | "LoopInvariantB" | "CopyB" | "GroupElect" | "GroupAll" | "GroupAny" | "GroupAllEqual"
+        | "GroupLogAnd" | "GroupLogOr" | "GroupLogXor" | "Any" | "All" | "AddOverflows"
+        | "SubOverflows" | "MulOverflows" | "FApproxEq" | "ExprToBool" | "SubstB" => {
+            TypeClass::Bool
         }
 
-        // Comparisons and logical ops require bool result type
-        Op::IEqual
-        | Op::INotEqual
-        | Op::SLessThan
-        | Op::SLessThanEqual
-        | Op::SGreaterThan
-        | Op::SGreaterThanEqual
-        | Op::ULessThan
-        | Op::ULessThanEqual
-        | Op::UGreaterThan
-        | Op::UGreaterThanEqual
-        | Op::FOrdEqual
-        | Op::FOrdNotEqual
-        | Op::FOrdLessThan
-        | Op::FOrdLessThanEqual
-        | Op::FOrdGreaterThan
-        | Op::FOrdGreaterThanEqual
-        | Op::FUnordEqual
-        | Op::FUnordNotEqual
-        | Op::FUnordLessThan
-        | Op::FUnordLessThanEqual
-        | Op::FUnordGreaterThan
-        | Op::FUnordGreaterThanEqual
-        | Op::LogicalAnd
-        | Op::LogicalOr
-        | Op::LogicalEqual
-        | Op::LogicalNotEqual
-        | Op::LogicalNot => Some(TypeClass::Bool),
-
-        // Conversion operations: result type is determined by the target type
-        Op::ConvertFToS | Op::ConvertFToU => Some(TypeClass::Int),
-        Op::ConvertSToF | Op::ConvertUToF => Some(TypeClass::Float),
-
-        // Select/CopyObject/other: result type depends on context
-        _ => None,
+        // Expr sort (vectors, memory, images, etc.) or unknown
+        _ => TypeClass::Other,
     }
 }
 
-/// What type class does this opcode require for its *operands*?
-fn required_operand_type_class(op: Op) -> Option<TypeClass> {
-    match op {
-        // Integer comparisons need int operands
-        Op::IEqual
-        | Op::INotEqual
-        | Op::SLessThan
-        | Op::SLessThanEqual
-        | Op::SGreaterThan
-        | Op::SGreaterThanEqual
-        | Op::ULessThan
-        | Op::ULessThanEqual
-        | Op::UGreaterThan
-        | Op::UGreaterThanEqual => Some(TypeClass::Int),
-
-        // Float comparisons need float operands
-        Op::FOrdEqual
-        | Op::FOrdNotEqual
-        | Op::FOrdLessThan
-        | Op::FOrdLessThanEqual
-        | Op::FOrdGreaterThan
-        | Op::FOrdGreaterThanEqual
-        | Op::FUnordEqual
-        | Op::FUnordNotEqual
-        | Op::FUnordLessThan
-        | Op::FUnordLessThanEqual
-        | Op::FUnordGreaterThan
-        | Op::FUnordGreaterThanEqual => Some(TypeClass::Float),
-
-        // Logical ops need bool operands
-        Op::LogicalAnd
-        | Op::LogicalOr
-        | Op::LogicalEqual
-        | Op::LogicalNotEqual
-        | Op::LogicalNot => Some(TypeClass::Bool),
-
-        // For arithmetic, operand type = result type (handled by caller)
-        _ => None,
-    }
-}
-
-/// Infer the correct result type for an instruction based on its opcode and operand types.
-/// Returns the corrected result type, or the original if no correction needed.
-fn infer_result_type(
-    inst: &Instruction,
+/// Resolve a TypeClass + original SPIR-V result type to the correct concrete type.
+///
+/// If the original type already matches the required class, keep it (preserves width).
+/// Otherwise fall back to a canonical module type (int32, float32, bool).
+fn resolve_type_for_class(
+    class: TypeClass,
     original_result_type: Word,
-    id_to_type: &HashMap<Word, Word>,
     type_classes: &HashMap<Word, TypeClass>,
-    bool_type: Option<Word>,
     int32_type: Option<Word>,
     float32_type: Option<Word>,
+    bool_type: Option<Word>,
 ) -> Word {
-    let op = inst.class.opcode;
-    let required = match required_result_type_class(op) {
-        Some(req) => req,
-        None => return original_result_type, // no specific requirement
-    };
-
-    // Check if current type already matches
-    let current_class = type_classes
+    let original_class = type_classes
         .get(&original_result_type)
         .copied()
         .unwrap_or(TypeClass::Other);
-    if current_class == required {
+    // If original already matches, keep it (preserves width: int16, int64, etc.)
+    if original_class == class || class == TypeClass::Other {
         return original_result_type;
     }
-
-    // If current type is Other (vector/matrix/struct), keep it unchanged.
-    // SPIR-V arithmetic ops work component-wise on vectors, so a vector
-    // result type is valid even when the opcode "requires" a scalar type.
-    // Changing a vector type to a scalar type would produce invalid SPIR-V.
-    if current_class == TypeClass::Other {
-        return original_result_type;
+    // Otherwise use canonical module type
+    match class {
+        TypeClass::Int => int32_type.unwrap_or(original_result_type),
+        TypeClass::Float => float32_type.unwrap_or(original_result_type),
+        TypeClass::Bool => bool_type.unwrap_or(original_result_type),
+        TypeClass::Other => original_result_type,
     }
-
-    // Type mismatch - need to infer the correct type
-    match required {
-        TypeClass::Bool => {
-            // Comparisons and logical ops always return bool
-            if let Some(bt) = bool_type {
-                return bt;
-            }
-        }
-        TypeClass::Int => {
-            // Try to infer from operands first
-            for operand in &inst.operands {
-                if let Some(operand_id) = operand.id_ref_any() {
-                    if let Some(&operand_type) = id_to_type.get(&operand_id) {
-                        if type_classes.get(&operand_type) == Some(&TypeClass::Int) {
-                            return operand_type;
-                        }
-                    }
-                }
-            }
-            // Fall back to module's int32 type
-            if let Some(it) = int32_type {
-                return it;
-            }
-        }
-        TypeClass::Float => {
-            // Try to infer from operands first
-            for operand in &inst.operands {
-                if let Some(operand_id) = operand.id_ref_any() {
-                    if let Some(&operand_type) = id_to_type.get(&operand_id) {
-                        if type_classes.get(&operand_type) == Some(&TypeClass::Float) {
-                            return operand_type;
-                        }
-                    }
-                }
-            }
-            // Fall back to module's float32 type
-            if let Some(ft) = float32_type {
-                return ft;
-            }
-        }
-        TypeClass::Other => {}
-    }
-
-    original_result_type
-}
-
-/// Check if an instruction has valid types for its opcode.
-/// Returns true if types are compatible, false if there's a mismatch.
-fn instruction_has_valid_types(
-    inst: &Instruction,
-    id_to_type: &HashMap<Word, Word>,
-    type_classes: &HashMap<Word, TypeClass>,
-) -> bool {
-    let op = inst.class.opcode;
-
-    // Check result type: if the opcode requires a specific type class,
-    // the result type MUST match OR be TypeClass::Other (vectors/matrices).
-    // SPIR-V arithmetic ops (FAdd, IAdd, etc.) work on both scalars and vectors.
-    // TypeClass::Other means the type is a vector/matrix/struct which is valid
-    // for these component-wise operations.
-    if let (Some(required), Some(result_type)) = (required_result_type_class(op), inst.result_type)
-    {
-        let actual = type_classes
-            .get(&result_type)
-            .copied()
-            .unwrap_or(TypeClass::Other);
-        if actual != required && actual != TypeClass::Other {
-            return false;
-        }
-    }
-
-    // Check operand types for comparisons
-    // Again, TypeClass::Other (vector operands) is always acceptable since
-    // SPIR-V comparison ops work component-wise on vectors.
-    if let Some(required_op_class) = required_operand_type_class(op) {
-        for operand in &inst.operands {
-            if let Some(operand_id) = operand.id_ref_any() {
-                if let Some(&operand_type) = id_to_type.get(&operand_id) {
-                    let actual = type_classes
-                        .get(&operand_type)
-                        .copied()
-                        .unwrap_or(TypeClass::Other);
-                    if actual != required_op_class && actual != TypeClass::Other {
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-
-    true
 }
 
 /// Topological sort of binding IDs based on term dependencies.
@@ -2818,52 +2637,6 @@ fn resolve_term_to_id_simple(term: &str, id_map: &HashMap<String, Word>) -> Opti
     None
 }
 
-/// Try to infer the type of a term from its Sym references.
-/// Scans the term for `(Sym "idN")` patterns and looks up their types.
-fn infer_term_type(
-    term: &str,
-    id_map: &HashMap<String, Word>,
-    id_to_type: &HashMap<Word, Word>,
-) -> Option<Word> {
-    // Try direct Sym reference
-    if let Some(id) = resolve_term_to_id_simple(term, id_map) {
-        return id_to_type.get(&id).copied();
-    }
-    // Scan for first Sym reference in the term (typed or untyped)
-    for sym_prefix in &["(Sym \"", "(ISym \"", "(FSym \"", "(BSym \""] {
-        let mut search = term;
-        while let Some(pos) = search.find(sym_prefix) {
-            let rest = &search[pos + sym_prefix.len()..];
-            if let Some(end) = rest.find("\")") {
-                let sym_name = &rest[..end];
-                if let Some(&id) = id_map.get(sym_name) {
-                    if let Some(&ty) = id_to_type.get(&id) {
-                        return Some(ty);
-                    }
-                }
-            }
-            search = &search[pos + sym_prefix.len()..];
-        }
-    }
-    // Scan for bare id references
-    let mut search = term;
-    while let Some(pos) = search.find("id") {
-        let rest = &search[pos..];
-        // Find the end of the id token
-        let end = rest
-            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-            .unwrap_or(rest.len());
-        let id_token = &rest[..end];
-        if let Some(&id) = id_map.get(id_token) {
-            if let Some(&ty) = id_to_type.get(&id) {
-                return Some(ty);
-            }
-        }
-        search = &search[pos + end.max(1)..];
-    }
-    None
-}
-
 /// Recursively materialize a term, creating intermediate instructions for nested expressions.
 /// Returns the ID of the final result and a list of synthesized instructions.
 #[allow(clippy::too_many_arguments)]
@@ -3055,36 +2828,56 @@ fn materialize_term(
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 2 {
-                    // Determine the correct result type for this operation
-                    let op_result_type = match required_result_type_class(*opcode) {
-                        Some(TypeClass::Bool) => bool_type.unwrap_or(result_type),
-                        Some(req_class) => {
-                            // For arithmetic, check if current result_type matches
-                            let cur_class = type_classes
-                                .get(&result_type)
-                                .copied()
-                                .unwrap_or(TypeClass::Other);
-                            if cur_class == req_class {
-                                result_type
-                            } else {
-                                // Infer from operand sub-terms
-                                infer_term_type(&terms[0], id_map, id_to_type)
-                                    .or_else(|| infer_term_type(&terms[1], id_map, id_to_type))
-                                    .unwrap_or(result_type)
-                            }
-                        }
-                        None => result_type,
-                    };
+                    // Determine result type from the constructor name
+                    let term_class = type_class_of_constructor(term);
+                    let op_result_type = resolve_type_for_class(
+                        term_class,
+                        result_type,
+                        type_classes,
+                        int32_type,
+                        float32_type,
+                        bool_type,
+                    );
 
-                    // For comparisons, operands need a different type than the result
-                    let operand_type = match required_operand_type_class(*opcode) {
-                        Some(_) => {
-                            // Infer operand type from sub-term content
-                            infer_term_type(&terms[0], id_map, id_to_type)
-                                .or_else(|| infer_term_type(&terms[1], id_map, id_to_type))
-                                .unwrap_or(result_type)
+                    // For comparisons (BoolExpr result, typed operands), the operand
+                    // type differs from the result type. Determine it from sub-terms.
+                    let operand_type = if term_class == TypeClass::Bool {
+                        // Operand type: try constructor name first, fall back to id lookup
+                        let lhs_class = type_class_of_constructor(&terms[0]);
+                        let rhs_class = type_class_of_constructor(&terms[1]);
+                        let op_class = if lhs_class != TypeClass::Other {
+                            lhs_class
+                        } else if rhs_class != TypeClass::Other {
+                            rhs_class
+                        } else {
+                            // Bare id references — look up type from id_to_type
+                            let id_type = resolve_term_to_id_simple(&terms[0], id_map)
+                                .and_then(|id| id_to_type.get(&id))
+                                .or_else(|| {
+                                    resolve_term_to_id_simple(&terms[1], id_map)
+                                        .and_then(|id| id_to_type.get(&id))
+                                })
+                                .copied();
+                            if let Some(ty) = id_type {
+                                type_classes.get(&ty).copied().unwrap_or(TypeClass::Other)
+                            } else {
+                                TypeClass::Other
+                            }
+                        };
+                        if op_class != TypeClass::Other {
+                            resolve_type_for_class(
+                                op_class,
+                                result_type,
+                                type_classes,
+                                int32_type,
+                                float32_type,
+                                bool_type,
+                            )
+                        } else {
+                            result_type // fallback to parent context
                         }
-                        None => op_result_type, // same-type ops: operand type = result type
+                    } else {
+                        op_result_type // same-type ops: operand type = result type
                     };
 
                     // Recursively materialize operands with the correct type
@@ -3160,27 +2953,29 @@ fn materialize_term(
         let prefix = format!("({} ", name);
         if let Some(rest) = term.strip_prefix(&prefix) {
             if let Some(operand_term) = rest.strip_suffix(')') {
-                // Determine correct result type
-                let op_result_type = match required_result_type_class(*opcode) {
-                    Some(TypeClass::Bool) => bool_type.unwrap_or(result_type),
-                    Some(req_class) => {
-                        let cur_class = type_classes
-                            .get(&result_type)
-                            .copied()
-                            .unwrap_or(TypeClass::Other);
-                        if cur_class == req_class {
-                            result_type
-                        } else {
-                            infer_term_type(operand_term.trim(), id_map, id_to_type)
-                                .unwrap_or(result_type)
-                        }
-                    }
-                    None => result_type,
+                // Determine result type from the constructor name
+                let term_class = type_class_of_constructor(term);
+                let op_result_type = resolve_type_for_class(
+                    term_class,
+                    result_type,
+                    type_classes,
+                    int32_type,
+                    float32_type,
+                    bool_type,
+                );
+
+                // For conversion ops, the operand type differs from the result type.
+                // ConvertFToS/ConvertFToU: result is Int, operand is Float
+                // ConvertSToF/ConvertUToF: result is Float, operand is Int
+                let unary_operand_type = match *opcode {
+                    Op::ConvertFToS | Op::ConvertFToU => float32_type.unwrap_or(op_result_type),
+                    Op::ConvertSToF | Op::ConvertUToF => int32_type.unwrap_or(op_result_type),
+                    _ => op_result_type,
                 };
 
                 let (operand_id, mut operand_synth) = materialize_term(
                     operand_term.trim(),
-                    op_result_type,
+                    unary_operand_type,
                     id_map,
                     next_id,
                     int32_type,
@@ -3226,10 +3021,16 @@ fn materialize_term(
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 3 {
-                    // Infer Select result type from true/false branch operand types
-                    let select_type = infer_term_type(&terms[1], id_map, id_to_type)
-                        .or_else(|| infer_term_type(&terms[2], id_map, id_to_type))
-                        .unwrap_or(result_type);
+                    // Determine Select result type from the typed Select/Gamma variant
+                    let select_class = type_class_of_constructor(term);
+                    let select_type = resolve_type_for_class(
+                        select_class,
+                        result_type,
+                        type_classes,
+                        int32_type,
+                        float32_type,
+                        bool_type,
+                    );
 
                     // Condition is always bool
                     let cond_type = bool_type.unwrap_or(result_type);
@@ -3547,132 +3348,91 @@ mod tests {
     }
 
     #[test]
-    fn infer_result_type_corrects_int_op_with_bool_type() {
-        let mut id_to_type = HashMap::new();
-        let mut type_classes = HashMap::new();
+    fn type_class_of_constructor_categorizes_terms() {
+        // IntExpr constructors
+        assert_eq!(type_class_of_constructor("(Add x y)"), TypeClass::Int);
+        assert_eq!(type_class_of_constructor("(Const 42)"), TypeClass::Int);
+        assert_eq!(type_class_of_constructor("(ISym \"id5\")"), TypeClass::Int);
+        assert_eq!(type_class_of_constructor("(ConvertFToS x)"), TypeClass::Int);
 
-        let bool_type_id: Word = 1;
-        let int_type_id: Word = 2;
-        let operand_id: Word = 10;
-
-        type_classes.insert(bool_type_id, TypeClass::Bool);
-        type_classes.insert(int_type_id, TypeClass::Int);
-        id_to_type.insert(operand_id, int_type_id);
-
-        // IAdd instruction with bool result type (wrong) and int operands
-        let inst = Instruction::new(
-            Op::IAdd,
-            Some(bool_type_id),
-            Some(100),
-            vec![
-                rspirv::dr::Operand::IdRef(operand_id),
-                rspirv::dr::Operand::IdRef(operand_id),
-            ],
-        );
-
-        let corrected = infer_result_type(
-            &inst,
-            bool_type_id,
-            &id_to_type,
-            &type_classes,
-            Some(bool_type_id),
-            Some(int_type_id),
-            None,
-        );
+        // FloatExpr constructors
+        assert_eq!(type_class_of_constructor("(FAdd x y)"), TypeClass::Float);
+        assert_eq!(type_class_of_constructor("(FConst 3.14)"), TypeClass::Float);
         assert_eq!(
-            corrected, int_type_id,
-            "IAdd with bool type should be corrected to int type"
+            type_class_of_constructor("(FSym \"id5\")"),
+            TypeClass::Float
         );
+        assert_eq!(type_class_of_constructor("(Sqrt x)"), TypeClass::Float);
+
+        // BoolExpr constructors
+        assert_eq!(type_class_of_constructor("(Eq x y)"), TypeClass::Bool);
+        assert_eq!(type_class_of_constructor("(LogAnd x y)"), TypeClass::Bool);
+        assert_eq!(type_class_of_constructor("(BSym \"id5\")"), TypeClass::Bool);
+        assert_eq!(type_class_of_constructor("(FOrdLt x y)"), TypeClass::Bool);
+
+        // Expr/Other
+        assert_eq!(type_class_of_constructor("(VecAdd x y)"), TypeClass::Other);
+        assert_eq!(type_class_of_constructor("(Sym \"id5\")"), TypeClass::Other);
+        assert_eq!(type_class_of_constructor("id5"), TypeClass::Other);
     }
 
     #[test]
-    fn infer_result_type_falls_back_to_int32_type() {
+    fn resolve_type_for_class_preserves_matching_type() {
         let mut type_classes = HashMap::new();
-        let id_to_type = HashMap::new(); // empty - no operand types
+        let int_type: Word = 2;
+        let float_type: Word = 3;
+        let bool_type: Word = 1;
+        type_classes.insert(int_type, TypeClass::Int);
+        type_classes.insert(float_type, TypeClass::Float);
+        type_classes.insert(bool_type, TypeClass::Bool);
 
-        let bool_type_id: Word = 1;
-        let int_type_id: Word = 2;
-
-        type_classes.insert(bool_type_id, TypeClass::Bool);
-        type_classes.insert(int_type_id, TypeClass::Int);
-
-        // IAdd instruction with bool result type and NO operand type info
-        let inst = Instruction::new(
-            Op::IAdd,
-            Some(bool_type_id),
-            Some(100),
-            vec![
-                rspirv::dr::Operand::IdRef(10),
-                rspirv::dr::Operand::IdRef(11),
-            ],
-        );
-
-        let corrected = infer_result_type(
-            &inst,
-            bool_type_id,
-            &id_to_type,
-            &type_classes,
-            Some(bool_type_id),
-            Some(int_type_id),
-            None,
-        );
+        // Int constructor with int original type → keep it
         assert_eq!(
-            corrected, int_type_id,
-            "IAdd should fall back to int32_type when operands have no type info"
+            resolve_type_for_class(
+                TypeClass::Int,
+                int_type,
+                &type_classes,
+                Some(int_type),
+                Some(float_type),
+                Some(bool_type)
+            ),
+            int_type
         );
-    }
-
-    #[test]
-    fn infer_result_type_corrects_comparison_to_bool() {
-        let mut id_to_type = HashMap::new();
-        let mut type_classes = HashMap::new();
-
-        let bool_type_id: Word = 1;
-        let int_type_id: Word = 2;
-        let operand_id: Word = 10;
-
-        type_classes.insert(bool_type_id, TypeClass::Bool);
-        type_classes.insert(int_type_id, TypeClass::Int);
-        id_to_type.insert(operand_id, int_type_id);
-
-        // IEqual instruction with int result type (wrong) - should be bool
-        let inst = Instruction::new(
-            Op::IEqual,
-            Some(int_type_id),
-            Some(100),
-            vec![
-                rspirv::dr::Operand::IdRef(operand_id),
-                rspirv::dr::Operand::IdRef(operand_id),
-            ],
-        );
-
-        let corrected = infer_result_type(
-            &inst,
-            int_type_id,
-            &id_to_type,
-            &type_classes,
-            Some(bool_type_id),
-            Some(int_type_id),
-            None,
-        );
+        // Int constructor with bool original type → correct to int
         assert_eq!(
-            corrected, bool_type_id,
-            "IEqual with int type should be corrected to bool type"
+            resolve_type_for_class(
+                TypeClass::Int,
+                bool_type,
+                &type_classes,
+                Some(int_type),
+                Some(float_type),
+                Some(bool_type)
+            ),
+            int_type
         );
-    }
-
-    #[test]
-    fn required_result_type_class_categorizes_ops() {
-        assert_eq!(required_result_type_class(Op::IAdd), Some(TypeClass::Int));
-        assert_eq!(required_result_type_class(Op::FMul), Some(TypeClass::Float));
+        // Bool constructor with int original type → correct to bool
         assert_eq!(
-            required_result_type_class(Op::FOrdLessThan),
-            Some(TypeClass::Bool)
+            resolve_type_for_class(
+                TypeClass::Bool,
+                int_type,
+                &type_classes,
+                Some(int_type),
+                Some(float_type),
+                Some(bool_type)
+            ),
+            bool_type
         );
+        // Other constructor → always keep original
         assert_eq!(
-            required_result_type_class(Op::LogicalAnd),
-            Some(TypeClass::Bool)
+            resolve_type_for_class(
+                TypeClass::Other,
+                int_type,
+                &type_classes,
+                Some(int_type),
+                Some(float_type),
+                Some(bool_type)
+            ),
+            int_type
         );
-        assert_eq!(required_result_type_class(Op::Select), None);
     }
 }
