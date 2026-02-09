@@ -54,6 +54,10 @@
 ; Bitcast Rules
 ; =============================================================================
 
+; Same-type bitcast is identity (seeded from parser type checking) - ONE-DIRECTIONAL
+(rule ((= e (Bitcast x)) (SameTypeBitcast e))
+      ((union e x)))
+
 ; Bitcast of bitcast is bitcast (two reinterpretations)
 ; Note: In general bitcast(bitcast(x)) may equal x if types align, but
 ; without type info we can only say it's still a bitcast - ONE-DIRECTIONAL

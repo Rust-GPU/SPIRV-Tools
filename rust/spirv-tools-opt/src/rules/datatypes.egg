@@ -376,8 +376,11 @@
 (function VecSize (Expr) i64 :merge (min old new))
 
 ; ResultWidth — tracks the bit width of an integer expression's result type
-; Used for SConvert/UConvert constant folding
+; Used for SConvert/UConvert constant folding and bitcast constant folding
 (function ResultWidth (IntExpr) i64 :merge (min old new))
+
+; SameTypeBitcast — seeded by parser when OpBitcast input/output types are identical
+(relation SameTypeBitcast (Expr))
 
 ; Vector arithmetic (component-wise)
 (constructor VecAdd (Expr Expr) Expr)

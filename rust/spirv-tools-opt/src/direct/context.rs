@@ -96,6 +96,23 @@ impl EgglogContext {
                         }
                     }
                 }
+
+                // Detect same-type bitcast for redundant bitcast elimination
+                if inst.class.opcode == Op::Bitcast {
+                    if let Some(result_type) = inst.result_type {
+                        let src_id = inst.operands.iter().find_map(|op| op.id_ref_any());
+                        if let Some(src_id) = src_id {
+                            if let Some(src_type) = self.id_to_type.get(&src_id) {
+                                if *src_type == result_type {
+                                    self.additional_facts.push(format!(
+                                        "(SameTypeBitcast id{})",
+                                        result_id
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
