@@ -170,9 +170,17 @@ impl EgglogContext {
             Op::Constant => {
                 let result_type = inst.result_type?;
                 let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
-                let is_float = self.type_class_of_type(result_type) == TypeClass::Float;
+                let type_class = self.type_class_of_type(result_type);
 
-                if is_float {
+                if type_class == TypeClass::Bool {
+                    // Boolean constant via OpConstant (some compilers use this
+                    // instead of OpConstantTrue/OpConstantFalse)
+                    let value = inst.operands.iter().find_map(|op| match op {
+                        Operand::LiteralBit32(v) => Some(*v),
+                        _ => None,
+                    })?;
+                    format!("(BoolConst {})", if value != 0 { 1 } else { 0 })
+                } else if type_class == TypeClass::Float {
                     // Float constant: reinterpret bits as IEEE float for FConst
                     let float_val: f64 = inst.operands.iter().find_map(|op| match op {
                         Operand::LiteralBit32(v) => Some(f32::from_bits(*v) as f64),
