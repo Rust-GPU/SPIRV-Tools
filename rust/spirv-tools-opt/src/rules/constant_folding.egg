@@ -40,7 +40,8 @@
       ((union e (FConst (- a b)))))
 (rule ((= e (FMul (FConst a) (FConst b))))
       ((union e (FConst (* a b)))))
-(rule ((= e (FDiv (FConst a) (FConst b))) (!= b 0.0))
+; Divide-by-zero produces IEEE 754 results: 0/0→NaN, x/0→±Inf
+(rule ((= e (FDiv (FConst a) (FConst b))))
       ((union e (FConst (/ a b)))))
 ; Use float-neg primitive (sign bit flip) instead of 0.0 - a,
 ; because IEEE 754: 0.0 - 0.0 = +0.0, but FNeg(+0.0) must be -0.0.
