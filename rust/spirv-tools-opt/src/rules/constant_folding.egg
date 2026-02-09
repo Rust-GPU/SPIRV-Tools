@@ -40,8 +40,10 @@
       ((union e (FConst (- a b)))))
 (rule ((= e (FMul (FConst a) (FConst b))))
       ((union e (FConst (* a b)))))
-; Divide-by-zero produces IEEE 754 results: 0/0→NaN, x/0→±Inf
-(rule ((= e (FDiv (FConst a) (FConst b))))
+; Guard: skip divide-by-zero to avoid e-graph corruption.
+; FDiv(x,x)=1.0 and FSub(x,x)=0.0 algebraic rules fire in the same
+; saturation pass — producing NaN/Inf here would equate them with 1.0/0.0.
+(rule ((= e (FDiv (FConst a) (FConst b))) (!= b 0.0))
       ((union e (FConst (/ a b)))))
 ; Use float-neg primitive (sign bit flip) instead of 0.0 - a,
 ; because IEEE 754: 0.0 - 0.0 = +0.0, but FNeg(+0.0) must be -0.0.
