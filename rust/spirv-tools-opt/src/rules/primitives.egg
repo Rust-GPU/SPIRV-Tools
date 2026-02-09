@@ -474,3 +474,21 @@
       ((union e (FConst (float-nmax a b)))))
 (rule ((= e (NClamp (FConst x) (FConst lo) (FConst hi))))
       ((union e (FConst (float-nclamp x lo hi)))))
+
+; =============================================================================
+; QuantizeToF16 Constant Folding
+; =============================================================================
+; Quantize float to IEEE 754 half-precision and convert back.
+
+(rule ((= e (QuantizeToF16 (FConst a))))
+      ((union e (FConst (quantize-to-f16 a)))))
+
+; =============================================================================
+; BitCast Constant Folding
+; =============================================================================
+; Bitcast of a constant preserves the bit pattern (identity).
+
+(rule ((= e (Bitcast (IntToExpr (Const a)))))
+      ((union e (IntToExpr (Const a)))))
+(rule ((= e (BitCast (IntToExpr (Const a)))))
+      ((union e (IntToExpr (Const a)))))

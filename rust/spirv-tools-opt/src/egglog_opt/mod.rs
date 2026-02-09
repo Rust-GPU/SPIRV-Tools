@@ -487,6 +487,104 @@ fn float_neg_bits(a: i64) -> i64 {
     }
 }
 
+/// Quantize a float value to IEEE 754 half-precision (f16), returning f64.
+/// Preserves NaN, Inf. Overflows to Inf, underflows to zero.
+/// SPIR-V spec: result is value of operand rounded to f16 precision.
+fn quantize_to_f16(v: f64) -> f64 {
+    if v.is_nan() {
+        return f64::NAN;
+    }
+    if v.is_infinite() {
+        return v;
+    }
+    // Convert to f32 first (lossless for f16 range), then quantize to f16
+    let f = v as f32;
+    let bits = f.to_bits();
+    let sign = bits >> 31;
+    let exp = ((bits >> 23) & 0xFF) as i32;
+    let frac = bits & 0x007F_FFFF;
+
+    // f16: 1 sign, 5 exponent (bias 15), 10 mantissa
+    // f32: 1 sign, 8 exponent (bias 127), 23 mantissa
+    let f16_bits: u16 = if exp == 0 {
+        // f32 denormal → f16 zero (too small for f16)
+        (sign as u16) << 15
+    } else if exp == 0xFF {
+        // f32 inf/nan (already handled above, but for safety)
+        if frac == 0 {
+            ((sign as u16) << 15) | 0x7C00
+        } else {
+            0x7E00 // quiet NaN
+        }
+    } else {
+        let new_exp = exp - 127 + 15; // rebias from f32 to f16
+        if new_exp >= 31 {
+            // overflow → infinity
+            ((sign as u16) << 15) | 0x7C00
+        } else if new_exp <= 0 {
+            // underflow → denormal or zero
+            if new_exp < -10 {
+                // too small even for f16 denormal
+                (sign as u16) << 15
+            } else {
+                // f16 denormal: implicit 1 + fraction, shifted right
+                let full_frac = frac | 0x0080_0000; // add implicit 1
+                let shift = (1 - new_exp) as u32 + 13; // 13 = 23 - 10 mantissa diff
+                let half = 1u32 << (shift - 1);
+                let rounded = (full_frac + half) >> shift;
+                ((sign as u16) << 15) | (rounded as u16)
+            }
+        } else {
+            // normal f16: round mantissa from 23 to 10 bits
+            let half = 1u32 << 12; // round bit
+            let rounded_frac = (frac + half) >> 13;
+            if rounded_frac >= 0x400 {
+                // mantissa overflow, increment exponent
+                ((sign as u16) << 15) | (((new_exp + 1) as u16) << 10)
+            } else {
+                ((sign as u16) << 15) | ((new_exp as u16) << 10) | (rounded_frac as u16)
+            }
+        }
+    };
+
+    // Convert f16 back to f64
+    let f16_sign = ((f16_bits >> 15) & 1) as u64;
+    let f16_exp = ((f16_bits >> 10) & 0x1F) as i32;
+    let f16_frac = (f16_bits & 0x03FF) as u64;
+
+    let f64_bits = if f16_exp == 0 {
+        if f16_frac == 0 {
+            // zero
+            f16_sign << 63
+        } else {
+            // denormal: convert to normalized f64
+            let mut e = -14i32;
+            let mut m = f16_frac;
+            while (m & 0x400) == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            m &= 0x3FF; // remove implicit 1
+            let f64_exp = ((e + 1023) as u64) & 0x7FF;
+            (f16_sign << 63) | (f64_exp << 52) | (m << 42)
+        }
+    } else if f16_exp == 31 {
+        if f16_frac == 0 {
+            // infinity
+            (f16_sign << 63) | (0x7FFu64 << 52)
+        } else {
+            // NaN
+            (f16_sign << 63) | (0x7FFu64 << 52) | (1u64 << 51)
+        }
+    } else {
+        // normal
+        let f64_exp = ((f16_exp - 15 + 1023) as u64) & 0x7FF;
+        (f16_sign << 63) | (f64_exp << 52) | (f16_frac << 42)
+    };
+
+    f64::from_bits(f64_bits)
+}
+
 /// NaN-aware minimum: if a is NaN return b, if b is NaN return a, else min.
 fn float_nmin(a: f64, b: f64) -> f64 {
     if a.is_nan() { b } else if b.is_nan() { a } else { a.min(b) }
@@ -690,6 +788,11 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     });
     add_primitive!(&mut egraph, "f64-recip" = |a: F| -> F {
         F::from(OrderedFloat(1.0 / a.0.0))
+    });
+
+    // QuantizeToF16: round float to IEEE 754 half-precision
+    add_primitive!(&mut egraph, "quantize-to-f16" = |a: F| -> F {
+        F::from(OrderedFloat(quantize_to_f16(a.0.0)))
     });
 
     // Type conversion primitives (cross-type: F <-> i64)
