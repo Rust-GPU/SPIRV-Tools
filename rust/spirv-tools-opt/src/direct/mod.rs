@@ -2326,7 +2326,11 @@ fn required_result_type_class(op: Op) -> Option<TypeClass> {
         | Op::LogicalNotEqual
         | Op::LogicalNot => Some(TypeClass::Bool),
 
-        // Select/CopyObject/conversions: result type depends on context
+        // Conversion operations: result type is determined by the target type
+        Op::ConvertFToS | Op::ConvertFToU => Some(TypeClass::Int),
+        Op::ConvertSToF | Op::ConvertUToF => Some(TypeClass::Float),
+
+        // Select/CopyObject/other: result type depends on context
         _ => None,
     }
 }
@@ -2395,6 +2399,14 @@ fn infer_result_type(
         .copied()
         .unwrap_or(TypeClass::Other);
     if current_class == required {
+        return original_result_type;
+    }
+
+    // If current type is Other (vector/matrix/struct), keep it unchanged.
+    // SPIR-V arithmetic ops work component-wise on vectors, so a vector
+    // result type is valid even when the opcode "requires" a scalar type.
+    // Changing a vector type to a scalar type would produce invalid SPIR-V.
+    if current_class == TypeClass::Other {
         return original_result_type;
     }
 
