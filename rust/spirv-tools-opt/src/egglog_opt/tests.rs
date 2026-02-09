@@ -7431,3 +7431,60 @@ fn test_boolconst_const_not_unified_with_boolconst() {
         "Const(0) and BoolConst(0) must be in different e-classes"
     );
 }
+
+#[test]
+fn test_same_type_bitcast_eliminates_with_guard() {
+    // When SameTypeBitcast is seeded, Bitcast(IntToExpr(Const a)) should
+    // simplify to IntToExpr(Const a) (the bitcast is redundant).
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let src (IntToExpr (Const 42)))
+        (let bc (Bitcast src))
+        (SameTypeBitcast bc)
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    // With SameTypeBitcast, the bitcast result should equal its operand
+    let check = egraph.parse_and_run_program(None, "(check (= bc src))");
+    assert!(
+        check.is_ok(),
+        "Same-type bitcast of int constant should be eliminated"
+    );
+}
+
+#[test]
+fn test_cross_type_bitcast_does_not_add_int_identity() {
+    // Without SameTypeBitcast, Bitcast(IntToExpr(Const a)) must NOT be
+    // simplified to IntToExpr(Const a) — it could be a cross-type bitcast
+    // (int->float) and adding the int identity would pollute the e-class.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let src (IntToExpr (Const 42)))
+        (let bc (Bitcast src))
+    "#,
+        )
+        .unwrap();
+    // Note: no (SameTypeBitcast bc) fact
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    // Without the guard, the bitcast should NOT be simplified to its operand
+    let check = egraph.parse_and_run_program(None, "(check (= bc src))");
+    assert!(
+        check.is_err(),
+        "Cross-type bitcast must not be simplified to identity"
+    );
+}

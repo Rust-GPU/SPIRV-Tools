@@ -486,10 +486,12 @@
 ; =============================================================================
 ; BitCast Constant Folding
 ; =============================================================================
-; Same-sort bitcast preserves the bit pattern (identity).
-(rule ((= e (Bitcast (IntToExpr (Const a)))))
+; Same-type bitcast of integer constant is identity (guarded by parser-seeded relation).
+; Without the SameTypeBitcast guard these would also fire for cross-type bitcasts
+; (e.g. int->float), polluting the e-class with an IntToExpr node.
+(rule ((= e (Bitcast (IntToExpr (Const a)))) (SameTypeBitcast e))
       ((union e (IntToExpr (Const a)))))
-(rule ((= e (BitCast (IntToExpr (Const a)))))
+(rule ((= e (BitCast (IntToExpr (Const a)))) (SameTypeBitcast e))
       ((union e (IntToExpr (Const a)))))
 
 ; Cross-type bitcast constant folding is intentionally omitted.
