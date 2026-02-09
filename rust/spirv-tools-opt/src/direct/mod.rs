@@ -1067,7 +1067,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         // If simple parsing fails, try to materialize nested expressions
                         // This handles cases like (Mul (Const 4) (Add (Sym "id5") (Sym "id6")))
                         if let Some((final_id, new_insts)) = materialize_term(
-                            &stripped_term,
+                            &term,
                             corrected_type,
                             &mut id_map,
                             &mut next_id,
@@ -2664,11 +2664,49 @@ fn materialize_term(
     int32_type: Option<Word>,
     int64_type: Option<Word>,
     float32_type: Option<Word>,
-    id_to_type: &HashMap<Word, Word>,
+    _id_to_type: &HashMap<Word, Word>,
     type_classes: &HashMap<Word, TypeClass>,
     bool_type: Option<Word>,
 ) -> Option<(Word, Vec<Instruction>)> {
-    let term = strip_bridge_constructors(term);
+    let term = term.trim();
+
+    // Handle bridge constructors — unwrap and determine concrete type for the sort.
+    // Bridge constructors (IntToExpr, ExprToInt, etc.) carry sort info from the egraph.
+    // Instead of stripping them and re-deriving types, we use them to set the correct type.
+    for (prefix, class) in &[
+        ("(IntToExpr ", TypeClass::Int),
+        ("(FloatToExpr ", TypeClass::Float),
+        ("(BoolToExpr ", TypeClass::Bool),
+        ("(ExprToInt ", TypeClass::Int),
+        ("(ExprToFloat ", TypeClass::Float),
+        ("(ExprToBool ", TypeClass::Bool),
+    ] {
+        if let Some(rest) = term.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix(')') {
+                let bridged_type = resolve_type_for_class(
+                    *class,
+                    result_type,
+                    type_classes,
+                    int32_type,
+                    float32_type,
+                    bool_type,
+                );
+                return materialize_term(
+                    inner.trim(),
+                    bridged_type,
+                    id_map,
+                    next_id,
+                    int32_type,
+                    int64_type,
+                    float32_type,
+                    _id_to_type,
+                    type_classes,
+                    bool_type,
+                );
+            }
+        }
+    }
+
     let mut synthesized: Vec<Instruction> = Vec::new();
 
     // Try to resolve as simple reference first
@@ -2780,121 +2818,169 @@ fn materialize_term(
         }
     }
 
-    // Binary operations
-    let binary_ops: &[(&str, Op)] = &[
-        // Integer arithmetic
-        ("Add", Op::IAdd),
-        ("Sub", Op::ISub),
-        ("Mul", Op::IMul),
-        ("SDiv", Op::SDiv),
-        ("UDiv", Op::UDiv),
-        ("SRem", Op::SRem),
-        ("SMod", Op::SMod),
-        ("UMod", Op::UMod),
-        // Shifts
-        ("Shl", Op::ShiftLeftLogical),
-        ("ShrU", Op::ShiftRightLogical),
-        ("ShrS", Op::ShiftRightArithmetic),
-        // Bitwise
-        ("BitAnd", Op::BitwiseAnd),
-        ("BitOr", Op::BitwiseOr),
-        ("BitXor", Op::BitwiseXor),
-        // Integer comparisons
-        ("Eq", Op::IEqual),
-        ("Ne", Op::INotEqual),
-        ("SLt", Op::SLessThan),
-        ("SLe", Op::SLessThanEqual),
-        ("SGt", Op::SGreaterThan),
-        ("SGe", Op::SGreaterThanEqual),
-        ("ULt", Op::ULessThan),
-        ("ULe", Op::ULessThanEqual),
-        ("UGt", Op::UGreaterThan),
-        ("UGe", Op::UGreaterThanEqual),
-        // Logical
-        ("LogAnd", Op::LogicalAnd),
-        ("LogOr", Op::LogicalOr),
-        ("LogEq", Op::LogicalEqual),
-        ("LogNe", Op::LogicalNotEqual),
-        // Floating-point arithmetic
-        ("FAdd", Op::FAdd),
-        ("FSub", Op::FSub),
-        ("FMul", Op::FMul),
-        ("FDiv", Op::FDiv),
-        ("FRem", Op::FRem),
-        ("FMod", Op::FMod),
-        // Floating-point comparisons (ordered)
-        ("FOrdEq", Op::FOrdEqual),
-        ("FOrdNe", Op::FOrdNotEqual),
-        ("FOrdLt", Op::FOrdLessThan),
-        ("FOrdLe", Op::FOrdLessThanEqual),
-        ("FOrdGt", Op::FOrdGreaterThan),
-        ("FOrdGe", Op::FOrdGreaterThanEqual),
-        // Floating-point comparisons (unordered)
-        ("FUnordEq", Op::FUnordEqual),
-        ("FUnordNe", Op::FUnordNotEqual),
-        ("FUnordLt", Op::FUnordLessThan),
-        ("FUnordLe", Op::FUnordLessThanEqual),
-        ("FUnordGt", Op::FUnordGreaterThan),
-        ("FUnordGe", Op::FUnordGreaterThanEqual),
+    // Binary operations — each entry: (name, opcode, result_class, operand_class)
+    // The TypeClass fields make type derivation table-driven: no string scanning needed.
+    let binary_ops: &[(&str, Op, TypeClass, TypeClass)] = &[
+        // Integer arithmetic: result Int, operands Int
+        ("Add", Op::IAdd, TypeClass::Int, TypeClass::Int),
+        ("Sub", Op::ISub, TypeClass::Int, TypeClass::Int),
+        ("Mul", Op::IMul, TypeClass::Int, TypeClass::Int),
+        ("SDiv", Op::SDiv, TypeClass::Int, TypeClass::Int),
+        ("UDiv", Op::UDiv, TypeClass::Int, TypeClass::Int),
+        ("SRem", Op::SRem, TypeClass::Int, TypeClass::Int),
+        ("SMod", Op::SMod, TypeClass::Int, TypeClass::Int),
+        ("UMod", Op::UMod, TypeClass::Int, TypeClass::Int),
+        // Shifts: result Int, operands Int
+        ("Shl", Op::ShiftLeftLogical, TypeClass::Int, TypeClass::Int),
+        (
+            "ShrU",
+            Op::ShiftRightLogical,
+            TypeClass::Int,
+            TypeClass::Int,
+        ),
+        (
+            "ShrS",
+            Op::ShiftRightArithmetic,
+            TypeClass::Int,
+            TypeClass::Int,
+        ),
+        // Bitwise: result Int, operands Int
+        ("BitAnd", Op::BitwiseAnd, TypeClass::Int, TypeClass::Int),
+        ("BitOr", Op::BitwiseOr, TypeClass::Int, TypeClass::Int),
+        ("BitXor", Op::BitwiseXor, TypeClass::Int, TypeClass::Int),
+        // Integer comparisons: result Bool, operands Int
+        ("Eq", Op::IEqual, TypeClass::Bool, TypeClass::Int),
+        ("Ne", Op::INotEqual, TypeClass::Bool, TypeClass::Int),
+        ("SLt", Op::SLessThan, TypeClass::Bool, TypeClass::Int),
+        ("SLe", Op::SLessThanEqual, TypeClass::Bool, TypeClass::Int),
+        ("SGt", Op::SGreaterThan, TypeClass::Bool, TypeClass::Int),
+        (
+            "SGe",
+            Op::SGreaterThanEqual,
+            TypeClass::Bool,
+            TypeClass::Int,
+        ),
+        ("ULt", Op::ULessThan, TypeClass::Bool, TypeClass::Int),
+        ("ULe", Op::ULessThanEqual, TypeClass::Bool, TypeClass::Int),
+        ("UGt", Op::UGreaterThan, TypeClass::Bool, TypeClass::Int),
+        (
+            "UGe",
+            Op::UGreaterThanEqual,
+            TypeClass::Bool,
+            TypeClass::Int,
+        ),
+        // Logical: result Bool, operands Bool
+        ("LogAnd", Op::LogicalAnd, TypeClass::Bool, TypeClass::Bool),
+        ("LogOr", Op::LogicalOr, TypeClass::Bool, TypeClass::Bool),
+        ("LogEq", Op::LogicalEqual, TypeClass::Bool, TypeClass::Bool),
+        (
+            "LogNe",
+            Op::LogicalNotEqual,
+            TypeClass::Bool,
+            TypeClass::Bool,
+        ),
+        // Float arithmetic: result Float, operands Float
+        ("FAdd", Op::FAdd, TypeClass::Float, TypeClass::Float),
+        ("FSub", Op::FSub, TypeClass::Float, TypeClass::Float),
+        ("FMul", Op::FMul, TypeClass::Float, TypeClass::Float),
+        ("FDiv", Op::FDiv, TypeClass::Float, TypeClass::Float),
+        ("FRem", Op::FRem, TypeClass::Float, TypeClass::Float),
+        ("FMod", Op::FMod, TypeClass::Float, TypeClass::Float),
+        // Float comparisons (ordered): result Bool, operands Float
+        ("FOrdEq", Op::FOrdEqual, TypeClass::Bool, TypeClass::Float),
+        (
+            "FOrdNe",
+            Op::FOrdNotEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FOrdLt",
+            Op::FOrdLessThan,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FOrdLe",
+            Op::FOrdLessThanEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FOrdGt",
+            Op::FOrdGreaterThan,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FOrdGe",
+            Op::FOrdGreaterThanEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        // Float comparisons (unordered): result Bool, operands Float
+        (
+            "FUnordEq",
+            Op::FUnordEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FUnordNe",
+            Op::FUnordNotEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FUnordLt",
+            Op::FUnordLessThan,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FUnordLe",
+            Op::FUnordLessThanEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FUnordGt",
+            Op::FUnordGreaterThan,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
+        (
+            "FUnordGe",
+            Op::FUnordGreaterThanEqual,
+            TypeClass::Bool,
+            TypeClass::Float,
+        ),
     ];
 
-    for (name, opcode) in binary_ops {
+    for (name, opcode, result_class, operand_class) in binary_ops {
         let prefix = format!("({} ", name);
         if let Some(rest) = term.strip_prefix(&prefix) {
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 2 {
-                    // Determine result type from the constructor name
-                    let term_class = type_class_of_constructor(term);
+                    // Type derivation is table-driven: result and operand classes
+                    // come directly from the ops table entry.
                     let op_result_type = resolve_type_for_class(
-                        term_class,
+                        *result_class,
                         result_type,
                         type_classes,
                         int32_type,
                         float32_type,
                         bool_type,
                     );
-
-                    // For comparisons (BoolExpr result, typed operands), the operand
-                    // type differs from the result type. Determine it from sub-terms.
-                    let operand_type = if term_class == TypeClass::Bool {
-                        // Operand type: try constructor name first, fall back to id lookup
-                        let lhs_class = type_class_of_constructor(&terms[0]);
-                        let rhs_class = type_class_of_constructor(&terms[1]);
-                        let op_class = if lhs_class != TypeClass::Other {
-                            lhs_class
-                        } else if rhs_class != TypeClass::Other {
-                            rhs_class
-                        } else {
-                            // Bare id references — look up type from id_to_type
-                            let id_type = resolve_term_to_id_simple(&terms[0], id_map)
-                                .and_then(|id| id_to_type.get(&id))
-                                .or_else(|| {
-                                    resolve_term_to_id_simple(&terms[1], id_map)
-                                        .and_then(|id| id_to_type.get(&id))
-                                })
-                                .copied();
-                            if let Some(ty) = id_type {
-                                type_classes.get(&ty).copied().unwrap_or(TypeClass::Other)
-                            } else {
-                                TypeClass::Other
-                            }
-                        };
-                        if op_class != TypeClass::Other {
-                            resolve_type_for_class(
-                                op_class,
-                                result_type,
-                                type_classes,
-                                int32_type,
-                                float32_type,
-                                bool_type,
-                            )
-                        } else {
-                            result_type // fallback to parent context
-                        }
-                    } else {
-                        op_result_type // same-type ops: operand type = result type
-                    };
+                    let operand_type = resolve_type_for_class(
+                        *operand_class,
+                        result_type,
+                        type_classes,
+                        int32_type,
+                        float32_type,
+                        bool_type,
+                    );
 
                     // Recursively materialize operands with the correct type
                     let (lhs_id, mut lhs_synth) = materialize_term(
@@ -2905,7 +2991,7 @@ fn materialize_term(
                         int32_type,
                         int64_type,
                         float32_type,
-                        id_to_type,
+                        _id_to_type,
                         type_classes,
                         bool_type,
                     )?;
@@ -2919,7 +3005,7 @@ fn materialize_term(
                         int32_type,
                         int64_type,
                         float32_type,
-                        id_to_type,
+                        _id_to_type,
                         type_classes,
                         bool_type,
                     )?;
@@ -2945,49 +3031,68 @@ fn materialize_term(
         }
     }
 
-    // Unary operations
-    let unary_ops: &[(&str, Op)] = &[
+    // Unary operations — each entry: (name, opcode, result_class, operand_class)
+    // Conversion ops have DIFFERENT result and operand classes (cross-sort).
+    let unary_ops: &[(&str, Op, TypeClass, TypeClass)] = &[
         // Integer
-        ("Neg", Op::SNegate),
-        ("BitNot", Op::Not),
-        ("BitReverse", Op::BitReverse),
-        ("LogNot", Op::LogicalNot),
+        ("Neg", Op::SNegate, TypeClass::Int, TypeClass::Int),
+        ("BitNot", Op::Not, TypeClass::Int, TypeClass::Int),
+        ("BitReverse", Op::BitReverse, TypeClass::Int, TypeClass::Int),
+        ("LogNot", Op::LogicalNot, TypeClass::Bool, TypeClass::Bool),
         // Floating-point
-        ("FNeg", Op::FNegate),
-        // Conversions
-        ("ConvertFToU", Op::ConvertFToU),
-        ("ConvertFToS", Op::ConvertFToS),
-        ("ConvertSToF", Op::ConvertSToF),
-        ("ConvertUToF", Op::ConvertUToF),
+        ("FNeg", Op::FNegate, TypeClass::Float, TypeClass::Float),
+        // Conversions: result and operand are DIFFERENT sorts
+        (
+            "ConvertFToU",
+            Op::ConvertFToU,
+            TypeClass::Int,
+            TypeClass::Float,
+        ),
+        (
+            "ConvertFToS",
+            Op::ConvertFToS,
+            TypeClass::Int,
+            TypeClass::Float,
+        ),
+        (
+            "ConvertSToF",
+            Op::ConvertSToF,
+            TypeClass::Float,
+            TypeClass::Int,
+        ),
+        (
+            "ConvertUToF",
+            Op::ConvertUToF,
+            TypeClass::Float,
+            TypeClass::Int,
+        ),
         // Copy (typed variants)
-        ("CopyI", Op::CopyObject),
-        ("CopyF", Op::CopyObject),
-        ("CopyB", Op::CopyObject),
+        ("CopyI", Op::CopyObject, TypeClass::Int, TypeClass::Int),
+        ("CopyF", Op::CopyObject, TypeClass::Float, TypeClass::Float),
+        ("CopyB", Op::CopyObject, TypeClass::Bool, TypeClass::Bool),
     ];
 
-    for (name, opcode) in unary_ops {
+    for (name, opcode, result_class, operand_class) in unary_ops {
         let prefix = format!("({} ", name);
         if let Some(rest) = term.strip_prefix(&prefix) {
             if let Some(operand_term) = rest.strip_suffix(')') {
-                // Determine result type from the constructor name
-                let term_class = type_class_of_constructor(term);
+                // Type derivation is table-driven
                 let op_result_type = resolve_type_for_class(
-                    term_class,
+                    *result_class,
                     result_type,
                     type_classes,
                     int32_type,
                     float32_type,
                     bool_type,
                 );
-
-                // For conversion ops, the operand type differs from the result type.
-                // ConvertFToS/ConvertFToU: result is Int, operand is Float
-                // ConvertSToF/ConvertUToF: result is Float, operand is Int
-                let unary_operand_type = match *opcode {
-                    Op::ConvertFToS | Op::ConvertFToU => float32_type.unwrap_or(op_result_type),
-                    Op::ConvertSToF | Op::ConvertUToF => int32_type.unwrap_or(op_result_type),
-                    _ => op_result_type,
-                };
+                let unary_operand_type = resolve_type_for_class(
+                    *operand_class,
+                    result_type,
+                    type_classes,
+                    int32_type,
+                    float32_type,
+                    bool_type,
+                );
 
                 let (operand_id, mut operand_synth) = materialize_term(
                     operand_term.trim(),
@@ -2997,7 +3102,7 @@ fn materialize_term(
                     int32_type,
                     int64_type,
                     float32_type,
-                    id_to_type,
+                    _id_to_type,
                     type_classes,
                     bool_type,
                 )?;
@@ -3019,28 +3124,28 @@ fn materialize_term(
     }
 
     // Select / Gamma / If (untyped and typed variants) — all map to Op::Select
-    for select_prefix in &[
-        "(Select ",
-        "(Gamma ",
-        "(If ",
-        "(SelectI ",
-        "(GammaI ",
-        "(IfI ",
-        "(SelectF ",
-        "(GammaF ",
-        "(IfF ",
-        "(SelectB ",
-        "(GammaB ",
-        "(IfB ",
-    ] {
+    // Table-driven: each entry carries the TypeClass of the result.
+    let select_ops: &[(&str, TypeClass)] = &[
+        ("(Select ", TypeClass::Other),
+        ("(Gamma ", TypeClass::Other),
+        ("(If ", TypeClass::Other),
+        ("(SelectI ", TypeClass::Int),
+        ("(GammaI ", TypeClass::Int),
+        ("(IfI ", TypeClass::Int),
+        ("(SelectF ", TypeClass::Float),
+        ("(GammaF ", TypeClass::Float),
+        ("(IfF ", TypeClass::Float),
+        ("(SelectB ", TypeClass::Bool),
+        ("(GammaB ", TypeClass::Bool),
+        ("(IfB ", TypeClass::Bool),
+    ];
+    for (select_prefix, select_class) in select_ops {
         if let Some(rest) = term.strip_prefix(select_prefix) {
             if let Some(rest) = rest.strip_suffix(')') {
                 let terms = split_terms_simple(rest);
                 if terms.len() >= 3 {
-                    // Determine Select result type from the typed Select/Gamma variant
-                    let select_class = type_class_of_constructor(term);
                     let select_type = resolve_type_for_class(
-                        select_class,
+                        *select_class,
                         result_type,
                         type_classes,
                         int32_type,
@@ -3058,7 +3163,7 @@ fn materialize_term(
                         int32_type,
                         int64_type,
                         float32_type,
-                        id_to_type,
+                        _id_to_type,
                         type_classes,
                         bool_type,
                     )?;
@@ -3072,7 +3177,7 @@ fn materialize_term(
                         int32_type,
                         int64_type,
                         float32_type,
-                        id_to_type,
+                        _id_to_type,
                         type_classes,
                         bool_type,
                     )?;
@@ -3086,7 +3191,7 @@ fn materialize_term(
                         int32_type,
                         int64_type,
                         float32_type,
-                        id_to_type,
+                        _id_to_type,
                         type_classes,
                         bool_type,
                     )?;
