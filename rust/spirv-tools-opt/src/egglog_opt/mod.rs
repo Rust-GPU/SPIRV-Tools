@@ -495,7 +495,6 @@ fn float_neg_bits(a: i64) -> i64 {
     }
 }
 
-
 /// SConvert constant fold: sign-extend or truncate to target width.
 fn sconvert_fold(v: i64, dst_width: i64) -> i64 {
     let dw = dst_width as u32;

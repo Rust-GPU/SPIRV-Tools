@@ -7488,3 +7488,121 @@ fn test_cross_type_bitcast_does_not_add_int_identity() {
         "Cross-type bitcast must not be simplified to identity"
     );
 }
+
+#[test]
+fn test_vec_fadd_accepts_expr_operands() {
+    // VecFAdd uses Expr sort, so operands from Sym (Expr) are accepted.
+    // This is the vector dispatch path for OpFAdd on vector types.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "vec_a"))
+        (let b (Sym "vec_b"))
+        (let result (VecFAdd a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    // Verify the term was created (not rejected by sort mismatch)
+    let check = egraph.parse_and_run_program(None, "(check (= result (VecFAdd a b)))");
+    assert!(
+        check.is_ok(),
+        "VecFAdd should accept Expr operands without sort mismatch"
+    );
+}
+
+#[test]
+fn test_scalar_fadd_rejects_expr_operands() {
+    // FAdd uses FloatExpr sort, so Sym (Expr) operands must be rejected.
+    // This ensures scalar operations enforce type safety.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Sym "val_a"))
+        (let b (Sym "val_b"))
+        (let result (FAdd a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "FAdd must reject Expr operands — it requires FloatExpr"
+    );
+}
+
+#[test]
+fn test_vec_add_accepts_expr_operands() {
+    // VecAdd uses Expr sort for integer vector operations.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "ivec_a"))
+        (let b (Sym "ivec_b"))
+        (let result (VecAdd a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (VecAdd a b)))");
+    assert!(
+        check.is_ok(),
+        "VecAdd should accept Expr operands without sort mismatch"
+    );
+}
+
+#[test]
+fn test_vec_fneg_accepts_expr_operand() {
+    // VecFNeg uses Expr sort for vector float negation.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "vec_a"))
+        (let result (VecFNeg a))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result (VecFNeg a)))");
+    assert!(
+        check.is_ok(),
+        "VecFNeg should accept Expr operand without sort mismatch"
+    );
+}
+
+#[test]
+fn test_scalar_add_rejects_expr_operands() {
+    // Add uses IntExpr sort, so Sym (Expr) operands must be rejected.
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    let result = egraph.parse_and_run_program(
+        None,
+        r#"
+        (let a (Sym "val_a"))
+        (let b (Sym "val_b"))
+        (let result (Add a b))
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "Add must reject Expr operands — it requires IntExpr"
+    );
+}

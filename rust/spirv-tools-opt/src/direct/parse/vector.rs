@@ -47,10 +47,8 @@ const VEC_ARITHMETIC_BINARY_OPS: &[(&str, Op)] = &[
 ];
 
 /// Vector arithmetic unary operations (component-wise).
-const VEC_ARITHMETIC_UNARY_OPS: &[(&str, Op)] = &[
-    ("VecNeg", Op::SNegate),
-    ("VecFNeg", Op::FNegate),
-];
+const VEC_ARITHMETIC_UNARY_OPS: &[(&str, Op)] =
+    &[("VecNeg", Op::SNegate), ("VecFNeg", Op::FNegate)];
 
 /// Try to parse a vector or composite operation.
 pub fn try_parse_vector(
