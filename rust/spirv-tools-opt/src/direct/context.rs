@@ -79,32 +79,39 @@ impl EgglogContext {
                 ) {
                     self.root_ids.push(result_id);
                 }
+            } else {
+                // Term generation failed (e.g. Phi with different incoming values).
+                // Remove from known_instruction_ids so get_or_create_term() falls
+                // back to a Sym constructor instead of emitting a bare variable
+                // reference that would be unbound in the egraph.
+                self.known_instruction_ids.remove(&result_id);
+                return;
+            }
 
-                // Seed ResultWidth for integer constants and conversions
-                if let Some(result_type) = inst.result_type {
-                    let tc = self.type_class_of_type(result_type);
-                    if tc == TypeClass::Int {
-                        let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
-                        match inst.class.opcode {
-                            Op::Constant | Op::SConvert | Op::UConvert => {
-                                self.additional_facts
-                                    .push(format!("(set (ResultWidth id{}) {})", result_id, width));
-                            }
-                            _ => {}
+            // Seed ResultWidth for integer constants and conversions
+            if let Some(result_type) = inst.result_type {
+                let tc = self.type_class_of_type(result_type);
+                if tc == TypeClass::Int {
+                    let width = self.type_widths.get(&result_type).copied().unwrap_or(32);
+                    match inst.class.opcode {
+                        Op::Constant | Op::SConvert | Op::UConvert => {
+                            self.additional_facts
+                                .push(format!("(set (ResultWidth id{}) {})", result_id, width));
                         }
+                        _ => {}
                     }
                 }
+            }
 
-                // Detect same-type bitcast for redundant bitcast elimination
-                if inst.class.opcode == Op::Bitcast {
-                    if let Some(result_type) = inst.result_type {
-                        let src_id = inst.operands.iter().find_map(|op| op.id_ref_any());
-                        if let Some(src_id) = src_id {
-                            if let Some(src_type) = self.id_to_type.get(&src_id) {
-                                if *src_type == result_type {
-                                    self.additional_facts
-                                        .push(format!("(SameTypeBitcast id{})", result_id));
-                                }
+            // Detect same-type bitcast for redundant bitcast elimination
+            if inst.class.opcode == Op::Bitcast {
+                if let Some(result_type) = inst.result_type {
+                    let src_id = inst.operands.iter().find_map(|op| op.id_ref_any());
+                    if let Some(src_id) = src_id {
+                        if let Some(src_type) = self.id_to_type.get(&src_id) {
+                            if *src_type == result_type {
+                                self.additional_facts
+                                    .push(format!("(SameTypeBitcast id{})", result_id));
                             }
                         }
                     }
