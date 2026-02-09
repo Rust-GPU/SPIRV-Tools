@@ -495,25 +495,6 @@ fn float_neg_bits(a: i64) -> i64 {
     }
 }
 
-/// Bitcast 32-bit integer constant to f64 (reinterpret lower 32 bits as f32, promote to f64).
-fn bitcast_int_to_float32(v: i64) -> f64 {
-    f32::from_bits(v as u32) as f64
-}
-
-/// Bitcast 64-bit integer constant to f64 (reinterpret bits as f64).
-fn bitcast_int_to_float64(v: i64) -> f64 {
-    f64::from_bits(v as u64)
-}
-
-/// Bitcast f64 constant to 32-bit integer (demote to f32, get u32 bits).
-fn bitcast_float_to_int32(v: f64) -> i64 {
-    (v as f32).to_bits() as i64
-}
-
-/// Bitcast f64 constant to 64-bit integer (get u64 bits).
-fn bitcast_float_to_int64(v: f64) -> i64 {
-    v.to_bits() as i64
-}
 
 /// SConvert constant fold: sign-extend or truncate to target width.
 fn sconvert_fold(v: i64, dst_width: i64) -> i64 {
@@ -1132,24 +1113,6 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     add_primitive!(
         &mut egraph,
         "uconvert-fold" = |v: i64, sw: i64, dw: i64| -> i64 { uconvert_fold(v, sw, dw) }
-    );
-
-    // Bitcast constant folding primitives (cross int/float reinterpretation)
-    add_primitive!(
-        &mut egraph,
-        "bitcast-i32-to-f" = |v: i64| -> F { F::from(OrderedFloat(bitcast_int_to_float32(v))) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "bitcast-i64-to-f" = |v: i64| -> F { F::from(OrderedFloat(bitcast_int_to_float64(v))) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "bitcast-f-to-i32" = |v: F| -> i64 { bitcast_float_to_int32(v.0 .0) }
-    );
-    add_primitive!(
-        &mut egraph,
-        "bitcast-f-to-i64" = |v: F| -> i64 { bitcast_float_to_int64(v.0 .0) }
     );
 
     // Now load the base SPIR-V language and rules (which use the primitives above)

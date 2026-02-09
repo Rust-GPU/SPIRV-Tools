@@ -492,18 +492,10 @@
 (rule ((= e (BitCast (IntToExpr (Const a)))))
       ((union e (IntToExpr (Const a)))))
 
-; Cross-type bitcast: reinterpret integer bits as float (32-bit)
-(rule ((= e (Bitcast (IntToExpr (Const a))))
-       (= 32 (ResultWidth (Const a))))
-      ((union e (FloatToExpr (FConst (bitcast-i32-to-f a))))))
-
-; Cross-type bitcast: reinterpret integer bits as float (64-bit)
-(rule ((= e (Bitcast (IntToExpr (Const64 a)))))
-      ((union e (FloatToExpr (FConst (bitcast-i64-to-f a))))))
-
-; Cross-type bitcast: reinterpret float bits as integer (32-bit)
-(rule ((= e (Bitcast (FloatToExpr (FConst a)))))
-      ((union e (IntToExpr (Const (bitcast-f-to-i32 a))))))
+; Cross-type bitcast constant folding is intentionally omitted.
+; Without target type info in the egraph, these rules fire for same-type
+; bitcasts too, polluting e-classes with wrong-type values (e.g., putting
+; IntToExpr in a FloatExpr context). Use SameTypeBitcast for elimination.
 
 ; =============================================================================
 ; SConvert/UConvert Constant Folding
