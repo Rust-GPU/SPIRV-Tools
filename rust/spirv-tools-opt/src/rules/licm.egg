@@ -69,6 +69,14 @@
       ((union e (LoopInvariant (ImageFetch img coord)))))
 (rule ((= e (ImageRead (LoopInvariant img) (LoopInvariant coord))))
       ((union e (LoopInvariant (ImageRead img coord)))))
+(rule ((= e (ImageSampleOffset (LoopInvariant img) (LoopInvariant coord) (LoopInvariant off))))
+      ((union e (LoopInvariant (ImageSampleOffset img coord off)))))
+(rule ((= e (ImageSampleConstOffset (LoopInvariant img) (LoopInvariant coord) (LoopInvariant off))))
+      ((union e (LoopInvariant (ImageSampleConstOffset img coord off)))))
+(rule ((= e (ImageFetchOffset (LoopInvariant img) (LoopInvariant coord) (LoopInvariant off))))
+      ((union e (LoopInvariant (ImageFetchOffset img coord off)))))
+(rule ((= e (ImageFetchConstOffset (LoopInvariant img) (LoopInvariant coord) (LoopInvariant off))))
+      ((union e (LoopInvariant (ImageFetchConstOffset img coord off)))))
 
 ; Gamma LICM - when condition (BoolExpr) AND both branches (Expr) are invariant
 ; Gamma condition is BoolExpr -> use LoopInvariantB for condition

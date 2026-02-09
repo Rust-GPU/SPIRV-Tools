@@ -533,7 +533,7 @@ impl EgglogContext {
             }
             // Image operations - model for texture hoisting and CSE
             Op::ImageSampleImplicitLod | Op::ImageSampleExplicitLod => {
-                // ImageSample* %type %sampled_image %coordinate [operands]
+                // ImageSample* %type %sampled_image %coordinate [ImageOperands offset_id...]
                 let ops: Vec<Word> = inst
                     .operands
                     .iter()
@@ -542,13 +542,36 @@ impl EgglogContext {
                 if ops.len() >= 2 {
                     let img = self.get_or_create_term(ops[0]);
                     let coord = self.get_or_create_term(ops[1]);
-                    format!("(ImageSample {} {})", img, coord)
+                    // Check for Offset-only or ConstOffset-only image operands
+                    let mask = inst.operands.iter().find_map(|op| match op {
+                        Operand::ImageOperands(m) => Some(*m),
+                        _ => None,
+                    });
+                    match mask {
+                        Some(m) if m == rspirv::spirv::ImageOperands::OFFSET => {
+                            if ops.len() >= 3 {
+                                let off = self.get_or_create_term(ops[2]);
+                                format!("(ImageSampleOffset {} {} {})", img, coord, off)
+                            } else {
+                                format!("(ImageSample {} {})", img, coord)
+                            }
+                        }
+                        Some(m) if m == rspirv::spirv::ImageOperands::CONST_OFFSET => {
+                            if ops.len() >= 3 {
+                                let off = self.get_or_create_term(ops[2]);
+                                format!("(ImageSampleConstOffset {} {} {})", img, coord, off)
+                            } else {
+                                format!("(ImageSample {} {})", img, coord)
+                            }
+                        }
+                        _ => format!("(ImageSample {} {})", img, coord),
+                    }
                 } else {
                     return None;
                 }
             }
             Op::ImageFetch => {
-                // ImageFetch %type %image %coordinate [operands]
+                // ImageFetch %type %image %coordinate [ImageOperands offset_id...]
                 let ops: Vec<Word> = inst
                     .operands
                     .iter()
@@ -557,7 +580,30 @@ impl EgglogContext {
                 if ops.len() >= 2 {
                     let img = self.get_or_create_term(ops[0]);
                     let coord = self.get_or_create_term(ops[1]);
-                    format!("(ImageFetch {} {})", img, coord)
+                    // Check for Offset-only or ConstOffset-only image operands
+                    let mask = inst.operands.iter().find_map(|op| match op {
+                        Operand::ImageOperands(m) => Some(*m),
+                        _ => None,
+                    });
+                    match mask {
+                        Some(m) if m == rspirv::spirv::ImageOperands::OFFSET => {
+                            if ops.len() >= 3 {
+                                let off = self.get_or_create_term(ops[2]);
+                                format!("(ImageFetchOffset {} {} {})", img, coord, off)
+                            } else {
+                                format!("(ImageFetch {} {})", img, coord)
+                            }
+                        }
+                        Some(m) if m == rspirv::spirv::ImageOperands::CONST_OFFSET => {
+                            if ops.len() >= 3 {
+                                let off = self.get_or_create_term(ops[2]);
+                                format!("(ImageFetchConstOffset {} {} {})", img, coord, off)
+                            } else {
+                                format!("(ImageFetch {} {})", img, coord)
+                            }
+                        }
+                        _ => format!("(ImageFetch {} {})", img, coord),
+                    }
                 } else {
                     return None;
                 }

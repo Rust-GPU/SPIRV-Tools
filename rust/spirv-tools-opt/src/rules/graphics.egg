@@ -34,6 +34,67 @@
       ((union e (LoopInvariant (ImageFetch img coord)))))
 
 ; =============================================================================
+; Image Operand Optimization (UpdateImageOperands)
+; =============================================================================
+; Promotes variable Offset to ConstOffset when the offset is constant,
+; and eliminates zero offsets entirely.
+
+; Zero offset elimination — Vec2 of zeros
+(rule ((= e (ImageSampleOffset img coord (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchOffset img coord (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+
+; Zero offset elimination — Vec3 of zeros
+(rule ((= e (ImageSampleOffset img coord (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchOffset img coord (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+
+; Zero offset elimination — Vec4 of zeros
+(rule ((= e (ImageSampleOffset img coord (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchOffset img coord (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+
+; Zero ConstOffset elimination — same rules for ConstOffset
+(rule ((= e (ImageSampleConstOffset img coord (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchConstOffset img coord (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+(rule ((= e (ImageSampleConstOffset img coord (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchConstOffset img coord (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+(rule ((= e (ImageSampleConstOffset img coord (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageSample img coord))))
+(rule ((= e (ImageFetchConstOffset img coord (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+      ((union e (ImageFetch img coord))))
+
+; Offset → ConstOffset promotion when offset is a constant vector
+; Vec2 with all constant components
+(rule ((= e (ImageSampleOffset img coord off))
+       (= off (Vec2 (IntToExpr (Const a)) (IntToExpr (Const b)))))
+      ((union e (ImageSampleConstOffset img coord off))))
+(rule ((= e (ImageFetchOffset img coord off))
+       (= off (Vec2 (IntToExpr (Const a)) (IntToExpr (Const b)))))
+      ((union e (ImageFetchConstOffset img coord off))))
+; Vec3 with all constant components
+(rule ((= e (ImageSampleOffset img coord off))
+       (= off (Vec3 (IntToExpr (Const a)) (IntToExpr (Const b)) (IntToExpr (Const c)))))
+      ((union e (ImageSampleConstOffset img coord off))))
+(rule ((= e (ImageFetchOffset img coord off))
+       (= off (Vec3 (IntToExpr (Const a)) (IntToExpr (Const b)) (IntToExpr (Const c)))))
+      ((union e (ImageFetchConstOffset img coord off))))
+; Vec4 with all constant components
+(rule ((= e (ImageSampleOffset img coord off))
+       (= off (Vec4 (IntToExpr (Const a)) (IntToExpr (Const b)) (IntToExpr (Const c)) (IntToExpr (Const d)))))
+      ((union e (ImageSampleConstOffset img coord off))))
+(rule ((= e (ImageFetchOffset img coord off))
+       (= off (Vec4 (IntToExpr (Const a)) (IntToExpr (Const b)) (IntToExpr (Const c)) (IntToExpr (Const d)))))
+      ((union e (ImageFetchConstOffset img coord off))))
+
+; =============================================================================
 ; Fragment Derivative Optimization
 ; =============================================================================
 ; Derivatives have special properties.
