@@ -143,6 +143,64 @@
 ; For now, these would require an Identity constructor
 
 ; =============================================================================
+; Matrix Constant Evaluation via Decomposition
+; =============================================================================
+; Break matrix-to-vector operations into vector ops when the matrix structure
+; is known (CompositeConstruct with known columns). The resulting vector
+; operations (VecTimesScalar, Dot, VecFAdd) already have constant folding.
+;
+; Note: MatTimesMat, Transpose, and MatTimesScalar produce matrix results
+; which would require creating CompositeConstruct values in rule conclusions.
+; Since CompositeConstruct is a function (not constructor), this is not
+; directly possible. Instead, matrix-matrix operations decompose indirectly
+; through existing associativity rules:
+;   (A * B) * v = A * (B * v)  [then MatTimesVec decomposes]
+;   v * (A * B) = (v * A) * B  [then VecTimesMat decomposes]
+
+; --- MatTimesVec: result = sum of scaled columns ---
+; M * v where M = [c0, c1, ...] gives sum(ci * v[i])
+
+; 2-column matrix * vector
+(rule ((= e (MatTimesVec m v))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ENil))))))
+      ((union e (VecFAdd (VecTimesScalar c0 (VecExtract v 0))
+                         (VecTimesScalar c1 (VecExtract v 1))))))
+
+; 3-column matrix * vector
+(rule ((= e (MatTimesVec m v))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ECons c2 (ENil)))))))
+      ((union e (VecFAdd (VecFAdd (VecTimesScalar c0 (VecExtract v 0))
+                                  (VecTimesScalar c1 (VecExtract v 1)))
+                         (VecTimesScalar c2 (VecExtract v 2))))))
+
+; 4-column matrix * vector
+(rule ((= e (MatTimesVec m v))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ECons c2 (ECons c3 (ENil))))))))
+      ((union e (VecFAdd (VecFAdd (VecTimesScalar c0 (VecExtract v 0))
+                                  (VecTimesScalar c1 (VecExtract v 1)))
+                         (VecFAdd (VecTimesScalar c2 (VecExtract v 2))
+                                  (VecTimesScalar c3 (VecExtract v 3)))))))
+
+; --- VecTimesMat: result[i] = dot(v, column_i) ---
+
+; vector * 2-column matrix
+(rule ((= e (VecTimesMat v m))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ENil))))))
+      ((union e (Vec2 (FloatToExpr (Dot v c0)) (FloatToExpr (Dot v c1))))))
+
+; vector * 3-column matrix
+(rule ((= e (VecTimesMat v m))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ECons c2 (ENil)))))))
+      ((union e (Vec3 (FloatToExpr (Dot v c0)) (FloatToExpr (Dot v c1))
+                      (FloatToExpr (Dot v c2))))))
+
+; vector * 4-column matrix
+(rule ((= e (VecTimesMat v m))
+       (= m (CompositeConstruct (ECons c0 (ECons c1 (ECons c2 (ECons c3 (ENil))))))))
+      ((union e (Vec4 (FloatToExpr (Dot v c0)) (FloatToExpr (Dot v c1))
+                      (FloatToExpr (Dot v c2)) (FloatToExpr (Dot v c3))))))
+
+; =============================================================================
 ; Matrix Loop Invariant Rules - ONE-DIRECTIONAL
 ; =============================================================================
 
