@@ -486,12 +486,24 @@
 ; =============================================================================
 ; BitCast Constant Folding
 ; =============================================================================
-; Bitcast of a constant preserves the bit pattern (identity).
-
+; Same-sort bitcast preserves the bit pattern (identity).
 (rule ((= e (Bitcast (IntToExpr (Const a)))))
       ((union e (IntToExpr (Const a)))))
 (rule ((= e (BitCast (IntToExpr (Const a)))))
       ((union e (IntToExpr (Const a)))))
+
+; Cross-type bitcast: reinterpret integer bits as float (32-bit)
+(rule ((= e (Bitcast (IntToExpr (Const a))))
+       (= 32 (ResultWidth (Const a))))
+      ((union e (FloatToExpr (FConst (bitcast-i32-to-f a))))))
+
+; Cross-type bitcast: reinterpret integer bits as float (64-bit)
+(rule ((= e (Bitcast (IntToExpr (Const64 a)))))
+      ((union e (FloatToExpr (FConst (bitcast-i64-to-f a))))))
+
+; Cross-type bitcast: reinterpret float bits as integer (32-bit)
+(rule ((= e (Bitcast (FloatToExpr (FConst a)))))
+      ((union e (IntToExpr (Const (bitcast-f-to-i32 a))))))
 
 ; =============================================================================
 ; SConvert/UConvert Constant Folding
