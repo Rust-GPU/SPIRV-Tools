@@ -153,8 +153,8 @@ enum EmitPattern {
     GlslTernary(u32, TypeClass, TypeClass),
     /// Select/Gamma/If: cond is Bool, arms match the given TypeClass.
     Select(TypeClass),
-    /// Bridge constructor: transparent wrapper, recurse with given TypeClass.
-    Bridge(TypeClass),
+    /// Bridge constructor: transparent wrapper, recurse into child.
+    Bridge,
 }
 
 // ---------------------------------------------------------------------------
@@ -670,12 +670,12 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
     ("IfB", EmitPattern::Select(TypeClass::Bool)),
     ("VecSelect", EmitPattern::Select(TypeClass::Other)),
     // ===== Bridge constructors =====
-    ("IntToExpr", EmitPattern::Bridge(TypeClass::Int)),
-    ("FloatToExpr", EmitPattern::Bridge(TypeClass::Float)),
-    ("BoolToExpr", EmitPattern::Bridge(TypeClass::Bool)),
-    ("ExprToInt", EmitPattern::Bridge(TypeClass::Int)),
-    ("ExprToFloat", EmitPattern::Bridge(TypeClass::Float)),
-    ("ExprToBool", EmitPattern::Bridge(TypeClass::Bool)),
+    ("IntToExpr", EmitPattern::Bridge),
+    ("FloatToExpr", EmitPattern::Bridge),
+    ("BoolToExpr", EmitPattern::Bridge),
+    ("ExprToInt", EmitPattern::Bridge),
+    ("ExprToFloat", EmitPattern::Bridge),
+    ("ExprToBool", EmitPattern::Bridge),
     // ===== GLSL.std.450 unary =====
     (
         "Sin",
@@ -998,6 +998,10 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
 /// Resolve a TypeClass to a concrete SPIR-V type ID.
 /// If the original type matches the class, keep it (preserves width).
 /// Otherwise fall back to a canonical module type.
+///
+/// The egraph's IType/FType/BType propagation should ensure the correct type
+/// reaches emission. If this function falls back, it indicates incomplete
+/// type propagation — the debug assertion helps catch these gaps.
 fn resolve_type(class: TypeClass, original_type: Word, ctx: &EmitCtx) -> Word {
     let original_class = ctx
         .type_classes
@@ -1007,6 +1011,12 @@ fn resolve_type(class: TypeClass, original_type: Word, ctx: &EmitCtx) -> Word {
     if original_class == class || class == TypeClass::Other {
         return original_type;
     }
+    // Fallback: egraph type propagation missed this case.
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "resolve_type fallback: expected {:?} but got {:?} for type id {}",
+        class, original_class, original_type
+    );
     match class {
         TypeClass::Int => ctx.int32_type.unwrap_or(original_type),
         TypeClass::Float => ctx.float32_type.unwrap_or(original_type),
@@ -1287,12 +1297,12 @@ fn emit_pattern(
             ));
             Some((id, synth))
         }
-        EmitPattern::Bridge(type_class) => {
+        EmitPattern::Bridge => {
             if args.is_empty() {
                 return None;
             }
-            let bridged_type = resolve_type(type_class, result_type, ctx);
-            emit_term(&args[0], bridged_type, ctx)
+            // Bridges are transparent — pass the parent's type through unchanged
+            emit_term(&args[0], result_type, ctx)
         }
     }
 }

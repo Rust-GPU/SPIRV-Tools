@@ -916,8 +916,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             if let Some(term) = parse_extract_result(&result_str) {
                 let result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
 
+                // Parse the extracted term into a tree (once).
+                // The tree walker handles bridge constructors transparently.
+                let parsed_term = parse_sexpr(&term);
+
                 // Track all IDs referenced in this term for DCE
-                collect_ids_from_term(&term, &id_map, &mut used_ids);
+                if let Some(ref pt) = parsed_term {
+                    collect_ids_from_parsed_term(pt, &id_map, &mut used_ids);
+                }
                 // The root ID itself is used
                 used_ids.insert(id);
                 // The result type is used
@@ -925,12 +931,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     used_ids.insert(result_type);
                 }
 
-                // Parse the extracted term into a tree (once).
-                // The tree walker handles bridge constructors transparently.
-                let parsed_term = parse_sexpr(&term);
-
                 // Check if the result is just a reference to another ID
-                if let Some(alias_id) = parse_sym_alias_from_term(&parsed_term, &id_map) {
+                if let Some(alias_id) = parse_sym_alias_from_term(parsed_term.as_ref(), &id_map) {
                     if alias_id != id {
                         // This instruction becomes an alias to another value
                         id_aliases.insert(id, alias_id);
@@ -1077,14 +1079,20 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
         // If the gamma has simplified to just the expression (not a Gamma/Select variant),
         // it means both branches computed the same thing and it can be hoisted
-        let is_gamma_or_select = gamma_term.starts_with("(Gamma ")
-            || gamma_term.starts_with("(GammaI ")
-            || gamma_term.starts_with("(GammaF ")
-            || gamma_term.starts_with("(GammaB ")
-            || gamma_term.starts_with("(Select ")
-            || gamma_term.starts_with("(SelectI ")
-            || gamma_term.starts_with("(SelectF ")
-            || gamma_term.starts_with("(SelectB ");
+        let is_gamma_or_select = match parse_sexpr(&gamma_term) {
+            Some(Term::App { ref op, .. }) => matches!(
+                op.as_str(),
+                "Gamma"
+                    | "GammaI"
+                    | "GammaF"
+                    | "GammaB"
+                    | "Select"
+                    | "SelectI"
+                    | "SelectF"
+                    | "SelectB"
+            ),
+            _ => false,
+        };
         if !is_gamma_or_select {
             // The expression can be hoisted!
             // Mark both branch IDs to become CopyObjects of the hoisted value
@@ -1195,10 +1203,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     });
 
                     // Resolve terms to IDs
-                    let _cond_id = parse_sym_alias_from_term(&parse_sexpr(&cond_term), &id_map)
-                        .unwrap_or(sel.condition_id);
-                    let then_id = parse_sym_alias_from_term(&parse_sexpr(&then_term), &id_map);
-                    let else_id = parse_sym_alias_from_term(&parse_sexpr(&else_term), &id_map);
+                    let _cond_id =
+                        parse_sym_alias_from_term(parse_sexpr(&cond_term).as_ref(), &id_map)
+                            .unwrap_or(sel.condition_id);
+                    let then_id =
+                        parse_sym_alias_from_term(parse_sexpr(&then_term).as_ref(), &id_map);
+                    let else_id =
+                        parse_sym_alias_from_term(parse_sexpr(&else_term).as_ref(), &id_map);
 
                     if let (Some(then_val), Some(else_val)) = (then_id, else_id) {
                         // Merge block: Unreachable -> Phi + ReturnValue(phi)
@@ -1222,7 +1233,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     // Both branches return the same value (or one was unreachable)
                     // Just emit a simple return in the merge block
                     if let Some(val_id) =
-                        parse_sym_alias_from_term(&parse_sexpr(&val_term), &id_map)
+                        parse_sym_alias_from_term(parse_sexpr(&val_term).as_ref(), &id_map)
                     {
                         // Then block: branch to merge
                         block_transforms.push(BlockTransform {
@@ -1782,29 +1793,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 }
 
 /// Check if a parsed term is just a Sym reference (possibly wrapped in bridge constructors).
-fn parse_sym_alias_from_term(term: &Option<Term>, id_map: &HashMap<String, Word>) -> Option<Word> {
-    let term = term.as_ref()?;
-    match term {
+fn parse_sym_alias_from_term(term: Option<&Term>, id_map: &HashMap<String, Word>) -> Option<Word> {
+    match term? {
         Term::Atom(s) => id_map.get(s.as_str()).copied(),
-        Term::App { op, args } => {
-            match op.as_str() {
-                // Sym variants resolve directly to their referenced ID
-                "Sym" | "ISym" | "FSym" | "BSym" => {
-                    if let Some(Term::Atom(name)) = args.first() {
-                        id_map.get(name.as_str()).copied()
-                    } else {
-                        None
-                    }
+        Term::App { op, args } => match op.as_str() {
+            "Sym" | "ISym" | "FSym" | "BSym" => {
+                if let Some(Term::Atom(name)) = args.first() {
+                    id_map.get(name.as_str()).copied()
+                } else {
+                    None
                 }
-                // Bridge constructors are transparent — recurse into child
-                "IntToExpr" | "FloatToExpr" | "BoolToExpr" | "ExprToInt" | "ExprToFloat"
-                | "ExprToBool" => {
-                    let child = args.first().map(|a| Some(a.clone()));
-                    child.and_then(|c| parse_sym_alias_from_term(&c, id_map))
-                }
-                _ => None,
             }
-        }
+            "IntToExpr" | "FloatToExpr" | "BoolToExpr" | "ExprToInt" | "ExprToFloat"
+            | "ExprToBool" => parse_sym_alias_from_term(args.first(), id_map),
+            _ => None,
+        },
     }
 }
 
@@ -1814,7 +1817,13 @@ fn cleanup_module(
     id_aliases: &HashMap<Word, Word>,
     true_roots: &HashSet<Word>,
 ) {
-    // Build transitive alias map
+    let final_aliases = resolve_aliases(module, id_aliases);
+    remove_dead_instructions(module, &final_aliases, true_roots);
+}
+
+/// Phase 1: Build transitive alias map and rewrite all operand references.
+/// This is purely mechanical — no decisions, just following CopyObject chains.
+fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) -> HashMap<Word, Word> {
     let mut final_aliases: HashMap<Word, Word> = HashMap::new();
     for (&from, &to) in id_aliases {
         let mut target = to;
@@ -1827,11 +1836,9 @@ fn cleanup_module(
         final_aliases.insert(from, target);
     }
 
-    // Replace all references to aliased IDs with their targets
     for func in &mut module.functions {
         for block in &mut func.blocks {
             for inst in &mut block.instructions {
-                // Update operand references
                 for op in &mut inst.operands {
                     if let Some(ref_id) = op.id_ref_any() {
                         if let Some(&target) = final_aliases.get(&ref_id) {
@@ -1843,21 +1850,27 @@ fn cleanup_module(
         }
     }
 
-    // Dead code elimination: collect all used IDs and remove unused instructions
-    let mut dce_iteration = 0;
+    final_aliases
+}
+
+/// Phase 2: Iterative DCE — remove instructions whose results aren't referenced.
+///
+/// The egraph's liveness analysis handles most DCE during saturation
+/// (only live IDs are extracted). This post-hoc pass catches residual dead
+/// code from non-optimizable instructions that reference now-dead values.
+fn remove_dead_instructions(
+    module: &mut Module,
+    final_aliases: &HashMap<Word, Word>,
+    true_roots: &HashSet<Word>,
+) {
     loop {
-        dce_iteration += 1;
         let mut used_ids: HashSet<Word> = HashSet::new();
 
-        // True roots (from e-graph analysis) are always considered used
-        // This handles modules without side effects (e.g., test modules)
         for &root_id in true_roots {
             used_ids.insert(root_id);
         }
 
-        // Collect all referenced IDs from all instructions
         for func in &module.functions {
-            // Function parameters are always used
             for param in &func.parameters {
                 if let Some(id) = param.result_id {
                     used_ids.insert(id);
@@ -1865,13 +1878,11 @@ fn cleanup_module(
             }
             for block in &func.blocks {
                 for inst in &block.instructions {
-                    // Instructions with side effects are always "used"
                     if has_side_effects(inst) {
                         if let Some(id) = inst.result_id {
                             used_ids.insert(id);
                         }
                     }
-                    // Collect all operand references
                     for op in &inst.operands {
                         if let Some(ref_id) = op.id_ref_any() {
                             used_ids.insert(ref_id);
@@ -1881,11 +1892,8 @@ fn cleanup_module(
             }
         }
 
-        // Mark module-level types as always used (they may be referenced externally)
-        // But constants should only be kept if they're referenced by other instructions
         for inst in &module.types_global_values {
             if let Some(id) = inst.result_id {
-                // Types are always used, constants only if referenced
                 if !matches!(
                     inst.class.opcode,
                     Op::Constant | Op::ConstantTrue | Op::ConstantFalse
@@ -1895,31 +1903,15 @@ fn cleanup_module(
             }
         }
 
-        // Remove unused instructions (those whose result_id is not in used_ids)
         let mut removed_any = false;
-        if std::env::var("DEBUG_DCE").is_ok() {
-            eprintln!(
-                "DEBUG_DCE: iteration {}, used_ids = {:?}",
-                dce_iteration, used_ids
-            );
-        }
         for func in &mut module.functions {
             for block in &mut func.blocks {
                 let before_len = block.instructions.len();
                 block.instructions.retain(|inst| {
                     if let Some(result_id) = inst.result_id {
-                        // Keep if used OR if it's aliased to something that's used
                         if !used_ids.contains(&result_id) {
-                            // Check if this ID was aliased to something used
                             if let Some(&target) = final_aliases.get(&result_id) {
                                 return used_ids.contains(&target);
-                            }
-                            // Not used and not aliased to something used - remove it
-                            if std::env::var("DEBUG_DCE").is_ok() {
-                                eprintln!(
-                                    "DEBUG_DCE: Removing id{} ({:?})",
-                                    result_id, inst.class.opcode
-                                );
                             }
                             return false;
                         }
@@ -1932,90 +1924,38 @@ fn cleanup_module(
             }
         }
 
-        // Note: We intentionally do NOT remove unused constants from types_global_values.
-        // Constants might be referenced externally (e.g., by specialization constants) or
-        // represent intentional constant folding results. DCE of constants is too aggressive
-        // for a general-purpose optimizer and should be a separate opt-in pass.
-
-        // Keep iterating until no more instructions are removed
         if !removed_any {
             break;
         }
     }
 }
 
-/// Collect all IDs referenced in a term string (for DCE tracking)
-fn collect_ids_from_term(term: &str, id_map: &HashMap<String, Word>, used_ids: &mut HashSet<Word>) {
-    // Find all Sym variants: (Sym "idN"), (ISym "idN"), (FSym "idN"), (BSym "idN")
-    let sym_prefixes: &[&[u8]] = &[b"(Sym \"id", b"(ISym \"id", b"(FSym \"id", b"(BSym \"id"];
-    let const_prefixes: &[&[u8]] = &[
-        b"(Sym \"const",
-        b"(ISym \"const",
-        b"(FSym \"const",
-        b"(BSym \"const",
-    ];
-    let mut i = 0;
-    let bytes = term.as_bytes();
-    while i < bytes.len() {
-        let mut matched = false;
-
-        // Check for Sym "id..." patterns (extract numeric IDs)
-        for prefix in sym_prefixes {
-            if i + prefix.len() < bytes.len() && &bytes[i..i + prefix.len()] == *prefix {
-                let start = i + prefix.len();
-                let mut end = start;
-                while end < bytes.len() && bytes[end].is_ascii_digit() {
-                    end += 1;
-                }
-                if end > start {
-                    if let Ok(id_str) = std::str::from_utf8(&bytes[start..end]) {
-                        if let Ok(id) = id_str.parse::<Word>() {
-                            used_ids.insert(id);
-                        }
-                    }
-                }
-                i = end;
-                matched = true;
-                break;
+/// Collect all referenced IDs from a parsed Term tree (for DCE tracking).
+fn collect_ids_from_parsed_term(
+    term: &Term,
+    id_map: &HashMap<String, Word>,
+    used_ids: &mut HashSet<Word>,
+) {
+    match term {
+        Term::Atom(s) => {
+            if let Some(&id) = id_map.get(s.as_str()) {
+                used_ids.insert(id);
             }
         }
-        if matched {
-            continue;
-        }
-
-        // Check for Sym "const..." patterns (constant references)
-        for prefix in const_prefixes {
-            if i + prefix.len() < bytes.len() && &bytes[i..i + prefix.len()] == *prefix {
-                // Find the opening quote position: after "(Sym " or "(ISym " etc.
-                // We need to extract the key between the quotes
-                // Find the full key between quotes
-                let key_start = bytes[i..]
-                    .iter()
-                    .position(|&b| b == b'"')
-                    .map(|p| i + p + 1);
-                if let Some(ks) = key_start {
-                    let mut end = ks;
-                    while end < bytes.len() && bytes[end] != b'"' {
-                        end += 1;
+        Term::App { op, args } => match op.as_str() {
+            "Sym" | "ISym" | "FSym" | "BSym" => {
+                if let Some(Term::Atom(name)) = args.first() {
+                    if let Some(&id) = id_map.get(name.as_str()) {
+                        used_ids.insert(id);
                     }
-                    if let Ok(key) = std::str::from_utf8(&bytes[ks..end]) {
-                        if let Some(&id) = id_map.get(key) {
-                            used_ids.insert(id);
-                        }
-                    }
-                    i = end;
-                } else {
-                    i += prefix.len();
                 }
-                matched = true;
-                break;
             }
-        }
-        if matched {
-            continue;
-        }
-
-        i += 1;
+            _ => {
+                for arg in args {
+                    collect_ids_from_parsed_term(arg, id_map, used_ids);
+                }
+            }
+        },
     }
 }
 
@@ -2215,6 +2155,32 @@ fn query_type_from_egraph(egraph: &mut egglog::EGraph, func: &str, id: Word) -> 
 /// Topological sort of binding IDs based on term dependencies.
 /// If term for idA contains a bare reference to idB (meaning B is also in id_to_term),
 /// then B must be bound before A.
+/// Collect bare `idN` atom references from a Term tree (for dependency tracking).
+/// Sym/ISym/FSym/BSym wrappers contain string-quoted references that are opaque —
+/// only bare atoms like `id5` create ordering dependencies.
+fn collect_bare_id_refs(term: &Term, self_id: Word, id_set: &HashSet<Word>, deps: &mut Vec<Word>) {
+    match term {
+        Term::Atom(s) => {
+            if let Some(num_str) = s.strip_prefix("id") {
+                if let Ok(ref_id) = num_str.parse::<Word>() {
+                    if ref_id != self_id && id_set.contains(&ref_id) {
+                        deps.push(ref_id);
+                    }
+                }
+            }
+        }
+        Term::App { op, args } => match op.as_str() {
+            // Sym variants contain quoted string references — skip (no ordering dependency)
+            "Sym" | "ISym" | "FSym" | "BSym" => {}
+            _ => {
+                for arg in args {
+                    collect_bare_id_refs(arg, self_id, id_set, deps);
+                }
+            }
+        },
+    }
+}
+
 fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
     use std::collections::VecDeque;
 
@@ -2226,48 +2192,9 @@ fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
 
     for (&id, term) in id_to_term {
         let mut my_deps = Vec::new();
-        // Scan for bare "idN" references (not inside Sym)
-        // These are references to other bound variables
-        let bytes = term.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            // Skip Sym variant patterns - these are safe opaque references
-            // Handles: (Sym "..."), (ISym "..."), (FSym "..."), (BSym "...")
-            let skip_sym = (i + 5 < bytes.len() && &bytes[i..i + 5] == b"(Sym ")
-                || (i + 6 < bytes.len()
-                    && (&bytes[i..i + 6] == b"(ISym "
-                        || &bytes[i..i + 6] == b"(FSym "
-                        || &bytes[i..i + 6] == b"(BSym "));
-            if skip_sym {
-                // Skip to closing paren
-                if let Some(close) = term[i..].find(')') {
-                    i += close + 1;
-                    continue;
-                }
-            }
-            // Look for bare "id" followed by digits
-            if bytes[i] == b'i' && i + 2 < bytes.len() && bytes[i + 1] == b'd' {
-                // Check it's not preceded by an alphanumeric (part of a longer token)
-                if i > 0 && (bytes[i - 1] as char).is_alphanumeric() {
-                    i += 1;
-                    continue;
-                }
-                let start = i + 2;
-                let mut end = start;
-                while end < bytes.len() && (bytes[end] as char).is_ascii_digit() {
-                    end += 1;
-                }
-                if end > start {
-                    if let Ok(ref_id) = term[start..end].parse::<Word>() {
-                        if ref_id != id && id_set.contains(&ref_id) {
-                            my_deps.push(ref_id);
-                        }
-                    }
-                }
-                i = end;
-                continue;
-            }
-            i += 1;
+        // Parse the term and walk the tree to find bare "idN" atom references
+        if let Some(parsed) = parse_sexpr(term) {
+            collect_bare_id_refs(&parsed, id, &id_set, &mut my_deps);
         }
 
         in_degree.insert(id, my_deps.len());
