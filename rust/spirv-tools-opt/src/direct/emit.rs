@@ -155,6 +155,21 @@ enum EmitPattern {
     Select(TypeClass),
     /// Bridge constructor: transparent wrapper, recurse into child.
     Bridge,
+    /// Load: emit OpLoad from first arg (pointer), ignore second arg (memory token).
+    Load,
+    /// Extract with literal index: emit OpCompositeExtract(composite, literal_index).
+    ExtractLiteral(Op),
+    /// Insert with swapped operands + literal index: emit Op(object, composite, literal_index).
+    /// Egglog order: (composite, object, index). SPIR-V order: (object, composite, index).
+    InsertSwapped(Op),
+    /// CompositeConstruct from N positional args. (count)
+    CompositeN(u32),
+    /// CompositeConstruct from ECons/ENil list.
+    CompositeList,
+    /// VectorShuffle with N literal indices after 2 vector operands. (num_indices)
+    ShuffleN(u32),
+    /// Image op with operand mask: emit Op(sampled_image, coord, mask, extra_operand).
+    ImageWithMask(Op, u32),
 }
 
 // ---------------------------------------------------------------------------
@@ -989,6 +1004,48 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
         "NClamp",
         EmitPattern::GlslTernary(81, TypeClass::Float, TypeClass::Float),
     ),
+    // ===== Memory operations (special) =====
+    ("Load", EmitPattern::Load),
+    // ===== Composite extract/insert =====
+    (
+        "CompositeExtract",
+        EmitPattern::ExtractLiteral(Op::CompositeExtract),
+    ),
+    (
+        "VecExtract",
+        EmitPattern::ExtractLiteral(Op::CompositeExtract),
+    ),
+    (
+        "CompositeInsert",
+        EmitPattern::InsertSwapped(Op::CompositeInsert),
+    ),
+    ("VecInsert", EmitPattern::InsertSwapped(Op::CompositeInsert)),
+    // ===== CompositeConstruct variants =====
+    ("Vec2", EmitPattern::CompositeN(2)),
+    ("Vec3", EmitPattern::CompositeN(3)),
+    ("Vec4", EmitPattern::CompositeN(4)),
+    ("CompositeConstruct", EmitPattern::CompositeList),
+    // ===== VectorShuffle variants =====
+    ("VecShuffle2", EmitPattern::ShuffleN(2)),
+    ("VecShuffle3", EmitPattern::ShuffleN(3)),
+    ("VecShuffle4", EmitPattern::ShuffleN(4)),
+    // ===== Image operations with operand masks =====
+    (
+        "ImageSampleOffset",
+        EmitPattern::ImageWithMask(Op::ImageSampleImplicitLod, 16),
+    ), // OFFSET = 16
+    (
+        "ImageSampleConstOffset",
+        EmitPattern::ImageWithMask(Op::ImageSampleImplicitLod, 8),
+    ), // CONST_OFFSET = 8
+    (
+        "ImageFetchOffset",
+        EmitPattern::ImageWithMask(Op::ImageFetch, 16),
+    ), // OFFSET = 16
+    (
+        "ImageFetchConstOffset",
+        EmitPattern::ImageWithMask(Op::ImageFetch, 8),
+    ), // CONST_OFFSET = 8
 ];
 
 // ---------------------------------------------------------------------------
@@ -1088,8 +1145,7 @@ fn emit_app(
         }
     }
 
-    // --- Special-case operations not in the ops table ---
-    emit_special(op, args, result_type, ctx)
+    None
 }
 
 /// Emit a pattern from the ops table.
@@ -1304,23 +1360,7 @@ fn emit_pattern(
             // Bridges are transparent — pass the parent's type through unchanged
             emit_term(&args[0], result_type, ctx)
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Special-case operations
-// ---------------------------------------------------------------------------
-
-/// Handle operations that don't fit the regular ops table patterns.
-fn emit_special(
-    op: &str,
-    args: &[Term],
-    result_type: Word,
-    ctx: &mut EmitCtx,
-) -> Option<(Word, Vec<Instruction>)> {
-    match op {
-        // Load: (Load ptr mem) → OpLoad with just the pointer
-        "Load" => {
+        EmitPattern::Load => {
             if args.is_empty() {
                 return None;
             }
@@ -1336,9 +1376,7 @@ fn emit_special(
             ));
             Some((id, synth))
         }
-
-        // CompositeExtract / VecExtract: (CompositeExtract composite literal_index)
-        "CompositeExtract" | "VecExtract" => {
+        EmitPattern::ExtractLiteral(opcode) => {
             if args.len() < 2 {
                 return None;
             }
@@ -1348,7 +1386,7 @@ fn emit_special(
             let index = term_as_u32(&args[1])?;
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
-                Op::CompositeExtract,
+                opcode,
                 Some(result_type),
                 Some(id),
                 vec![
@@ -1358,10 +1396,7 @@ fn emit_special(
             ));
             Some((id, synth))
         }
-
-        // CompositeInsert / VecInsert: (CompositeInsert composite object index)
-        // SPIR-V order: object, composite, index (operand swap!)
-        "CompositeInsert" | "VecInsert" => {
+        EmitPattern::InsertSwapped(opcode) => {
             if args.len() < 3 {
                 return None;
             }
@@ -1372,9 +1407,9 @@ fn emit_special(
             synth.append(&mut s);
             let index = term_as_u32(&args[2])?;
             let id = alloc_id(ctx);
-            // Note: SPIR-V operand order is object, composite, index
+            // SPIR-V operand order: object, composite, index
             synth.push(Instruction::new(
-                Op::CompositeInsert,
+                opcode,
                 Some(result_type),
                 Some(id),
                 vec![
@@ -1385,18 +1420,13 @@ fn emit_special(
             ));
             Some((id, synth))
         }
-
-        // Vec2/Vec3/Vec4 → CompositeConstruct
-        "Vec2" => emit_composite_construct(args, 2, result_type, ctx),
-        "Vec3" => emit_composite_construct(args, 3, result_type, ctx),
-        "Vec4" => emit_composite_construct(args, 4, result_type, ctx),
-
-        // CompositeConstruct with ECons/ENil list
-        "CompositeConstruct" => {
+        EmitPattern::CompositeN(count) => {
+            emit_composite_construct(args, count as usize, result_type, ctx)
+        }
+        EmitPattern::CompositeList => {
             if args.is_empty() {
                 return None;
             }
-            // The argument is an ECons/ENil list
             let (components, mut synth) = flatten_expr_list(&args[0], result_type, ctx)?;
             if components.is_empty() {
                 return None;
@@ -1414,43 +1444,33 @@ fn emit_special(
             ));
             Some((id, synth))
         }
-
-        // VectorShuffle variants: (VecShuffle2 v1 v2 idx0 idx1), etc.
-        "VecShuffle2" => emit_vector_shuffle(args, 2, result_type, ctx),
-        "VecShuffle3" => emit_vector_shuffle(args, 3, result_type, ctx),
-        "VecShuffle4" => emit_vector_shuffle(args, 4, result_type, ctx),
-
-        // Image operations with image operand masks
-        "ImageSampleOffset" => emit_image_with_operand(
-            Op::ImageSampleImplicitLod,
-            rspirv::spirv::ImageOperands::OFFSET,
-            args,
-            result_type,
-            ctx,
-        ),
-        "ImageSampleConstOffset" => emit_image_with_operand(
-            Op::ImageSampleImplicitLod,
-            rspirv::spirv::ImageOperands::CONST_OFFSET,
-            args,
-            result_type,
-            ctx,
-        ),
-        "ImageFetchOffset" => emit_image_with_operand(
-            Op::ImageFetch,
-            rspirv::spirv::ImageOperands::OFFSET,
-            args,
-            result_type,
-            ctx,
-        ),
-        "ImageFetchConstOffset" => emit_image_with_operand(
-            Op::ImageFetch,
-            rspirv::spirv::ImageOperands::CONST_OFFSET,
-            args,
-            result_type,
-            ctx,
-        ),
-
-        _ => None,
+        EmitPattern::ShuffleN(count) => emit_vector_shuffle(args, count as usize, result_type, ctx),
+        EmitPattern::ImageWithMask(opcode, mask_bits) => {
+            if args.len() < 3 {
+                return None;
+            }
+            let mask = rspirv::spirv::ImageOperands::from_bits_truncate(mask_bits);
+            let mut synth = Vec::new();
+            let (image, mut s) = emit_term(&args[0], result_type, ctx)?;
+            synth.append(&mut s);
+            let (coord, mut s) = emit_term(&args[1], result_type, ctx)?;
+            synth.append(&mut s);
+            let (offset, mut s) = emit_term(&args[2], result_type, ctx)?;
+            synth.append(&mut s);
+            let id = alloc_id(ctx);
+            synth.push(Instruction::new(
+                opcode,
+                Some(result_type),
+                Some(id),
+                vec![
+                    rspirv::dr::Operand::IdRef(image),
+                    rspirv::dr::Operand::IdRef(coord),
+                    rspirv::dr::Operand::ImageOperands(mask),
+                    rspirv::dr::Operand::IdRef(offset),
+                ],
+            ));
+            Some((id, synth))
+        }
     }
 }
 
@@ -1679,39 +1699,6 @@ fn emit_vector_shuffle(
         Some(result_type),
         Some(id),
         operands,
-    ));
-    Some((id, synth))
-}
-
-/// Emit an image operation with an image operand mask (Offset, ConstOffset).
-fn emit_image_with_operand(
-    opcode: Op,
-    operand_mask: rspirv::spirv::ImageOperands,
-    args: &[Term],
-    result_type: Word,
-    ctx: &mut EmitCtx,
-) -> Option<(Word, Vec<Instruction>)> {
-    if args.len() < 3 {
-        return None;
-    }
-    let mut synth = Vec::new();
-    let (image, mut s) = emit_term(&args[0], result_type, ctx)?;
-    synth.append(&mut s);
-    let (coord, mut s) = emit_term(&args[1], result_type, ctx)?;
-    synth.append(&mut s);
-    let (offset, mut s) = emit_term(&args[2], result_type, ctx)?;
-    synth.append(&mut s);
-    let id = alloc_id(ctx);
-    synth.push(Instruction::new(
-        opcode,
-        Some(result_type),
-        Some(id),
-        vec![
-            rspirv::dr::Operand::IdRef(image),
-            rspirv::dr::Operand::IdRef(coord),
-            rspirv::dr::Operand::ImageOperands(operand_mask),
-            rspirv::dr::Operand::IdRef(offset),
-        ],
     ));
     Some((id, synth))
 }
@@ -1946,5 +1933,346 @@ mod tests {
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
         assert_eq!(result_id, 5);
         assert!(synth.is_empty());
+    }
+
+    /// Helper to create an EmitCtx for tests with some ids pre-registered.
+    fn make_test_ctx<'a>(
+        id_map: &'a mut HashMap<String, Word>,
+        next_id: &'a mut Word,
+        type_classes: &'a HashMap<Word, TypeClass>,
+        type_widths: &'a HashMap<Word, u32>,
+    ) -> EmitCtx<'a> {
+        EmitCtx {
+            id_map,
+            next_id,
+            int32_type: Some(10),
+            int64_type: None,
+            float32_type: Some(11),
+            float64_type: None,
+            bool_type: Some(12),
+            type_classes,
+            glsl_ext_id: None,
+            type_widths,
+        }
+    }
+
+    // ===== Load =====
+
+    #[test]
+    fn emit_load_from_pointer() {
+        let mut id_map = HashMap::new();
+        id_map.insert("ptr1".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(Load (Sym \"ptr1\") (Sym \"mem0\"))").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::Load);
+    }
+
+    #[test]
+    fn emit_load_no_args_returns_none() {
+        let mut id_map = HashMap::new();
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = Term::App {
+            op: "Load".into(),
+            args: vec![],
+        };
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== CompositeExtract / VecExtract =====
+
+    #[test]
+    fn emit_composite_extract_with_literal_index() {
+        let mut id_map = HashMap::new();
+        id_map.insert("vec1".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(CompositeExtract (Sym \"vec1\") 2)").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeExtract);
+    }
+
+    #[test]
+    fn emit_vec_extract_uses_composite_extract_opcode() {
+        let mut id_map = HashMap::new();
+        id_map.insert("vec1".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(VecExtract (Sym \"vec1\") 0)").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeExtract);
+    }
+
+    #[test]
+    fn emit_composite_extract_too_few_args_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("vec1".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(CompositeExtract (Sym \"vec1\"))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== CompositeInsert / VecInsert =====
+
+    #[test]
+    fn emit_composite_insert_swaps_operands() {
+        let mut id_map = HashMap::new();
+        id_map.insert("vec1".to_string(), 1);
+        id_map.insert("val1".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        // Egglog order: (CompositeInsert composite object index)
+        let term = parse_sexpr("(CompositeInsert (Sym \"vec1\") (Sym \"val1\") 1)").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeInsert);
+        // SPIR-V operand order: object (val1=2), composite (vec1=1), index (1)
+        assert_eq!(synth[0].operands[0], rspirv::dr::Operand::IdRef(2));
+        assert_eq!(synth[0].operands[1], rspirv::dr::Operand::IdRef(1));
+        assert_eq!(synth[0].operands[2], rspirv::dr::Operand::LiteralBit32(1));
+    }
+
+    #[test]
+    fn emit_composite_insert_too_few_args_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("vec1".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(CompositeInsert (Sym \"vec1\") (Sym \"vec1\"))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== Vec2/Vec3/Vec4 (CompositeN) =====
+
+    #[test]
+    fn emit_vec2_composite_construct() {
+        let mut id_map = HashMap::new();
+        id_map.insert("a".to_string(), 1);
+        id_map.insert("b".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(Vec2 (Sym \"a\") (Sym \"b\"))").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeConstruct);
+        assert_eq!(synth[0].operands.len(), 2);
+    }
+
+    #[test]
+    fn emit_vec3_composite_construct() {
+        let mut id_map = HashMap::new();
+        id_map.insert("a".to_string(), 1);
+        id_map.insert("b".to_string(), 2);
+        id_map.insert("c".to_string(), 3);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(Vec3 (Sym \"a\") (Sym \"b\") (Sym \"c\"))").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeConstruct);
+        assert_eq!(synth[0].operands.len(), 3);
+    }
+
+    #[test]
+    fn emit_vec4_too_few_args_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("a".to_string(), 1);
+        id_map.insert("b".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(Vec4 (Sym \"a\") (Sym \"b\"))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== CompositeConstruct (CompositeList) =====
+
+    #[test]
+    fn emit_composite_construct_from_econs_list() {
+        let mut id_map = HashMap::new();
+        id_map.insert("x".to_string(), 1);
+        id_map.insert("y".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term =
+            parse_sexpr("(CompositeConstruct (ECons (Sym \"x\") (ECons (Sym \"y\") (ENil))))")
+                .unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::CompositeConstruct);
+        assert_eq!(synth[0].operands.len(), 2);
+    }
+
+    #[test]
+    fn emit_composite_construct_empty_list_returns_none() {
+        let mut id_map = HashMap::new();
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(CompositeConstruct (ENil))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== VecShuffle (ShuffleN) =====
+
+    #[test]
+    fn emit_vec_shuffle2() {
+        let mut id_map = HashMap::new();
+        id_map.insert("v1".to_string(), 1);
+        id_map.insert("v2".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(VecShuffle2 (Sym \"v1\") (Sym \"v2\") 0 3)").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::VectorShuffle);
+        // 2 IdRef + 2 LiteralBit32
+        assert_eq!(synth[0].operands.len(), 4);
+    }
+
+    #[test]
+    fn emit_vec_shuffle4() {
+        let mut id_map = HashMap::new();
+        id_map.insert("v1".to_string(), 1);
+        id_map.insert("v2".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(VecShuffle4 (Sym \"v1\") (Sym \"v2\") 0 1 4 5)").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::VectorShuffle);
+        // 2 IdRef + 4 LiteralBit32
+        assert_eq!(synth[0].operands.len(), 6);
+    }
+
+    #[test]
+    fn emit_vec_shuffle_too_few_indices_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("v1".to_string(), 1);
+        id_map.insert("v2".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        // VecShuffle3 needs 2 vectors + 3 indices = 5 args, only 4 given
+        let term = parse_sexpr("(VecShuffle3 (Sym \"v1\") (Sym \"v2\") 0 1)").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== ImageWithMask =====
+
+    #[test]
+    fn emit_image_sample_with_offset() {
+        let mut id_map = HashMap::new();
+        id_map.insert("img".to_string(), 1);
+        id_map.insert("coord".to_string(), 2);
+        id_map.insert("off".to_string(), 3);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term =
+            parse_sexpr("(ImageSampleOffset (Sym \"img\") (Sym \"coord\") (Sym \"off\"))").unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::ImageSampleImplicitLod);
+        // operands: image, coord, mask, offset
+        assert_eq!(synth[0].operands.len(), 4);
+        assert_eq!(
+            synth[0].operands[2],
+            rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::OFFSET)
+        );
+    }
+
+    #[test]
+    fn emit_image_fetch_const_offset() {
+        let mut id_map = HashMap::new();
+        id_map.insert("img".to_string(), 1);
+        id_map.insert("coord".to_string(), 2);
+        id_map.insert("off".to_string(), 3);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term =
+            parse_sexpr("(ImageFetchConstOffset (Sym \"img\") (Sym \"coord\") (Sym \"off\"))")
+                .unwrap();
+        let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
+        assert_eq!(result_id, 100);
+        assert_eq!(synth.len(), 1);
+        assert_eq!(synth[0].class.opcode, Op::ImageFetch);
+        assert_eq!(
+            synth[0].operands[2],
+            rspirv::dr::Operand::ImageOperands(rspirv::spirv::ImageOperands::CONST_OFFSET)
+        );
+    }
+
+    #[test]
+    fn emit_image_with_mask_too_few_args_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("img".to_string(), 1);
+        id_map.insert("coord".to_string(), 2);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(ImageSampleOffset (Sym \"img\") (Sym \"coord\"))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
+    }
+
+    // ===== Unknown op returns None =====
+
+    #[test]
+    fn emit_unknown_op_returns_none() {
+        let mut id_map = HashMap::new();
+        id_map.insert("x".to_string(), 1);
+        let mut next_id = 100;
+        let type_classes = HashMap::new();
+        let type_widths = HashMap::new();
+        let mut ctx = make_test_ctx(&mut id_map, &mut next_id, &type_classes, &type_widths);
+        let term = parse_sexpr("(CompletelyBogusOp (Sym \"x\"))").unwrap();
+        assert!(emit_term(&term, 10, &mut ctx).is_none());
     }
 }
