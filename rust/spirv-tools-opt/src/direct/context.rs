@@ -62,6 +62,11 @@ impl EgglogContext {
         self.glsl_ext_id = Some(id);
     }
 
+    /// Get the GLSL.std.450 extended instruction set ID (if any).
+    pub fn glsl_ext_id(&self) -> Option<Word> {
+        self.glsl_ext_id
+    }
+
     /// Add an instruction to the context.
     pub fn add_instruction(&mut self, inst: &Instruction) {
         if let Some(result_id) = inst.result_id {
