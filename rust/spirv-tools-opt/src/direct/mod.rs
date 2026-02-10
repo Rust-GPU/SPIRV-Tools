@@ -1203,13 +1203,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     });
 
                     // Resolve terms to IDs
-                    let _cond_id =
-                        parse_sym_alias_from_term(parse_sexpr(&cond_term).as_ref(), &id_map)
-                            .unwrap_or(sel.condition_id);
-                    let then_id =
-                        parse_sym_alias_from_term(parse_sexpr(&then_term).as_ref(), &id_map);
-                    let else_id =
-                        parse_sym_alias_from_term(parse_sexpr(&else_term).as_ref(), &id_map);
+                    let _cond_id = parse_sym_alias_from_term(Some(&cond_term), &id_map)
+                        .unwrap_or(sel.condition_id);
+                    let then_id = parse_sym_alias_from_term(Some(&then_term), &id_map);
+                    let else_id = parse_sym_alias_from_term(Some(&else_term), &id_map);
 
                     if let (Some(then_val), Some(else_val)) = (then_id, else_id) {
                         // Merge block: Unreachable -> Phi + ReturnValue(phi)
@@ -1232,9 +1229,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 ParsedEffect::ReturnValue(val_term) => {
                     // Both branches return the same value (or one was unreachable)
                     // Just emit a simple return in the merge block
-                    if let Some(val_id) =
-                        parse_sym_alias_from_term(parse_sexpr(&val_term).as_ref(), &id_map)
-                    {
+                    if let Some(val_id) = parse_sym_alias_from_term(Some(&val_term), &id_map) {
                         // Then block: branch to merge
                         block_transforms.push(BlockTransform {
                             func_idx: sel.func_idx,
@@ -2258,96 +2253,53 @@ fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
 enum ParsedEffect {
     /// (ReturnValue (Gamma/Select cond then else))
     ReturnValueWithGamma {
-        cond_term: String,
-        then_term: String,
-        else_term: String,
+        cond_term: Term,
+        then_term: Term,
+        else_term: Term,
     },
     /// (ReturnValue expr) - simple return
-    ReturnValue(String),
+    ReturnValue(Term),
     /// (Unreachable)
     Unreachable,
 }
 
-/// Parse an extracted Effect term from egglog
+/// Parse an extracted Effect term from egglog using the Term tree.
 fn parse_effect_result(s: &str) -> Option<ParsedEffect> {
-    let s = s.trim();
-
-    // Check for (ReturnValue ...)
-    if let Some(rest) = s.strip_prefix("(ReturnValue ") {
-        if let Some(inner) = rest.strip_suffix(')') {
-            let inner = inner.trim();
-
-            // Check for Gamma/Select variants (typed and untyped)
-            let gamma_select_prefixes = [
-                "(Gamma ",
-                "(GammaI ",
-                "(GammaF ",
-                "(GammaB ",
-                "(Select ",
-                "(SelectI ",
-                "(SelectF ",
-                "(SelectB ",
-            ];
-            let matched_prefix = gamma_select_prefixes.iter().find(|p| inner.starts_with(*p));
-            if let Some(prefix) = matched_prefix {
-                if let Some(args) = inner.strip_prefix(prefix) {
-                    if let Some(args) = args.strip_suffix(')') {
-                        let parts = split_terms_simple(args);
-                        if parts.len() >= 3 {
-                            return Some(ParsedEffect::ReturnValueWithGamma {
-                                cond_term: parts[0].clone(),
-                                then_term: parts[1].clone(),
-                                else_term: parts[2].clone(),
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Simple ReturnValue
-            return Some(ParsedEffect::ReturnValue(inner.to_string()));
+    let term = parse_sexpr(s.trim())?;
+    match &term {
+        Term::App { op, args } if op == "Unreachable" && args.is_empty() => {
+            Some(ParsedEffect::Unreachable)
         }
-    }
-
-    // Check for (Unreachable)
-    if s == "(Unreachable)" {
-        return Some(ParsedEffect::Unreachable);
-    }
-
-    None
-}
-
-/// Split terms at top level (respecting parentheses)
-fn split_terms_simple(s: &str) -> Vec<String> {
-    let mut terms = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0;
-
-    for c in s.chars() {
-        match c {
-            '(' => {
-                depth += 1;
-                current.push(c);
-            }
-            ')' => {
-                depth -= 1;
-                current.push(c);
-            }
-            ' ' | '\t' | '\n' if depth == 0 => {
-                let trimmed = current.trim().to_string();
-                if !trimmed.is_empty() {
-                    terms.push(trimmed);
+        Term::App { op, args } if op == "ReturnValue" && args.len() == 1 => {
+            // Check if the inner term is a Gamma/Select variant
+            match &args[0] {
+                Term::App {
+                    op: inner_op,
+                    args: inner_args,
+                } if inner_args.len() >= 3
+                    && matches!(
+                        inner_op.as_str(),
+                        "Gamma"
+                            | "GammaI"
+                            | "GammaF"
+                            | "GammaB"
+                            | "Select"
+                            | "SelectI"
+                            | "SelectF"
+                            | "SelectB"
+                    ) =>
+                {
+                    Some(ParsedEffect::ReturnValueWithGamma {
+                        cond_term: inner_args[0].clone(),
+                        then_term: inner_args[1].clone(),
+                        else_term: inner_args[2].clone(),
+                    })
                 }
-                current.clear();
+                inner => Some(ParsedEffect::ReturnValue(inner.clone())),
             }
-            _ => current.push(c),
         }
+        _ => None,
     }
-    let trimmed = current.trim().to_string();
-    if !trimmed.is_empty() {
-        terms.push(trimmed);
-    }
-    terms
 }
 
 #[cfg(test)]
@@ -2596,5 +2548,90 @@ mod tests {
         );
         // id5 has no dependencies from id_to_term references
         let _ = pos_5; // just needs to be present
+    }
+
+    // ===== parse_effect_result tests =====
+
+    #[test]
+    fn parse_effect_unreachable() {
+        let result = parse_effect_result("(Unreachable)");
+        assert!(matches!(result, Some(ParsedEffect::Unreachable)));
+    }
+
+    #[test]
+    fn parse_effect_simple_return() {
+        let result = parse_effect_result("(ReturnValue (ISym \"id5\"))");
+        match result {
+            Some(ParsedEffect::ReturnValue(term)) => {
+                assert!(matches!(term, Term::App { ref op, .. } if op == "ISym"));
+            }
+            other => panic!("Expected ReturnValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_effect_return_with_gamma() {
+        let result = parse_effect_result(
+            "(ReturnValue (GammaI (BSym \"id1\") (ISym \"id2\") (ISym \"id3\")))",
+        );
+        match result {
+            Some(ParsedEffect::ReturnValueWithGamma {
+                cond_term,
+                then_term,
+                else_term,
+            }) => {
+                assert!(matches!(cond_term, Term::App { ref op, .. } if op == "BSym"));
+                assert!(matches!(then_term, Term::App { ref op, .. } if op == "ISym"));
+                assert!(matches!(else_term, Term::App { ref op, .. } if op == "ISym"));
+            }
+            other => panic!("Expected ReturnValueWithGamma, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_effect_return_with_nested_gamma() {
+        let result = parse_effect_result(
+            "(ReturnValue (Gamma (BSym \"id1\") (Add (ISym \"id2\") (ISym \"id3\")) (ISym \"id4\")))",
+        );
+        match result {
+            Some(ParsedEffect::ReturnValueWithGamma { then_term, .. }) => {
+                // The then_term should be the nested (Add ...) expression
+                assert!(matches!(then_term, Term::App { ref op, .. } if op == "Add"));
+            }
+            other => panic!("Expected ReturnValueWithGamma, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_effect_return_with_select_variant() {
+        let result = parse_effect_result(
+            "(ReturnValue (SelectF (BSym \"id1\") (FSym \"id2\") (FSym \"id3\")))",
+        );
+        assert!(matches!(
+            result,
+            Some(ParsedEffect::ReturnValueWithGamma { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_effect_non_gamma_return() {
+        // ReturnValue with a non-Gamma/Select inner term → simple ReturnValue
+        let result = parse_effect_result("(ReturnValue (Add (ISym \"id1\") (ISym \"id2\")))");
+        assert!(matches!(result, Some(ParsedEffect::ReturnValue(_))));
+    }
+
+    #[test]
+    fn parse_effect_empty_returns_none() {
+        assert!(parse_effect_result("").is_none());
+    }
+
+    #[test]
+    fn parse_effect_unknown_returns_none() {
+        assert!(parse_effect_result("(Store ptr val)").is_none());
+    }
+
+    #[test]
+    fn parse_effect_bare_atom_returns_none() {
+        assert!(parse_effect_result("id5").is_none());
     }
 }
