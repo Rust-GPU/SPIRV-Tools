@@ -1580,12 +1580,13 @@ fn emit_float_const(
     };
     let value: f64 = value_str.parse().ok()?;
 
-    let const_key = format!("fconst_{}", value.to_bits());
+    let type_width = ctx.type_widths.get(&result_type).copied();
+    let width = type_width.unwrap_or(32);
+    let const_key = format!("fconst_{}_{}", width, value.to_bits());
     if let Some(&id) = ctx.id_map.get(&const_key) {
         return Some((id, Vec::new()));
     }
 
-    let type_width = ctx.type_widths.get(&result_type).copied();
     let ty = if type_width == Some(64) {
         ctx.float64_type.or(ctx.float32_type)?
     } else {
