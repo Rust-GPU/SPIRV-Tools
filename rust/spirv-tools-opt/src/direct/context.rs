@@ -919,7 +919,9 @@ impl EgglogContext {
             Op::GroupNonUniformLogicalOr => self.subgroup_reduction_op("GroupLogOr", inst)?,
             Op::GroupNonUniformLogicalXor => self.subgroup_reduction_op("GroupLogXor", inst)?,
             Op::Phi => {
-                // For Phi, check if all incoming values are the same
+                // For Phi, check if all incoming values resolve to the same term.
+                // Compare egraph terms (not raw IDs) so that two different IDs
+                // that map to the same constant or CopyObject are still unified.
                 // Phi operands are pairs: (value, block) repeated
                 let ops: Vec<Word> = inst
                     .operands
@@ -931,17 +933,12 @@ impl EgglogContext {
                 if values.is_empty() {
                     return None;
                 }
-                // If all values are the same, the phi simplifies to that value
-                // Use a typed Sym reference so that after extraction we get a CopyObject
-                let first = values[0];
-                if values.iter().all(|&v| v == first) {
-                    let sym_ctor = match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
-                        Some(TypeClass::Int) => "ISym",
-                        Some(TypeClass::Float) => "FSym",
-                        Some(TypeClass::Bool) => "BSym",
-                        _ => "Sym",
-                    };
-                    format!("({} \"id{}\")", sym_ctor, first)
+                let first_term = self.get_or_create_term(values[0]);
+                if values
+                    .iter()
+                    .all(|&v| self.get_or_create_term(v) == first_term)
+                {
+                    first_term
                 } else {
                     // Can't optimize a phi with different values in the e-graph yet
                     return None;
