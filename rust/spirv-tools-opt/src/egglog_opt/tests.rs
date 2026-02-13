@@ -8078,3 +8078,430 @@ fn test_neg_rejects_floatexpr() {
         "Neg must reject FloatExpr — it requires IntExpr"
     );
 }
+
+// =============================================================================
+// Vector Cancellation and VecSize Tests
+// =============================================================================
+
+#[test]
+fn test_vec_times_scalar_zero_vec3() {
+    // VecTimesScalar(vec3, 0) should produce a Vec3 zero, not Vec2
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Vec3 (Sym "a") (Sym "b") (Sym "c")))
+        (let result (VecTimesScalar v (IntToExpr (Const 0))))
+        (let zero3 (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero3))");
+    assert!(
+        check.is_ok(),
+        "VecTimesScalar(vec3, 0) should produce Vec3 zero, not Vec2 zero"
+    );
+}
+
+#[test]
+fn test_vec_times_scalar_zero_vec4() {
+    // VecTimesScalar(vec4, 0) should produce a Vec4 zero
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Vec4 (Sym "a") (Sym "b") (Sym "c") (Sym "d")))
+        (let result (VecTimesScalar v (IntToExpr (Const 0))))
+        (let zero4 (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero4))");
+    assert!(
+        check.is_ok(),
+        "VecTimesScalar(vec4, 0) should produce Vec4 zero"
+    );
+}
+
+#[test]
+fn test_vec_sub_self_cancellation() {
+    // VecSub(v, v) -> zero vector (requires VecSize)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Vec3 (Sym "a") (Sym "b") (Sym "c")))
+        (let result (VecSub v v))
+        (let zero3 (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero3))");
+    assert!(check.is_ok(), "VecSub(v, v) should produce zero vector");
+}
+
+#[test]
+fn test_vec_add_neg_self_cancellation() {
+    // VecAdd(v, VecNeg(v)) -> zero vector
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Vec2 (Sym "a") (Sym "b")))
+        (let result (VecAdd v (VecNeg v)))
+        (let zero2 (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero2))");
+    assert!(
+        check.is_ok(),
+        "VecAdd(v, VecNeg(v)) should produce zero vector"
+    );
+}
+
+#[test]
+fn test_vec_fsub_self_cancellation() {
+    // VecFSub(v, v) -> zero vector
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Vec4 (Sym "a") (Sym "b") (Sym "c") (Sym "d")))
+        (let result (VecFSub v v))
+        (let zero4 (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero4))");
+    assert!(
+        check.is_ok(),
+        "VecFSub(v, v) should produce zero vector"
+    );
+}
+
+#[test]
+fn test_vec_neg_sub_swap() {
+    // VecNeg(VecSub(x, y)) -> VecSub(y, x)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let y (Sym "y"))
+        (let result (VecNeg (VecSub x y)))
+        (let expected (VecSub y x))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result expected))");
+    assert!(
+        check.is_ok(),
+        "VecNeg(VecSub(x, y)) should equal VecSub(y, x)"
+    );
+}
+
+#[test]
+fn test_vec_sub_add_cancellation() {
+    // VecSub(VecAdd(x, y), x) -> y
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let y (Sym "y"))
+        (let result (VecSub (VecAdd x y) x))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result y))");
+    assert!(
+        check.is_ok(),
+        "VecSub(VecAdd(x, y), x) should equal y"
+    );
+}
+
+#[test]
+fn test_vec_add_sub_cancellation() {
+    // VecAdd(VecSub(x, y), y) -> x
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let y (Sym "y"))
+        (let result (VecAdd (VecSub x y) y))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result x))");
+    assert!(
+        check.is_ok(),
+        "VecAdd(VecSub(x, y), y) should equal x"
+    );
+}
+
+#[test]
+fn test_vec_sub_produces_neg() {
+    // VecSub(x, VecAdd(x, y)) -> VecNeg(y)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let x (Sym "x"))
+        (let y (Sym "y"))
+        (let result (VecSub x (VecAdd x y)))
+        (let expected (VecNeg y))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result expected))");
+    assert!(
+        check.is_ok(),
+        "VecSub(x, VecAdd(x, y)) should equal VecNeg(y)"
+    );
+}
+
+#[test]
+fn test_vec_sub_sub_simplification() {
+    // VecSub(VecSub(a, b), VecSub(c, b)) -> VecSub(a, c)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "a"))
+        (let b (Sym "b"))
+        (let c (Sym "c"))
+        (let result (VecSub (VecSub a b) (VecSub c b)))
+        (let expected (VecSub a c))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result expected))");
+    assert!(
+        check.is_ok(),
+        "VecSub(VecSub(a, b), VecSub(c, b)) should equal VecSub(a, c)"
+    );
+}
+
+#[test]
+fn test_vec_fadd_fneg_canonicalization() {
+    // VecFAdd(a, VecFNeg(b)) -> VecFSub(a, b)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "a"))
+        (let b (Sym "b"))
+        (let result (VecFAdd a (VecFNeg b)))
+        (let expected (VecFSub a b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result expected))");
+    assert!(
+        check.is_ok(),
+        "VecFAdd(a, VecFNeg(b)) should equal VecFSub(a, b)"
+    );
+}
+
+#[test]
+fn test_vec_fsub_fadd_cancellation() {
+    // VecFSub(VecFAdd(a, b), b) -> a
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "a"))
+        (let b (Sym "b"))
+        (let result (VecFSub (VecFAdd a b) b))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result a))");
+    assert!(
+        check.is_ok(),
+        "VecFSub(VecFAdd(a, b), b) should equal a"
+    );
+}
+
+#[test]
+fn test_vecsize_propagates_through_vec_insert() {
+    // VecSize should propagate through VecInsert, enabling self-cancellation
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let base (Vec3 (Sym "a") (Sym "b") (Sym "c")))
+        (let v (VecInsert base (Sym "x") 1))
+        (let result (VecSub v v))
+        (let zero3 (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero3))");
+    assert!(
+        check.is_ok(),
+        "VecSize should propagate through VecInsert for self-cancellation"
+    );
+}
+
+#[test]
+fn test_vecsize_cross_is_3() {
+    // Cross always produces a Vec3, so VecSize should be 3
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let a (Sym "a"))
+        (let b (Sym "b"))
+        (let v (Cross a b))
+        (let result (VecSub v v))
+        (let zero3 (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero3))");
+    assert!(
+        check.is_ok(),
+        "Cross product VecSize should be 3, enabling self-cancellation to Vec3 zero"
+    );
+}
+
+#[test]
+fn test_vecsize_propagates_through_normalize() {
+    // VecSize should propagate through Normalize
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let base (Vec4 (Sym "a") (Sym "b") (Sym "c") (Sym "d")))
+        (let v (Normalize base))
+        (let result (VecFSub v v))
+        (let zero4 (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result zero4))");
+    assert!(
+        check.is_ok(),
+        "VecSize should propagate through Normalize for self-cancellation"
+    );
+}
+
+#[test]
+fn test_vec_fsub_zero_is_fneg() {
+    // VecFSub(zero, v) -> VecFNeg(v)
+    let mut egraph = create_spirv_egraph().unwrap();
+
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
+        (let v (Sym "v"))
+        (let zero (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))
+        (let result (VecFSub zero v))
+        (let expected (VecFNeg v))
+    "#,
+        )
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
+        .unwrap();
+
+    let check = egraph.parse_and_run_program(None, "(check (= result expected))");
+    assert!(
+        check.is_ok(),
+        "VecFSub(zero, v) should equal VecFNeg(v)"
+    );
+}
