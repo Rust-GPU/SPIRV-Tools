@@ -1358,12 +1358,11 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     let mut b = Builder::new();
     b.capability(Capability::Shader);
     b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
-    let void = b.type_void();
     let int = b.type_int(32, 1);
     let bool_ty = b.type_bool();
-    let func_ty = b.type_function(void, vec![int, int]);
+    let func_ty = b.type_function(int, vec![int, int]);
     let func = b
-        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .begin_function(int, None, FunctionControl::NONE, func_ty)
         .unwrap();
     let x = b.function_parameter(int).unwrap();
     let y = b.function_parameter(int).unwrap();
@@ -1375,6 +1374,7 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     let block_right = b.id();
     let block_merge = b.id();
     let seed_id = b.id();
+    let phi_id = b.id();
 
     let c1 = b.constant_bit32(int, 1);
     let c2 = b.constant_bit32(int, 2);
@@ -1406,7 +1406,13 @@ fn build_branch_shared_expr_pre_module() -> (Vec<u32>, u32, u32, u32, u32, u32, 
     b.branch(block_merge).unwrap();
 
     b.begin_block(Some(block_merge)).unwrap();
-    b.ret().unwrap();
+    b.phi(
+        int,
+        Some(phi_id),
+        vec![(expr_left, block_left), (expr_right, block_right)],
+    )
+    .expect("phi");
+    b.ret_value(phi_id).unwrap();
 
     b.begin_block(Some(block_a)).unwrap();
     let _seed = b.i_add(int, Some(seed_id), x, y).expect("seed");

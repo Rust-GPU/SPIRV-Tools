@@ -1821,13 +1821,13 @@ fn cleanup_module(
     id_aliases: &HashMap<Word, Word>,
     true_roots: &HashSet<Word>,
 ) {
-    let final_aliases = resolve_aliases(module, id_aliases);
-    let _removed = remove_dead_instructions(module, &final_aliases, true_roots);
+    resolve_aliases(module, id_aliases);
+    let _removed = remove_dead_instructions(module, true_roots);
 }
 
 /// Phase 1: Build transitive alias map and rewrite all operand references.
 /// This is purely mechanical — no decisions, just following CopyObject chains.
-fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) -> HashMap<Word, Word> {
+fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
     let mut final_aliases: HashMap<Word, Word> = HashMap::new();
     for (&from, &to) in id_aliases {
         let mut target = to;
@@ -1853,8 +1853,6 @@ fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) -> Has
             }
         }
     }
-
-    final_aliases
 }
 
 /// Phase 2: Iterative DCE — remove instructions whose results aren't referenced.
@@ -1872,11 +1870,7 @@ fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) -> Has
 /// dead intermediates.
 ///
 /// Returns the total number of instructions removed.
-fn remove_dead_instructions(
-    module: &mut Module,
-    final_aliases: &HashMap<Word, Word>,
-    true_roots: &HashSet<Word>,
-) -> usize {
+fn remove_dead_instructions(module: &mut Module, true_roots: &HashSet<Word>) -> usize {
     let mut total_removed: usize = 0;
     loop {
         let mut used_ids: HashSet<Word> = HashSet::new();
@@ -1925,9 +1919,6 @@ fn remove_dead_instructions(
                 block.instructions.retain(|inst| {
                     if let Some(result_id) = inst.result_id {
                         if !used_ids.contains(&result_id) {
-                            if let Some(&target) = final_aliases.get(&result_id) {
-                                return used_ids.contains(&target);
-                            }
                             return false;
                         }
                     }
