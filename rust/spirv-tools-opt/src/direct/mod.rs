@@ -905,6 +905,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
+    let mut total_result_type_fallbacks: u32 = 0;
     for &id in &extraction_roots {
         let extract_cmd = format!("(extract id{})", id);
         let results = egraph
@@ -981,6 +982,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         type_classes: &type_classes,
                         glsl_ext_id: ctx.glsl_ext_id(),
                         type_widths: &type_widths,
+                        result_type_fallback_count: 0,
                     };
                     if let Some((final_id, new_insts)) =
                         emit::emit_term(term_tree, corrected_type, &mut emit_ctx)
@@ -1036,10 +1038,17 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             }
                         }
                     }
+                    total_result_type_fallbacks += emit_ctx.result_type_fallback_count;
                 }
             }
         }
     }
+
+    debug_assert_eq!(
+        total_result_type_fallbacks, 0,
+        "resolve_result_type fell back {} times — IType/FType/BType propagation is incomplete",
+        total_result_type_fallbacks
+    );
 
     // ==========================================================================
     // Step 5a: PRE hoisting - detect when branch values have been unified

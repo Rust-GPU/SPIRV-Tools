@@ -128,6 +128,9 @@ pub struct EmitCtx<'a> {
     pub type_classes: &'a HashMap<Word, TypeClass>,
     pub glsl_ext_id: Option<Word>,
     pub type_widths: &'a HashMap<Word, u32>,
+    /// Count of times resolve_result_type had to fall back to a canonical type.
+    /// Nonzero indicates incomplete IType/FType/BType propagation in the egraph.
+    pub result_type_fallback_count: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,33 +1055,56 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
 // Resolve type for TypeClass
 // ---------------------------------------------------------------------------
 
-/// Resolve a TypeClass to a concrete SPIR-V type ID.
-/// If the original type matches the class, keep it (preserves width).
-/// Otherwise fall back to a canonical module type.
+/// Resolve the result type for an instruction.
 ///
-/// The egraph's IType/FType/BType propagation should ensure the correct type
-/// reaches emission. If this function falls back, it indicates incomplete
-/// type propagation — the debug assertion helps catch these gaps.
-fn resolve_type(class: TypeClass, original_type: Word, ctx: &EmitCtx) -> Word {
+/// The egraph's IType/FType/BType propagation should ensure the incoming
+/// `result_type` already matches `class`. A fallback here indicates
+/// incomplete type propagation in the egraph rules.
+fn resolve_result_type(class: TypeClass, result_type: Word, ctx: &mut EmitCtx) -> Word {
     let original_class = ctx
         .type_classes
-        .get(&original_type)
+        .get(&result_type)
         .copied()
         .unwrap_or(TypeClass::Other);
     if original_class == class || class == TypeClass::Other {
-        return original_type;
+        return result_type;
     }
     // Fallback: egraph type propagation missed this case.
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "resolve_type fallback: expected {:?} but got {:?} for type id {}",
-        class, original_class, original_type
+    ctx.result_type_fallback_count += 1;
+    debug_assert!(
+        false,
+        "resolve_result_type fallback: expected {:?} but got {:?} for type id {}. \
+         This indicates incomplete IType/FType/BType propagation in datatypes.egg.",
+        class, original_class, result_type
     );
     match class {
-        TypeClass::Int => ctx.int32_type.unwrap_or(original_type),
-        TypeClass::Float => ctx.float32_type.unwrap_or(original_type),
-        TypeClass::Bool => ctx.bool_type.unwrap_or(original_type),
-        TypeClass::Other => original_type,
+        TypeClass::Int => ctx.int32_type.unwrap_or(result_type),
+        TypeClass::Float => ctx.float32_type.unwrap_or(result_type),
+        TypeClass::Bool => ctx.bool_type.unwrap_or(result_type),
+        TypeClass::Other => result_type,
+    }
+}
+
+/// Derive the operand type from the instruction's result type.
+///
+/// For same-class operations (e.g., IAdd: Int->Int), this returns result_type
+/// unchanged. For cross-class operations (e.g., IEqual: Bool result, Int operands),
+/// this legitimately falls back to the canonical type for the operand class.
+/// This is by design, not a propagation gap.
+fn resolve_operand_type(class: TypeClass, result_type: Word, ctx: &EmitCtx) -> Word {
+    let original_class = ctx
+        .type_classes
+        .get(&result_type)
+        .copied()
+        .unwrap_or(TypeClass::Other);
+    if original_class == class || class == TypeClass::Other {
+        return result_type;
+    }
+    match class {
+        TypeClass::Int => ctx.int32_type.unwrap_or(result_type),
+        TypeClass::Float => ctx.float32_type.unwrap_or(result_type),
+        TypeClass::Bool => ctx.bool_type.unwrap_or(result_type),
+        TypeClass::Other => result_type,
     }
 }
 
@@ -1160,8 +1186,8 @@ fn emit_pattern(
             if args.is_empty() {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1178,8 +1204,8 @@ fn emit_pattern(
             if args.len() < 2 {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1198,8 +1224,8 @@ fn emit_pattern(
             if args.len() < 3 {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1224,8 +1250,8 @@ fn emit_pattern(
             if args.len() < 4 {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1254,8 +1280,8 @@ fn emit_pattern(
             if args.is_empty() {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1277,8 +1303,8 @@ fn emit_pattern(
             if args.len() < 2 {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1303,8 +1329,8 @@ fn emit_pattern(
             if args.len() < 3 {
                 return None;
             }
-            let op_result_type = resolve_type(result_class, result_type, ctx);
-            let operand_type = resolve_type(operand_class, result_type, ctx);
+            let op_result_type = resolve_result_type(result_class, result_type, ctx);
+            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
             let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
             synth.append(&mut s);
@@ -1331,7 +1357,7 @@ fn emit_pattern(
             if args.len() < 3 {
                 return None;
             }
-            let select_type = resolve_type(type_class, result_type, ctx);
+            let select_type = resolve_result_type(type_class, result_type, ctx);
             let cond_type = ctx.bool_type.unwrap_or(result_type);
             let mut synth = Vec::new();
             let (cond, mut s) = emit_term(&args[0], cond_type, ctx)?;
@@ -1849,6 +1875,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Sym \"id5\")").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1873,6 +1900,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Const 42)").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1899,6 +1927,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Add (Const 3) (Const 5))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1929,6 +1958,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(IntToExpr (Sym \"id5\"))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1954,6 +1984,7 @@ mod tests {
             type_classes,
             glsl_ext_id: None,
             type_widths,
+            result_type_fallback_count: 0,
         }
     }
 

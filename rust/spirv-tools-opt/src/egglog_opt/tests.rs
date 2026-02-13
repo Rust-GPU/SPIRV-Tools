@@ -8204,10 +8204,7 @@ fn test_vec_fsub_self_cancellation() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= result zero4))");
-    assert!(
-        check.is_ok(),
-        "VecFSub(v, v) should produce zero vector"
-    );
+    assert!(check.is_ok(), "VecFSub(v, v) should produce zero vector");
 }
 
 #[test]
@@ -8257,10 +8254,7 @@ fn test_vec_sub_add_cancellation() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= result y))");
-    assert!(
-        check.is_ok(),
-        "VecSub(VecAdd(x, y), x) should equal y"
-    );
+    assert!(check.is_ok(), "VecSub(VecAdd(x, y), x) should equal y");
 }
 
 #[test]
@@ -8283,10 +8277,7 @@ fn test_vec_add_sub_cancellation() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= result x))");
-    assert!(
-        check.is_ok(),
-        "VecAdd(VecSub(x, y), y) should equal x"
-    );
+    assert!(check.is_ok(), "VecAdd(VecSub(x, y), y) should equal x");
 }
 
 #[test]
@@ -8391,10 +8382,7 @@ fn test_vec_fsub_fadd_cancellation() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= result a))");
-    assert!(
-        check.is_ok(),
-        "VecFSub(VecFAdd(a, b), b) should equal a"
-    );
+    assert!(check.is_ok(), "VecFSub(VecFAdd(a, b), b) should equal a");
 }
 
 #[test]
@@ -8500,8 +8488,5 @@ fn test_vec_fsub_zero_is_fneg() {
         .unwrap();
 
     let check = egraph.parse_and_run_program(None, "(check (= result expected))");
-    assert!(
-        check.is_ok(),
-        "VecFSub(zero, v) should equal VecFNeg(v)"
-    );
+    assert!(check.is_ok(), "VecFSub(zero, v) should equal VecFNeg(v)");
 }
