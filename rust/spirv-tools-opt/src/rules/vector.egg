@@ -80,8 +80,13 @@
 
 ; VecTimesScalar with 0 and 1 - ONE-DIRECTIONAL for identity
 ; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
-(rule ((= e (VecTimesScalar v (IntToExpr (Const 0)))))
+; Uses VecSize guard to produce correct-dimension zero vector
+(rule ((= e (VecTimesScalar v (IntToExpr (Const 0)))) (= 2 (VecSize v)))
       ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecTimesScalar v (IntToExpr (Const 0)))) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecTimesScalar v (IntToExpr (Const 0)))) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
 (rule ((= e (VecTimesScalar v (IntToExpr (Const 1)))))
       ((union e v)))
 
@@ -782,6 +787,10 @@
 (rule ((= e (VecUMod a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
 (rule ((= e (VecTimesScalar a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
 (rule ((= e (VecFMix a _ _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecInsert a _ _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (VecSelect _ a _)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (Normalize a)) (= sz (VecSize a))) ((set (VecSize e) sz)))
+(rule ((= e (Cross _ _))) ((set (VecSize e) 3)))
 
 ; =============================================================================
 ; ShuffleExtract Resolution
