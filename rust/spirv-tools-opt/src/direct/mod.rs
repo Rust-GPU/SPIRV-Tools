@@ -2005,7 +2005,14 @@ fn has_side_effects(inst: &Instruction) -> bool {
     )
 }
 
-/// Check if an instruction should be optimized.
+/// Check if an instruction should be optimized via the egraph.
+///
+/// This includes all pure operations that have both:
+/// - an ingestion handler in `instruction_to_term` (context.rs)
+/// - an emission handler in the OPS_TABLE (emit.rs)
+///
+/// Excludes side-effecting ops (Store, AtomicStore, ImageWrite, etc.)
+/// and ops handled through RVSDG memory threading (Load, Store).
 pub(crate) fn is_optimizable(inst: &Instruction) -> bool {
     matches!(
         inst.class.opcode,
@@ -2029,6 +2036,11 @@ pub(crate) fn is_optimizable(inst: &Instruction) -> bool {
             | Op::BitwiseXor
             | Op::Not
             | Op::BitReverse
+            | Op::BitCount
+            // Bitfield operations
+            | Op::BitFieldSExtract
+            | Op::BitFieldUExtract
+            | Op::BitFieldInsert
             // Integer comparisons
             | Op::IEqual
             | Op::INotEqual
@@ -2063,6 +2075,7 @@ pub(crate) fn is_optimizable(inst: &Instruction) -> bool {
             | Op::FRem
             | Op::FMod
             | Op::FNegate
+            | Op::Dot
             // Floating-point comparisons (ordered)
             | Op::FOrdEqual
             | Op::FOrdNotEqual
@@ -2077,11 +2090,64 @@ pub(crate) fn is_optimizable(inst: &Instruction) -> bool {
             | Op::FUnordLessThanEqual
             | Op::FUnordGreaterThan
             | Op::FUnordGreaterThanEqual
+            // Float predicates
+            | Op::IsNan
+            | Op::IsInf
+            | Op::QuantizeToF16
             // Conversions
             | Op::ConvertFToU
             | Op::ConvertFToS
             | Op::ConvertSToF
             | Op::ConvertUToF
+            | Op::SConvert
+            | Op::UConvert
+            | Op::FConvert
+            | Op::Bitcast
+            // Derivative operations (fragment shader)
+            | Op::DPdx
+            | Op::DPdy
+            | Op::Fwidth
+            | Op::DPdxFine
+            | Op::DPdyFine
+            | Op::FwidthFine
+            | Op::DPdxCoarse
+            | Op::DPdyCoarse
+            | Op::FwidthCoarse
+            // Composite operations
+            | Op::CompositeExtract
+            | Op::CompositeInsert
+            | Op::CompositeConstruct
+            // Vector operations
+            | Op::VectorExtractDynamic
+            | Op::VectorInsertDynamic
+            | Op::VectorShuffle
+            | Op::VectorTimesScalar
+            // Matrix operations
+            | Op::MatrixTimesScalar
+            | Op::MatrixTimesVector
+            | Op::VectorTimesMatrix
+            | Op::MatrixTimesMatrix
+            | Op::Transpose
+            | Op::OuterProduct
+            // GLSL.std.450 extended instructions
+            | Op::ExtInst
+            // Access chain (pure pointer arithmetic)
+            | Op::AccessChain
+            | Op::InBoundsAccessChain
+            // Image query operations (pure metadata queries)
+            | Op::ImageQuerySize
+            | Op::ImageQueryLevels
+            | Op::ImageQuerySamples
+            | Op::ImageQuerySizeLod
+            | Op::ImageQueryLod
+            // Image/sampler combining (pure)
+            | Op::SampledImage
+            | Op::Image
+            // Image sampling/fetch (read-only, safe to CSE)
+            | Op::ImageSampleImplicitLod
+            | Op::ImageSampleExplicitLod
+            | Op::ImageFetch
+            | Op::ImageRead
     )
 }
 
@@ -2308,11 +2374,136 @@ mod tests {
 
     #[test]
     fn test_is_optimizable() {
+        // Core arithmetic
         let add = Instruction::new(Op::IAdd, Some(1), Some(2), vec![]);
         assert!(is_optimizable(&add));
 
+        // Newly added pure ops
+        assert!(is_optimizable(&Instruction::new(
+            Op::Dot,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::CompositeExtract,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::CompositeInsert,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::VectorShuffle,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::MatrixTimesMatrix,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::Transpose,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::DPdx,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::Bitcast,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::ExtInst,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::AccessChain,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::ImageQuerySize,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::SampledImage,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::ImageSampleImplicitLod,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::ImageFetch,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        assert!(is_optimizable(&Instruction::new(
+            Op::BitFieldSExtract,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+
+        // Side-effecting ops must NOT be optimizable
         let ret = Instruction::new(Op::Return, None, None, vec![]);
         assert!(!is_optimizable(&ret));
+        assert!(!is_optimizable(&Instruction::new(
+            Op::Store,
+            None,
+            None,
+            vec![]
+        )));
+        assert!(!is_optimizable(&Instruction::new(
+            Op::AtomicStore,
+            None,
+            None,
+            vec![]
+        )));
+        assert!(!is_optimizable(&Instruction::new(
+            Op::ImageWrite,
+            None,
+            None,
+            vec![]
+        )));
+        assert!(!is_optimizable(&Instruction::new(
+            Op::FunctionCall,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
+        // Load is handled by RVSDG, not per-instruction optimization
+        assert!(!is_optimizable(&Instruction::new(
+            Op::Load,
+            Some(1),
+            Some(2),
+            vec![]
+        )));
     }
 
     #[test]
