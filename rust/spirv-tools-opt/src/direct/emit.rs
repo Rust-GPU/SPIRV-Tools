@@ -1523,23 +1523,14 @@ fn emit_const_int(
     let type_width = ctx.type_widths.get(&result_type).copied();
     let actual_64 = is_64 || type_width == Some(64);
 
-    // For boolean types (width 1), emit ConstantTrue/ConstantFalse
-    if type_width == Some(1) {
-        let const_key = format!("boolconst_{}", value);
-        if let Some(&id) = ctx.id_map.get(&const_key) {
-            return Some((id, Vec::new()));
-        }
-        let ty = ctx.bool_type.or(Some(result_type))?;
-        let id = alloc_id(ctx);
-        let op = if value == 0 {
-            Op::ConstantFalse
-        } else {
-            Op::ConstantTrue
-        };
-        let inst = Instruction::new(op, Some(ty), Some(id), vec![]);
-        ctx.id_map.insert(const_key, id);
-        return Some((id, vec![inst]));
-    }
+    // Boolean constants are handled by BoolConst → emit_bool_const().
+    // Const is an IntExpr constructor, so it should never extract with a boolean type.
+    debug_assert!(
+        type_width != Some(1),
+        "emit_const_int called with boolean type (width=1, value={}). \
+         This should be handled by BoolConst/emit_bool_const instead.",
+        value
+    );
 
     let const_key = if actual_64 {
         format!("const64_{}", value)
