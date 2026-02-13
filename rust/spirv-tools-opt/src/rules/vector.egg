@@ -228,9 +228,6 @@
 ; Vector Subtraction and Negation
 ; =============================================================================
 
-; Vector subtraction with self is zero
-; Note: produces a zero vector, represented via construction
-
 ; v - 0 = v (for various dimensions) - ONE-DIRECTIONAL
 ; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
 (rule ((= e (VecSub v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
@@ -248,7 +245,7 @@
 (rule ((= e (VecSub (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
       ((union e (VecNeg v))))
 
-; Floating-point vector variants - ONE-DIRECTIONAL
+; Floating-point vector identity with zero - ONE-DIRECTIONAL
 (rule ((= e (VecFAdd v (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
 (rule ((= e (VecFAdd v (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
@@ -269,6 +266,124 @@
       ((union e v)))
 (rule ((= e (VecFSub v (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
       ((union e v)))
+
+; 0 - v = -v (float) - ONE-DIRECTIONAL
+(rule ((= e (VecFSub (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
+      ((union e (VecFNeg v))))
+(rule ((= e (VecFSub (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
+      ((union e (VecFNeg v))))
+(rule ((= e (VecFSub (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))) v)))
+      ((union e (VecFNeg v))))
+
+; =============================================================================
+; Vector Self-Cancellation (uses VecSize to produce correct zero vector)
+; =============================================================================
+; Parallels: Sub(x,x)→0, Add(x,Neg(x))→0, FSub(x,x)→0.0
+
+; VecSub(v, v) → zero vector - ONE-DIRECTIONAL
+(rule ((= e (VecSub v v)) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecSub v v)) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecSub v v)) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+
+; VecAdd(v, VecNeg(v)) → zero vector - ONE-DIRECTIONAL
+(rule ((= e (VecAdd v (VecNeg v))) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecAdd v (VecNeg v))) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecAdd v (VecNeg v))) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecAdd (VecNeg v) v)) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecAdd (VecNeg v) v)) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecAdd (VecNeg v) v)) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+
+; VecFSub(v, v) → zero vector - ONE-DIRECTIONAL
+(rule ((= e (VecFSub v v)) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFSub v v)) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFSub v v)) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+
+; VecFAdd(v, VecFNeg(v)) → zero vector - ONE-DIRECTIONAL
+(rule ((= e (VecFAdd v (VecFNeg v))) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFAdd v (VecFNeg v))) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFAdd v (VecFNeg v))) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFAdd (VecFNeg v) v)) (= 2 (VecSize v)))
+      ((union e (Vec2 (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFAdd (VecFNeg v) v)) (= 3 (VecSize v)))
+      ((union e (Vec3 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+(rule ((= e (VecFAdd (VecFNeg v) v)) (= 4 (VecSize v)))
+      ((union e (Vec4 (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0)) (IntToExpr (Const 0))))))
+
+; =============================================================================
+; Vector Negation of Subtraction - ONE-DIRECTIONAL
+; =============================================================================
+; Parallels: Neg(Sub(x,y)) → Sub(y,x), FNeg(FSub(a,b)) → FSub(b,a)
+
+(rule ((= e (VecNeg (VecSub x y))))
+      ((union e (VecSub y x))))
+(rule ((= e (VecFNeg (VecFSub x y))))
+      ((union e (VecFSub y x))))
+
+; =============================================================================
+; Vector Algebraic Cancellation - ONE-DIRECTIONAL
+; =============================================================================
+; Parallels: Sub(Add(x,y),x)→y, Add(Sub(x,y),y)→x, etc. from arithmetic.egg
+
+; Integer vector cancellation chains
+(rule ((= e (VecSub (VecAdd x y) x)))
+      ((union e y)))
+(rule ((= e (VecSub (VecAdd y x) x)))
+      ((union e y)))
+(rule ((= e (VecAdd (VecSub x y) y)))
+      ((union e x)))
+(rule ((= e (VecAdd y (VecSub x y))))
+      ((union e x)))
+(rule ((= e (VecSub (VecAdd x y) y)))
+      ((union e x)))
+(rule ((= e (VecSub (VecAdd y x) y)))
+      ((union e x)))
+(rule ((= e (VecSub x (VecSub x y))))
+      ((union e y)))
+
+; Sub patterns that produce VecNeg - ONE-DIRECTIONAL
+(rule ((= e (VecSub x (VecAdd x y))))
+      ((union e (VecNeg y))))
+(rule ((= e (VecSub x (VecAdd y x))))
+      ((union e (VecNeg y))))
+(rule ((= e (VecSub (VecSub x y) x)))
+      ((union e (VecNeg y))))
+
+; Sub-sub simplifications - ONE-DIRECTIONAL
+(rule ((= e (VecSub (VecSub a b) (VecSub c b))))
+      ((union e (VecSub a c))))
+(rule ((= e (VecSub (VecSub a b) (VecSub a c))))
+      ((union e (VecSub c b))))
+
+; Float vector cancellation chains
+; Parallels: FSub(FAdd(a,b),b)→a, FAdd(FSub(a,b),b)→a from floating_point.egg
+(rule ((= e (VecFSub (VecFAdd a b) b)))
+      ((union e a)))
+(rule ((= e (VecFSub (VecFAdd b a) b)))
+      ((union e a)))
+(rule ((= e (VecFAdd (VecFSub a b) b)))
+      ((union e a)))
+(rule ((= e (VecFAdd b (VecFSub a b))))
+      ((union e a)))
+
+; VecFAdd with negation canonicalization - ONE-DIRECTIONAL
+; Parallels: FAdd(a, FNeg(b)) → FSub(a,b) from floating_point.egg
+(rule ((= e (VecFAdd a (VecFNeg b))))
+      ((union e (VecFSub a b))))
 
 ; =============================================================================
 ; Vector Operations Distributivity
