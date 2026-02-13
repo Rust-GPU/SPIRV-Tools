@@ -1822,7 +1822,7 @@ fn cleanup_module(
     true_roots: &HashSet<Word>,
 ) {
     let final_aliases = resolve_aliases(module, id_aliases);
-    remove_dead_instructions(module, &final_aliases, true_roots);
+    let _removed = remove_dead_instructions(module, &final_aliases, true_roots);
 }
 
 /// Phase 1: Build transitive alias map and rewrite all operand references.
@@ -1862,11 +1862,22 @@ fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) -> Has
 /// The egraph's liveness analysis handles most DCE during saturation
 /// (only live IDs are extracted). This post-hoc pass catches residual dead
 /// code from non-optimizable instructions that reference now-dead values.
+/// Remove instructions whose results are never referenced.
+///
+/// This catches orphaned intermediates created by the extraction loop.
+/// When the egraph constant-folds an expression (e.g., `(4+5)-2` → `7`),
+/// the downstream consumer extracts as a constant, but the intermediate
+/// instructions (the IAdd for `4+5`) are still emitted because each
+/// extraction root is processed independently. This pass removes those
+/// dead intermediates.
+///
+/// Returns the total number of instructions removed.
 fn remove_dead_instructions(
     module: &mut Module,
     final_aliases: &HashMap<Word, Word>,
     true_roots: &HashSet<Word>,
-) {
+) -> usize {
+    let mut total_removed: usize = 0;
     loop {
         let mut used_ids: HashSet<Word> = HashSet::new();
 
@@ -1922,8 +1933,10 @@ fn remove_dead_instructions(
                     }
                     true
                 });
-                if block.instructions.len() < before_len {
+                let removed_count = before_len - block.instructions.len();
+                if removed_count > 0 {
                     removed_any = true;
+                    total_removed += removed_count;
                 }
             }
         }
@@ -1932,6 +1945,7 @@ fn remove_dead_instructions(
             break;
         }
     }
+    total_removed
 }
 
 /// Collect all referenced IDs from a parsed Term tree (for DCE tracking).
