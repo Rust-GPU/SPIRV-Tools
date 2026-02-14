@@ -128,9 +128,6 @@ pub struct EmitCtx<'a> {
     pub type_classes: &'a HashMap<Word, TypeClass>,
     pub glsl_ext_id: Option<Word>,
     pub type_widths: &'a HashMap<Word, u32>,
-    /// Count of times resolve_result_type had to fall back to a canonical type.
-    /// Nonzero indicates incomplete IType/FType/BType propagation in the egraph.
-    pub result_type_fallback_count: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -1072,7 +1069,6 @@ fn resolve_result_type(class: TypeClass, result_type: Word, ctx: &mut EmitCtx) -
         return result_type;
     }
     // Fallback: egraph type propagation missed this case.
-    ctx.result_type_fallback_count += 1;
     debug_assert!(
         false,
         "resolve_result_type fallback: expected {:?} but got {:?} for type id {}. \
@@ -1160,7 +1156,13 @@ fn emit_app(
     // --- Constants ---
     match op {
         "Const" => return emit_const_int(args, false, result_type, ctx),
-        "Const64" => return emit_const_int(args, true, result_type, ctx),
+        "Const64" => {
+            // The egraph uses (Const N) for all int widths; type_width determines encoding.
+            // Const64 should never appear in extracted terms.
+            #[cfg(debug_assertions)]
+            eprintln!("emit_app: unexpected Const64 constructor — egraph should use Const");
+            return emit_const_int(args, true, result_type, ctx);
+        }
         "BoolConst" => return emit_bool_const(args, ctx),
         "FConst" => return emit_float_const(args, result_type, ctx),
         _ => {}
@@ -1288,7 +1290,7 @@ fn emit_pattern(
                 return None;
             }
             let select_type = resolve_result_type(type_class, result_type, ctx);
-            let cond_type = ctx.bool_type.unwrap_or(result_type);
+            let cond_type = resolve_operand_type(TypeClass::Bool, result_type, ctx);
             let mut synth = Vec::new();
             let (cond, mut s) = emit_term(&args[0], cond_type, ctx)?;
             synth.append(&mut s);
@@ -1405,7 +1407,9 @@ fn emit_pattern(
             if args.len() < 3 {
                 return None;
             }
-            let mask = rspirv::spirv::ImageOperands::from_bits_truncate(mask_bits);
+            let mask = rspirv::spirv::ImageOperands::from_bits(mask_bits).unwrap_or_else(|| {
+                panic!("invalid image operand mask {:#x} in OPS_TABLE", mask_bits)
+            });
             let mut synth = Vec::new();
             let (image, mut s) = emit_term(&args[0], result_type, ctx)?;
             synth.append(&mut s);
@@ -1791,7 +1795,6 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
-            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Sym \"id5\")").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1816,7 +1819,6 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
-            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Const 42)").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1843,7 +1845,6 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
-            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(Add (Const 3) (Const 5))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1874,7 +1875,6 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
-            result_type_fallback_count: 0,
         };
         let term = parse_sexpr("(IntToExpr (Sym \"id5\"))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1900,7 +1900,6 @@ mod tests {
             type_classes,
             glsl_ext_id: None,
             type_widths,
-            result_type_fallback_count: 0,
         }
     }
 

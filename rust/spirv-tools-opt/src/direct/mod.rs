@@ -295,8 +295,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     struct BranchValuePair {
         then_id: Word,
         else_id: Word,
-        #[allow(dead_code)]
-        condition_id: Word,
         header_block_label: Word,
     }
     let mut branch_value_pairs: Vec<BranchValuePair> = Vec::new();
@@ -367,7 +365,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 branch_value_pairs.push(BranchValuePair {
                     then_id,
                     else_id,
-                    condition_id: sel.condition_id,
                     header_block_label: header_label,
                 });
 
@@ -512,12 +509,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     #[derive(Debug, Clone)]
     struct RvsdgSelection {
         func_idx: usize,
-        #[allow(dead_code)]
-        header_block_idx: usize,
         merge_label: Word,
         then_label: Word,
         else_label: Word,
-        condition_id: Word,
         effect_var: String,
     }
     let mut rvsdg_selections: Vec<RvsdgSelection> = Vec::new();
@@ -616,11 +610,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
             rvsdg_selections.push(RvsdgSelection {
                 func_idx: sel.func_idx,
-                header_block_idx: sel.header_block_idx,
                 merge_label: sel.merge_label,
                 then_label: sel.then_label,
                 else_label: sel.else_label,
-                condition_id: cond_id,
                 effect_var,
             });
         }
@@ -877,7 +869,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    let mut total_result_type_fallbacks: u32 = 0;
     for &id in &extraction_roots {
         let extract_cmd = format!("(extract id{})", id);
         let results = egraph
@@ -955,7 +946,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         type_classes: &type_classes,
                         glsl_ext_id: ctx.glsl_ext_id(),
                         type_widths: &type_widths,
-                        result_type_fallback_count: 0,
                     };
                     if let Some((final_id, new_insts)) =
                         emit::emit_term(term_tree, corrected_type, &mut emit_ctx)
@@ -1010,17 +1000,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             }
                         }
                     }
-                    total_result_type_fallbacks += emit_ctx.result_type_fallback_count;
                 }
             }
         }
     }
-
-    debug_assert_eq!(
-        total_result_type_fallbacks, 0,
-        "resolve_result_type fell back {} times — IType/FType/BType propagation is incomplete",
-        total_result_type_fallbacks
-    );
 
     // ==========================================================================
     // Step 5a: PRE hoisting - detect when branch values have been unified
@@ -1033,8 +1016,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     struct HoistInfo {
         then_id: Word, // ID from then-branch that should become CopyObject
         else_id: Word, // ID from else-branch that should become CopyObject
-        #[allow(dead_code)]
-        hoisted_term: String, // The term to compute in header
         header_block_label: Word,
         result_type: Word,
     }
@@ -1087,7 +1068,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             hoisted_values.push(HoistInfo {
                 then_id: pair.then_id,
                 else_id: pair.else_id,
-                hoisted_term: gamma_term.clone(),
                 header_block_label: pair.header_block_label,
                 result_type,
             });
@@ -1167,7 +1147,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         if let Some(effect) = parse_effect_result(&result_str) {
             match effect {
                 ParsedEffect::ReturnValueWithGamma {
-                    cond_term,
                     then_term,
                     else_term,
                 } => {
@@ -1189,8 +1168,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     });
 
                     // Resolve terms to IDs
-                    let _cond_id = parse_sym_alias_from_term(Some(&cond_term), &id_map)
-                        .unwrap_or(sel.condition_id);
                     let then_id = parse_sym_alias_from_term(Some(&then_term), &id_map);
                     let else_id = parse_sym_alias_from_term(Some(&else_term), &id_map);
 
@@ -1341,16 +1318,17 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     });
 
-    // Add synthesized constants to the module (these are already used by definition)
-    // Deduplicate: only add if the ID isn't already present in types_global_values
-    let existing_global_ids: HashSet<Word> = output
+    // Collect existing global IDs once for deduplication
+    let mut existing_global_ids: HashSet<Word> = output
         .types_global_values
         .iter()
         .filter_map(|inst| inst.result_id)
         .collect();
+
+    // Add synthesized constants (already used by definition)
     for const_inst in synthesized_constants {
         if let Some(id) = const_inst.result_id {
-            if !existing_global_ids.contains(&id) {
+            if existing_global_ids.insert(id) {
                 output.types_global_values.push(const_inst);
             }
         } else {
@@ -1358,14 +1336,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Track IDs that were originally in function bodies but now fold to constants
+    // Track IDs that were originally in function bodies but now fold to constants.
+    // We preserve the original instruction's ID for stability.
     let mut folded_to_constant: HashSet<Word> = HashSet::new();
-
-    // Check which function body instructions fold to constants
-    // Note: We always add the folded constant to types_global_values with the original ID.
-    // This preserves ID stability for consumers that expect specific IDs.
-    // Even if an equivalent constant already exists, we keep both - SPIR-V allows duplicate
-    // constant definitions, and this avoids breaking ID references.
     for func in &module.functions {
         for block in &func.blocks {
             for inst in &block.instructions {
@@ -1375,8 +1348,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             opt_inst.class.opcode,
                             Op::Constant | Op::ConstantTrue | Op::ConstantFalse
                         ) {
-                            // Always add the folded constant - don't deduplicate
-                            // This preserves the original instruction's ID
                             folded_to_constant.insert(id);
                         }
                     }
@@ -1384,18 +1355,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             }
         }
     }
-    // Add folded constants to types_global_values
-    // Sort by ID to ensure deterministic output ordering
-    // Deduplicate: skip IDs already present (e.g., from synthesized_constants)
-    let existing_folded_ids: HashSet<Word> = output
-        .types_global_values
-        .iter()
-        .filter_map(|inst| inst.result_id)
-        .collect();
+
+    // Add folded constants, sorted by ID for deterministic output
     let mut sorted_folded: Vec<Word> = folded_to_constant.iter().copied().collect();
     sorted_folded.sort();
     for id in sorted_folded {
-        if existing_folded_ids.contains(&id) {
+        if !existing_global_ids.insert(id) {
             continue;
         }
         if let Some(opt_inst) = optimized_instructions.get(&id) {
@@ -1563,7 +1528,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         let phi_operands: Vec<rspirv::dr::Operand> = case_values
                             .iter()
                             .flat_map(|(val, label)| {
-                                vec![
+                                [
                                     rspirv::dr::Operand::IdRef(*val),
                                     rspirv::dr::Operand::IdRef(*label),
                                 ]
@@ -1757,7 +1722,7 @@ fn cleanup_module(
     true_roots: &HashSet<Word>,
 ) {
     resolve_aliases(module, id_aliases);
-    let _removed = remove_dead_instructions(module, true_roots);
+    remove_dead_instructions(module, true_roots);
 }
 
 /// Phase 1: Build transitive alias map and rewrite all operand references.
@@ -2267,11 +2232,7 @@ fn topological_sort_bindings(id_to_term: &HashMap<Word, String>) -> Vec<Word> {
 #[derive(Debug)]
 enum ParsedEffect {
     /// (ReturnValue (Gamma/Select cond then else))
-    ReturnValueWithGamma {
-        cond_term: Term,
-        then_term: Term,
-        else_term: Term,
-    },
+    ReturnValueWithGamma { then_term: Term, else_term: Term },
     /// (ReturnValue expr) - simple return
     ReturnValue(Term),
     /// (Unreachable)
@@ -2305,7 +2266,6 @@ fn parse_effect_result(s: &str) -> Option<ParsedEffect> {
                     ) =>
                 {
                     Some(ParsedEffect::ReturnValueWithGamma {
-                        cond_term: inner_args[0].clone(),
                         then_term: inner_args[1].clone(),
                         else_term: inner_args[2].clone(),
                     })
@@ -2716,11 +2676,9 @@ mod tests {
         );
         match result {
             Some(ParsedEffect::ReturnValueWithGamma {
-                cond_term,
                 then_term,
                 else_term,
             }) => {
-                assert!(matches!(cond_term, Term::App { ref op, .. } if op == "BSym"));
                 assert!(matches!(then_term, Term::App { ref op, .. } if op == "ISym"));
                 assert!(matches!(else_term, Term::App { ref op, .. } if op == "ISym"));
             }
