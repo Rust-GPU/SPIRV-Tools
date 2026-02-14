@@ -189,6 +189,26 @@ impl EgglogContext {
         }
     }
 
+    /// Get or create a term coerced to the Expr sort.
+    ///
+    /// Like `get_or_create_term`, but wraps typed-sort values (IntExpr,
+    /// FloatExpr, BoolExpr) with bridge constructors (IntToExpr, FloatToExpr,
+    /// BoolToExpr) so the result is always in the Expr sort. Used for
+    /// constructors like CompositeExtract/Insert/Construct that take Expr args.
+    fn get_or_create_expr_term(&mut self, id: Word) -> String {
+        if self.id_to_term.contains_key(&id) || self.known_instruction_ids.contains(&id) {
+            match self.type_class_of(id) {
+                TypeClass::Int => format!("(IntToExpr id{})", id),
+                TypeClass::Float => format!("(FloatToExpr id{})", id),
+                TypeClass::Bool => format!("(BoolToExpr id{})", id),
+                TypeClass::Other => format!("id{}", id),
+            }
+        } else {
+            // External reference — always Expr-sort Sym
+            format!("(Sym \"id{}\")", id)
+        }
+    }
+
     /// Convert an instruction to an egglog term.
     fn instruction_to_term(&mut self, inst: &Instruction) -> Option<String> {
         let term = match inst.class.opcode {
@@ -382,9 +402,15 @@ impl EgglogContext {
                     })
                     .collect();
                 if !ops.is_empty() && !indices.is_empty() {
-                    let composite = self.get_or_create_term(ops[0]);
-                    // For now, only handle single-level extraction (most common case)
-                    format!("(CompositeExtract {} {})", composite, indices[0])
+                    let composite = self.get_or_create_expr_term(ops[0]);
+                    // CompositeExtract returns Expr; wrap if SPIR-V result is scalar
+                    let extract = format!("(CompositeExtract {} {})", composite, indices[0]);
+                    match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
+                        Some(TypeClass::Int) => format!("(ExprToInt {})", extract),
+                        Some(TypeClass::Float) => format!("(ExprToFloat {})", extract),
+                        Some(TypeClass::Bool) => format!("(ExprToBool {})", extract),
+                        _ => extract,
+                    }
                 } else {
                     return None;
                 }
@@ -405,8 +431,8 @@ impl EgglogContext {
                     })
                     .collect();
                 if ops.len() >= 2 && !indices.is_empty() {
-                    let object = self.get_or_create_term(ops[0]);
-                    let composite = self.get_or_create_term(ops[1]);
+                    let object = self.get_or_create_expr_term(ops[0]);
+                    let composite = self.get_or_create_expr_term(ops[1]);
                     format!("(CompositeInsert {} {} {})", composite, object, indices[0])
                 } else {
                     return None;
@@ -422,10 +448,10 @@ impl EgglogContext {
                 if ops.is_empty() {
                     return None;
                 }
-                // Build ExprList for components
+                // Build ExprList — constituents must be Expr for ECons
                 let mut expr_list = "(ENil)".to_string();
                 for &op_id in ops.iter().rev() {
-                    let term = self.get_or_create_term(op_id);
+                    let term = self.get_or_create_expr_term(op_id);
                     expr_list = format!("(ECons {} {})", term, expr_list);
                 }
                 format!("(CompositeConstruct {})", expr_list)
