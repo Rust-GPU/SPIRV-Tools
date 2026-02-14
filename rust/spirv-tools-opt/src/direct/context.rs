@@ -400,23 +400,29 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 3 {
-                    let cond = self.get_or_create_term(ops[0]);
-                    let t = self.get_or_create_term(ops[1]);
-                    let f = self.get_or_create_term(ops[2]);
                     // Check if condition is a vector (TypeClass::Other = non-scalar)
                     let cond_is_vector = self.type_class_of(ops[0]) == TypeClass::Other;
                     if cond_is_vector {
                         // Vector select: component-wise, all operands are Expr
+                        let cond = self.get_or_create_term(ops[0]);
+                        let t = self.get_or_create_term(ops[1]);
+                        let f = self.get_or_create_term(ops[2]);
                         format!("(VecSelect {} {} {})", cond, t, f)
                     } else {
                         // Scalar select: use typed Select based on result type
-                        let select_ctor =
-                            match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
-                                Some(TypeClass::Int) => "SelectI",
-                                Some(TypeClass::Float) => "SelectF",
-                                Some(TypeClass::Bool) => "SelectB",
-                                _ => "Select",
-                            };
+                        let result_class = inst
+                            .result_type
+                            .map(|ty| self.type_class_of_type(ty))
+                            .unwrap_or(TypeClass::Other);
+                        let select_ctor = match result_class {
+                            TypeClass::Int => "SelectI",
+                            TypeClass::Float => "SelectF",
+                            TypeClass::Bool => "SelectB",
+                            TypeClass::Other => "Select",
+                        };
+                        let cond = self.get_or_create_term_as(ops[0], TypeClass::Bool)?;
+                        let t = self.get_or_create_term_as(ops[1], result_class)?;
+                        let f = self.get_or_create_term_as(ops[2], result_class)?;
                         format!("({} {} {} {})", select_ctor, cond, t, f)
                     }
                 } else {
@@ -428,16 +434,16 @@ impl EgglogContext {
                 let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
                 self.get_or_create_term(operand_id)
             }
-            // Derivative operations (fragment shader)
-            Op::DPdx => self.unary_op("DPdx", inst)?,
-            Op::DPdy => self.unary_op("DPdy", inst)?,
-            Op::Fwidth => self.unary_op("Fwidth", inst)?,
-            Op::DPdxFine => self.unary_op("DPdxFine", inst)?,
-            Op::DPdyFine => self.unary_op("DPdyFine", inst)?,
-            Op::FwidthFine => self.unary_op("FwidthFine", inst)?,
-            Op::DPdxCoarse => self.unary_op("DPdxCoarse", inst)?,
-            Op::DPdyCoarse => self.unary_op("DPdyCoarse", inst)?,
-            Op::FwidthCoarse => self.unary_op("FwidthCoarse", inst)?,
+            // Derivative operations (fragment shader) — FloatExpr operand
+            Op::DPdx => self.checked_unary_op("DPdx", TypeClass::Float, inst)?,
+            Op::DPdy => self.checked_unary_op("DPdy", TypeClass::Float, inst)?,
+            Op::Fwidth => self.checked_unary_op("Fwidth", TypeClass::Float, inst)?,
+            Op::DPdxFine => self.checked_unary_op("DPdxFine", TypeClass::Float, inst)?,
+            Op::DPdyFine => self.checked_unary_op("DPdyFine", TypeClass::Float, inst)?,
+            Op::FwidthFine => self.checked_unary_op("FwidthFine", TypeClass::Float, inst)?,
+            Op::DPdxCoarse => self.checked_unary_op("DPdxCoarse", TypeClass::Float, inst)?,
+            Op::DPdyCoarse => self.checked_unary_op("DPdyCoarse", TypeClass::Float, inst)?,
+            Op::FwidthCoarse => self.checked_unary_op("FwidthCoarse", TypeClass::Float, inst)?,
             // Composite operations
             Op::CompositeExtract => {
                 // CompositeExtract %type %composite indices...
@@ -567,10 +573,10 @@ impl EgglogContext {
                     return None;
                 }
             }
-            // Additional type conversions
-            Op::SConvert => self.unary_op("SConvert", inst)?,
-            Op::UConvert => self.unary_op("UConvert", inst)?,
-            Op::FConvert => self.unary_op("FConvert", inst)?,
+            // Additional type conversions — typed operand sorts
+            Op::SConvert => self.checked_unary_op("SConvert", TypeClass::Int, inst)?,
+            Op::UConvert => self.checked_unary_op("UConvert", TypeClass::Int, inst)?,
+            Op::FConvert => self.checked_unary_op("FConvert", TypeClass::Float, inst)?,
             Op::Bitcast => {
                 let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
                 // Same-type bitcast is a no-op — just alias the operand
@@ -586,10 +592,10 @@ impl EgglogContext {
                     self.wrap_expr_result(term, inst)
                 }
             }
-            Op::QuantizeToF16 => self.unary_op("QuantizeToF16", inst)?,
-            // FP predicates
-            Op::IsNan => self.unary_op("IsNan", inst)?,
-            Op::IsInf => self.unary_op("IsInf", inst)?,
+            Op::QuantizeToF16 => self.checked_unary_op("QuantizeToF16", TypeClass::Float, inst)?,
+            // FP predicates — FloatExpr operand
+            Op::IsNan => self.checked_unary_op("IsNan", TypeClass::Float, inst)?,
+            Op::IsInf => self.checked_unary_op("IsInf", TypeClass::Float, inst)?,
             // Dot product
             Op::Dot => self.binary_op("Dot", inst)?,
             // Matrix operations
@@ -612,8 +618,8 @@ impl EgglogContext {
             Op::MatrixTimesMatrix => self.binary_op("MatTimesMat", inst)?,
             Op::Transpose => self.unary_op("Transpose", inst)?,
             Op::OuterProduct => self.binary_op("OuterProduct", inst)?,
-            // Bit counting
-            Op::BitCount => self.unary_op("BitCount", inst)?,
+            // Bit counting — IntExpr operand
+            Op::BitCount => self.checked_unary_op("BitCount", TypeClass::Int, inst)?,
             // Extended instructions (GLSL.std.450)
             Op::ExtInst => self.extended_instruction_to_term(inst)?,
             // Memory operations - model in e-graph for load-store forwarding and dead store elimination
@@ -911,14 +917,14 @@ impl EgglogContext {
                 "(GroupElect)".to_string()
             }
             Op::GroupNonUniformAll => {
-                // GroupNonUniformAll %type %scope %predicate
+                // GroupNonUniformAll %type %scope %predicate — BoolExpr operand
                 let ops: Vec<Word> = inst
                     .operands
                     .iter()
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if !ops.is_empty() {
-                    let pred = self.get_or_create_term(*ops.last().unwrap());
+                    let pred = self.get_or_create_term_as(*ops.last().unwrap(), TypeClass::Bool)?;
                     format!("(GroupAll {})", pred)
                 } else {
                     return None;
@@ -931,7 +937,7 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if !ops.is_empty() {
-                    let pred = self.get_or_create_term(*ops.last().unwrap());
+                    let pred = self.get_or_create_term_as(*ops.last().unwrap(), TypeClass::Bool)?;
                     format!("(GroupAny {})", pred)
                 } else {
                     return None;
@@ -1010,23 +1016,55 @@ impl EgglogContext {
                     return None;
                 }
             }
-            // Subgroup arithmetic reductions
-            Op::GroupNonUniformIAdd => self.subgroup_reduction_op("GroupIAdd", inst)?,
-            Op::GroupNonUniformFAdd => self.subgroup_reduction_op("GroupFAdd", inst)?,
-            Op::GroupNonUniformIMul => self.subgroup_reduction_op("GroupIMul", inst)?,
-            Op::GroupNonUniformFMul => self.subgroup_reduction_op("GroupFMul", inst)?,
-            Op::GroupNonUniformSMin => self.subgroup_reduction_op("GroupSMin", inst)?,
-            Op::GroupNonUniformUMin => self.subgroup_reduction_op("GroupUMin", inst)?,
-            Op::GroupNonUniformFMin => self.subgroup_reduction_op("GroupFMin", inst)?,
-            Op::GroupNonUniformSMax => self.subgroup_reduction_op("GroupSMax", inst)?,
-            Op::GroupNonUniformUMax => self.subgroup_reduction_op("GroupUMax", inst)?,
-            Op::GroupNonUniformFMax => self.subgroup_reduction_op("GroupFMax", inst)?,
-            Op::GroupNonUniformBitwiseAnd => self.subgroup_reduction_op("GroupBitAnd", inst)?,
-            Op::GroupNonUniformBitwiseOr => self.subgroup_reduction_op("GroupBitOr", inst)?,
-            Op::GroupNonUniformBitwiseXor => self.subgroup_reduction_op("GroupBitXor", inst)?,
-            Op::GroupNonUniformLogicalAnd => self.subgroup_reduction_op("GroupLogAnd", inst)?,
-            Op::GroupNonUniformLogicalOr => self.subgroup_reduction_op("GroupLogOr", inst)?,
-            Op::GroupNonUniformLogicalXor => self.subgroup_reduction_op("GroupLogXor", inst)?,
+            // Subgroup arithmetic reductions — typed operand sorts
+            Op::GroupNonUniformIAdd => {
+                self.subgroup_reduction_op("GroupIAdd", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformFAdd => {
+                self.subgroup_reduction_op("GroupFAdd", TypeClass::Float, inst)?
+            }
+            Op::GroupNonUniformIMul => {
+                self.subgroup_reduction_op("GroupIMul", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformFMul => {
+                self.subgroup_reduction_op("GroupFMul", TypeClass::Float, inst)?
+            }
+            Op::GroupNonUniformSMin => {
+                self.subgroup_reduction_op("GroupSMin", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformUMin => {
+                self.subgroup_reduction_op("GroupUMin", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformFMin => {
+                self.subgroup_reduction_op("GroupFMin", TypeClass::Float, inst)?
+            }
+            Op::GroupNonUniformSMax => {
+                self.subgroup_reduction_op("GroupSMax", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformUMax => {
+                self.subgroup_reduction_op("GroupUMax", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformFMax => {
+                self.subgroup_reduction_op("GroupFMax", TypeClass::Float, inst)?
+            }
+            Op::GroupNonUniformBitwiseAnd => {
+                self.subgroup_reduction_op("GroupBitAnd", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformBitwiseOr => {
+                self.subgroup_reduction_op("GroupBitOr", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformBitwiseXor => {
+                self.subgroup_reduction_op("GroupBitXor", TypeClass::Int, inst)?
+            }
+            Op::GroupNonUniformLogicalAnd => {
+                self.subgroup_reduction_op("GroupLogAnd", TypeClass::Bool, inst)?
+            }
+            Op::GroupNonUniformLogicalOr => {
+                self.subgroup_reduction_op("GroupLogOr", TypeClass::Bool, inst)?
+            }
+            Op::GroupNonUniformLogicalXor => {
+                self.subgroup_reduction_op("GroupLogXor", TypeClass::Bool, inst)?
+            }
             Op::Phi => {
                 // For Phi, check if all incoming values resolve to the same term.
                 // Compare egraph terms (not raw IDs) so that two different IDs
@@ -1079,8 +1117,8 @@ impl EgglogContext {
                 "Ne" => "LogNe",
                 _ => return None,
             };
-            let lhs = self.get_or_create_term(ops[0]);
-            let rhs = self.get_or_create_term(ops[1]);
+            let lhs = self.get_or_create_term_as(ops[0], TypeClass::Bool)?;
+            let rhs = self.get_or_create_term_as(ops[1], TypeClass::Bool)?;
             Some(format!("({} {} {})", logical_op, lhs, rhs))
         } else {
             self.checked_binary_op(op, TypeClass::Int, inst)
@@ -1227,98 +1265,111 @@ impl EgglogContext {
 
         // GLSL.std.450 instruction numbers
         // See: https://registry.khronos.org/SPIR-V/specs/unified1/GLSL.std.450.html
+        // Typed-sort constructors use ext_checked_* to coerce operands via get_or_create_term_as.
+        // Expr-sort constructors (vectors/matrices) keep ext_unary/binary/ternary.
         match ext_opcode {
-            // Trigonometric
-            13 => self.ext_unary("Sin", &op_ids),    // Sin
-            14 => self.ext_unary("Cos", &op_ids),    // Cos
-            15 => self.ext_unary("Tan", &op_ids),    // Tan
-            16 => self.ext_unary("Asin", &op_ids),   // Asin
-            17 => self.ext_unary("Acos", &op_ids),   // Acos
-            18 => self.ext_unary("Atan", &op_ids),   // Atan
-            19 => self.ext_unary("Sinh", &op_ids),   // Sinh
-            20 => self.ext_unary("Cosh", &op_ids),   // Cosh
-            21 => self.ext_unary("Tanh", &op_ids),   // Tanh
-            22 => self.ext_unary("Asinh", &op_ids),  // Asinh
-            23 => self.ext_unary("Acosh", &op_ids),  // Acosh
-            24 => self.ext_unary("Atanh", &op_ids),  // Atanh
-            25 => self.ext_binary("Atan2", &op_ids), // Atan2
+            // Round/Trunc — FloatExpr
+            1 => self.ext_checked_unary("FRound", TypeClass::Float, &op_ids), // Round
+            2 => self.ext_checked_unary("FRound", TypeClass::Float, &op_ids), // RoundEven
+            3 => self.ext_checked_unary("FTrunc", TypeClass::Float, &op_ids), // Trunc
 
-            // Exponential
-            26 => self.ext_binary("Pow", &op_ids), // Pow
-            27 => self.ext_unary("Exp", &op_ids),  // Exp
-            28 => self.ext_unary("Log", &op_ids),  // Log
-            29 => self.ext_unary("Exp2", &op_ids), // Exp2
-            30 => self.ext_unary("Log2", &op_ids), // Log2
-            31 => self.ext_unary("Sqrt", &op_ids), // Sqrt
-            32 => self.ext_unary("InverseSqrt", &op_ids), // InverseSqrt
+            // Abs/Sign
+            4 => self.ext_checked_unary("FAbs", TypeClass::Float, &op_ids), // FAbs
+            5 => self.ext_checked_unary("SAbs", TypeClass::Int, &op_ids),   // SAbs
+            6 => self.ext_checked_unary("FSign", TypeClass::Float, &op_ids), // FSign
+            7 => self.ext_checked_unary("Sign", TypeClass::Int, &op_ids),   // SSign
 
-            // Common
-            33 => self.ext_unary("Determinant", &op_ids), // Determinant
-            34 => self.ext_unary("MatInverse", &op_ids),  // MatrixInverse
+            // Floor/Ceil/Fract/Radians/Degrees — FloatExpr
+            8 => self.ext_checked_unary("FFloor", TypeClass::Float, &op_ids), // Floor
+            9 => self.ext_checked_unary("FCeil", TypeClass::Float, &op_ids),  // Ceil
+            10 => self.ext_checked_unary("Fract", TypeClass::Float, &op_ids), // Fract
+            11 => self.ext_checked_unary("Radians", TypeClass::Float, &op_ids), // Radians
+            12 => self.ext_checked_unary("Degrees", TypeClass::Float, &op_ids), // Degrees
 
-            // Modf/Frexp with struct return
-            35 => self.ext_unary("ModfStruct", &op_ids), // ModfStruct
-            36 => self.ext_unary("Modf", &op_ids),       // Modf (returns fraction)
-            51 => self.ext_unary("FrexpStruct", &op_ids), // FrexpStruct
-            52 => self.ext_unary("Frexp", &op_ids),      // Frexp (returns sig)
-            53 => self.ext_binary("Ldexp", &op_ids),     // Ldexp
+            // Trigonometric — FloatExpr
+            13 => self.ext_checked_unary("Sin", TypeClass::Float, &op_ids), // Sin
+            14 => self.ext_checked_unary("Cos", TypeClass::Float, &op_ids), // Cos
+            15 => self.ext_checked_unary("Tan", TypeClass::Float, &op_ids), // Tan
+            16 => self.ext_checked_unary("Asin", TypeClass::Float, &op_ids), // Asin
+            17 => self.ext_checked_unary("Acos", TypeClass::Float, &op_ids), // Acos
+            18 => self.ext_checked_unary("Atan", TypeClass::Float, &op_ids), // Atan
+            19 => self.ext_checked_unary("Sinh", TypeClass::Float, &op_ids), // Sinh
+            20 => self.ext_checked_unary("Cosh", TypeClass::Float, &op_ids), // Cosh
+            21 => self.ext_checked_unary("Tanh", TypeClass::Float, &op_ids), // Tanh
+            22 => self.ext_checked_unary("Asinh", TypeClass::Float, &op_ids), // Asinh
+            23 => self.ext_checked_unary("Acosh", TypeClass::Float, &op_ids), // Acosh
+            24 => self.ext_checked_unary("Atanh", TypeClass::Float, &op_ids), // Atanh
+            25 => self.ext_checked_binary("Atan2", TypeClass::Float, &op_ids), // Atan2
 
-            // Pack/Unpack
+            // Exponential — FloatExpr
+            26 => self.ext_checked_binary("Pow", TypeClass::Float, &op_ids), // Pow
+            27 => self.ext_checked_unary("Exp", TypeClass::Float, &op_ids),  // Exp
+            28 => self.ext_checked_unary("Log", TypeClass::Float, &op_ids),  // Log
+            29 => self.ext_checked_unary("Exp2", TypeClass::Float, &op_ids), // Exp2
+            30 => self.ext_checked_unary("Log2", TypeClass::Float, &op_ids), // Log2
+            31 => self.ext_checked_unary("Sqrt", TypeClass::Float, &op_ids), // Sqrt
+            32 => self.ext_checked_unary("InverseSqrt", TypeClass::Float, &op_ids), // InverseSqrt
+
+            // Common — Expr operands (matrix/vector)
+            33 => self.ext_unary("Determinant", &op_ids), // Determinant(Expr)→FloatExpr
+            34 => self.ext_unary("MatInverse", &op_ids),  // MatInverse(Expr)→Expr
+
+            // Modf/Frexp — FloatExpr operands
+            35 => self.ext_checked_unary("ModfStruct", TypeClass::Float, &op_ids), // ModfStruct
+            36 => self.ext_checked_unary("Modf", TypeClass::Float, &op_ids),       // Modf
+            51 => self.ext_checked_unary("FrexpStruct", TypeClass::Float, &op_ids), // FrexpStruct
+            52 => self.ext_checked_unary("Frexp", TypeClass::Float, &op_ids),      // Frexp
+
+            // Ldexp — mixed sorts: Ldexp(FloatExpr, IntExpr)
+            53 => {
+                if op_ids.len() >= 2 {
+                    let a = self.get_or_create_term_as(op_ids[0], TypeClass::Float)?;
+                    let b = self.get_or_create_term_as(op_ids[1], TypeClass::Int)?;
+                    Some(format!("(Ldexp {} {})", a, b))
+                } else {
+                    None
+                }
+            }
+
+            // Pack — Expr operands (vector input), IntExpr result
             54 => self.ext_unary("PackSnorm4x8", &op_ids),
             55 => self.ext_unary("PackUnorm4x8", &op_ids),
             56 => self.ext_unary("PackSnorm2x16", &op_ids),
             57 => self.ext_unary("PackUnorm2x16", &op_ids),
             58 => self.ext_unary("PackHalf2x16", &op_ids),
             59 => self.ext_unary("PackDouble2x32", &op_ids),
-            60 => self.ext_unary("UnpackSnorm2x16", &op_ids),
-            61 => self.ext_unary("UnpackUnorm2x16", &op_ids),
-            62 => self.ext_unary("UnpackHalf2x16", &op_ids),
-            63 => self.ext_unary("UnpackSnorm4x8", &op_ids),
-            64 => self.ext_unary("UnpackUnorm4x8", &op_ids),
-            65 => self.ext_unary("UnpackDouble2x32", &op_ids),
+            // Unpack — IntExpr operands, Expr result
+            60 => self.ext_checked_unary("UnpackSnorm2x16", TypeClass::Int, &op_ids),
+            61 => self.ext_checked_unary("UnpackUnorm2x16", TypeClass::Int, &op_ids),
+            62 => self.ext_checked_unary("UnpackHalf2x16", TypeClass::Int, &op_ids),
+            63 => self.ext_checked_unary("UnpackSnorm4x8", TypeClass::Int, &op_ids),
+            64 => self.ext_checked_unary("UnpackUnorm4x8", TypeClass::Int, &op_ids),
+            65 => self.ext_checked_unary("UnpackDouble2x32", TypeClass::Int, &op_ids),
 
-            // Length/Distance/Cross
-            66 => self.ext_unary("Length", &op_ids), // Length
-            67 => self.ext_binary("Distance", &op_ids), // Distance
-            68 => self.ext_binary("Cross", &op_ids), // Cross
-            69 => self.ext_unary("Normalize", &op_ids), // Normalize
-            70 => self.ext_ternary("FaceForward", &op_ids), // FaceForward
-            71 => self.ext_binary("Reflect", &op_ids), // Reflect
-            72 => self.ext_ternary("Refract", &op_ids), // Refract
+            // Length/Distance/Cross — Expr operands (vectors)
+            66 => self.ext_unary("Length", &op_ids), // Length(Expr)→FloatExpr
+            67 => self.ext_binary("Distance", &op_ids), // Distance(Expr,Expr)→FloatExpr
+            68 => self.ext_binary("Cross", &op_ids), // Cross(Expr,Expr)→Expr
+            69 => self.ext_unary("Normalize", &op_ids), // Normalize(Expr)→Expr
+            70 => self.ext_ternary("FaceForward", &op_ids), // FaceForward(Expr×3)→Expr
+            71 => self.ext_binary("Reflect", &op_ids), // Reflect(Expr,Expr)→Expr
+            72 => self.ext_ternary("Refract", &op_ids), // Refract(Expr×3)→Expr
 
-            // Integer bit manipulation
-            73 => self.ext_unary("FindILsb", &op_ids), // FindILsb
-            74 => self.ext_unary("FindSMsb", &op_ids), // FindSMsb
-            75 => self.ext_unary("FindUMsb", &op_ids), // FindUMsb
+            // Integer bit manipulation — IntExpr
+            73 => self.ext_checked_unary("FindILsb", TypeClass::Int, &op_ids), // FindILsb
+            74 => self.ext_checked_unary("FindSMsb", TypeClass::Int, &op_ids), // FindSMsb
+            75 => self.ext_checked_unary("FindUMsb", TypeClass::Int, &op_ids), // FindUMsb
 
-            // Abs/Sign
-            4 => self.ext_unary("FAbs", &op_ids),  // FAbs
-            5 => self.ext_unary("SAbs", &op_ids),  // SAbs
-            6 => self.ext_unary("FSign", &op_ids), // FSign
-            7 => self.ext_unary("Sign", &op_ids),  // SSign
-
-            // Floor/Ceil/Round/Trunc/Fract
-            8 => self.ext_unary("FFloor", &op_ids),   // Floor
-            9 => self.ext_unary("FCeil", &op_ids),    // Ceil
-            10 => self.ext_unary("Fract", &op_ids),   // Fract
-            11 => self.ext_unary("Radians", &op_ids), // Radians
-            12 => self.ext_unary("Degrees", &op_ids), // Degrees
-
-            // Round/Trunc
-            1 => self.ext_unary("FRound", &op_ids), // Round
-            2 => self.ext_unary("FRound", &op_ids), // RoundEven (same as Round for now)
-            3 => self.ext_unary("FTrunc", &op_ids), // Trunc
-
-            // Min/Max/Clamp (GLSL.std.450 opcodes)
-            37 => self.ext_binary("FMin", &op_ids),    // FMin
-            38 => self.ext_binary("UMin", &op_ids),    // UMin
-            39 => self.ext_binary("SMin", &op_ids),    // SMin
-            40 => self.ext_binary("FMax", &op_ids),    // FMax
-            41 => self.ext_binary("UMax", &op_ids),    // UMax
-            42 => self.ext_binary("SMax", &op_ids),    // SMax
-            43 => self.ext_ternary("FClamp", &op_ids), // FClamp
-            44 => self.ext_ternary("UClamp", &op_ids), // UClamp
-            45 => self.ext_ternary("SClamp", &op_ids), // SClamp
+            // Min/Max/Clamp
+            37 => self.ext_checked_binary("FMin", TypeClass::Float, &op_ids), // FMin
+            38 => self.ext_checked_binary("UMin", TypeClass::Int, &op_ids),   // UMin
+            39 => self.ext_checked_binary("SMin", TypeClass::Int, &op_ids),   // SMin
+            40 => self.ext_checked_binary("FMax", TypeClass::Float, &op_ids), // FMax
+            41 => self.ext_checked_binary("UMax", TypeClass::Int, &op_ids),   // UMax
+            42 => self.ext_checked_binary("SMax", TypeClass::Int, &op_ids),   // SMax
+            43 => self.ext_checked_ternary("FClamp", TypeClass::Float, &op_ids), // FClamp
+            44 => self.ext_checked_ternary("UClamp", TypeClass::Int, &op_ids), // UClamp
+            45 => self.ext_checked_ternary("SClamp", TypeClass::Int, &op_ids), // SClamp
             46 => {
                 // FMix: scalar float → FMix(FloatExpr), vector → VecFMix(Expr)
                 let is_scalar = inst
@@ -1326,23 +1377,23 @@ impl EgglogContext {
                     .map(|ty| self.type_class_of_type(ty) == TypeClass::Float)
                     .unwrap_or(false);
                 if is_scalar {
-                    self.ext_ternary("FMix", &op_ids)
+                    self.ext_checked_ternary("FMix", TypeClass::Float, &op_ids)
                 } else {
                     self.ext_ternary("VecFMix", &op_ids)
                 }
             }
 
-            // Step/SmoothStep
-            48 => self.ext_binary("Step", &op_ids), // Step
-            49 => self.ext_ternary("SmoothStep", &op_ids), // SmoothStep
+            // Step/SmoothStep — FloatExpr
+            48 => self.ext_checked_binary("Step", TypeClass::Float, &op_ids), // Step
+            49 => self.ext_checked_ternary("SmoothStep", TypeClass::Float, &op_ids), // SmoothStep
 
-            // Fma
-            50 => self.ext_ternary("Fma", &op_ids), // Fma
+            // Fma — FloatExpr
+            50 => self.ext_checked_ternary("Fma", TypeClass::Float, &op_ids), // Fma
 
-            // NMin/NMax/NClamp
-            79 => self.ext_binary("NMin", &op_ids),    // NMin
-            80 => self.ext_binary("NMax", &op_ids),    // NMax
-            81 => self.ext_ternary("NClamp", &op_ids), // NClamp
+            // NMin/NMax/NClamp — FloatExpr
+            79 => self.ext_checked_binary("NMin", TypeClass::Float, &op_ids), // NMin
+            80 => self.ext_checked_binary("NMax", TypeClass::Float, &op_ids), // NMax
+            81 => self.ext_checked_ternary("NClamp", TypeClass::Float, &op_ids), // NClamp
 
             _ => None,
         }
@@ -1378,6 +1429,54 @@ impl EgglogContext {
         }
     }
 
+    /// Sort-validated ext unary: coerces operand to expected typed sort.
+    fn ext_checked_unary(
+        &mut self,
+        op: &str,
+        expected: TypeClass,
+        op_ids: &[Word],
+    ) -> Option<String> {
+        if !op_ids.is_empty() {
+            let a = self.get_or_create_term_as(op_ids[0], expected)?;
+            Some(format!("({} {})", op, a))
+        } else {
+            None
+        }
+    }
+
+    /// Sort-validated ext binary: coerces both operands to expected typed sort.
+    fn ext_checked_binary(
+        &mut self,
+        op: &str,
+        expected: TypeClass,
+        op_ids: &[Word],
+    ) -> Option<String> {
+        if op_ids.len() >= 2 {
+            let a = self.get_or_create_term_as(op_ids[0], expected)?;
+            let b = self.get_or_create_term_as(op_ids[1], expected)?;
+            Some(format!("({} {} {})", op, a, b))
+        } else {
+            None
+        }
+    }
+
+    /// Sort-validated ext ternary: coerces all operands to expected typed sort.
+    fn ext_checked_ternary(
+        &mut self,
+        op: &str,
+        expected: TypeClass,
+        op_ids: &[Word],
+    ) -> Option<String> {
+        if op_ids.len() >= 3 {
+            let a = self.get_or_create_term_as(op_ids[0], expected)?;
+            let b = self.get_or_create_term_as(op_ids[1], expected)?;
+            let c = self.get_or_create_term_as(op_ids[2], expected)?;
+            Some(format!("({} {} {} {})", op, a, b, c))
+        } else {
+            None
+        }
+    }
+
     /// Convert atomic binary operations (ptr, value) to e-graph term.
     fn atomic_binary_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
         // Atomic binary ops: %type %ptr %scope %semantics %value
@@ -1398,7 +1497,13 @@ impl EgglogContext {
     }
 
     /// Convert subgroup reduction operations to e-graph term.
-    fn subgroup_reduction_op(&mut self, op: &str, inst: &Instruction) -> Option<String> {
+    /// Coerces the value operand to the expected typed sort.
+    fn subgroup_reduction_op(
+        &mut self,
+        op: &str,
+        expected: TypeClass,
+        inst: &Instruction,
+    ) -> Option<String> {
         // GroupNonUniform* %type %scope %operation %value [cluster_size]
         let ops: Vec<Word> = inst
             .operands
@@ -1407,7 +1512,7 @@ impl EgglogContext {
             .collect();
         if !ops.is_empty() {
             // Value is the last ID operand
-            let val = self.get_or_create_term(*ops.last().unwrap());
+            let val = self.get_or_create_term_as(*ops.last().unwrap(), expected)?;
             Some(format!("({} {})", op, val))
         } else {
             None
