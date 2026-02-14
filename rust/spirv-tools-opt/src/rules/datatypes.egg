@@ -669,13 +669,13 @@
 ; Additional Constructors Using ExprList
 ; =============================================================================
 
-(function VecShuffle (Expr Expr ExprList) Expr :merge old)
-(function CompositeConstruct (ExprList) Expr :merge old)
-(function CompositeExtract (Expr i64) Expr :merge old)
-(function CompositeInsert (Expr Expr i64) Expr :merge old)
-(function Switch (Expr ExprList Expr) Expr :merge old)
-(function Case (Expr Expr) Expr :merge old)
-(function BinarySwitch (Expr ExprList Expr) Expr :merge old)
+(constructor VecShuffle (Expr Expr ExprList) Expr)
+(constructor CompositeConstruct (ExprList) Expr)
+(constructor CompositeExtract (Expr i64) Expr)
+(constructor CompositeInsert (Expr Expr i64) Expr)
+(constructor Switch (Expr ExprList Expr) Expr)
+(constructor Case (Expr Expr) Expr)
+(constructor BinarySwitch (Expr ExprList Expr) Expr)
 
 ; CompositeExtract from CompositeConstruct rules
 (rule ((= e (CompositeExtract (CompositeConstruct (ECons a (ENil))) 0)))
