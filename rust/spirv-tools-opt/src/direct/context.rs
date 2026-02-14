@@ -206,6 +206,42 @@ impl EgglogContext {
         }
     }
 
+    /// Get or create a term coerced to a specific typed sort.
+    ///
+    /// Like `get_or_create_term`, but ensures the result is in the target sort.
+    /// For known IDs whose native sort matches: returns bare reference.
+    /// For known IDs with TypeClass::Other: wraps with ExprToInt/ExprToFloat/ExprToBool.
+    /// For external refs: generates typed Sym (ISym/FSym/BSym) matching the target sort.
+    /// Returns None on genuine cross-sort mismatches (e.g., IntExpr used as Float).
+    fn get_or_create_term_as(&mut self, id: Word, target: TypeClass) -> Option<String> {
+        if self.id_to_term.contains_key(&id) || self.known_instruction_ids.contains(&id) {
+            let actual = self.type_class_of(id);
+            if actual == target {
+                Some(format!("id{}", id))
+            } else if actual == TypeClass::Other {
+                // Coerce Expr-sort value to typed sort via bridge
+                match target {
+                    TypeClass::Int => Some(format!("(ExprToInt id{})", id)),
+                    TypeClass::Float => Some(format!("(ExprToFloat id{})", id)),
+                    TypeClass::Bool => Some(format!("(ExprToBool id{})", id)),
+                    TypeClass::Other => Some(format!("id{}", id)),
+                }
+            } else {
+                // Cross-sort mismatch (e.g., IntExpr used as Float)
+                None
+            }
+        } else {
+            // External reference — use typed Sym matching expected sort
+            let sym_ctor = match target {
+                TypeClass::Int => "ISym",
+                TypeClass::Float => "FSym",
+                TypeClass::Bool => "BSym",
+                TypeClass::Other => "Sym",
+            };
+            Some(format!("({} \"id{}\")", sym_ctor, id))
+        }
+    }
+
     /// Get or create a term coerced to the Expr sort.
     ///
     /// Like `get_or_create_term`, but wraps typed-sort values (IntExpr,
@@ -1073,8 +1109,9 @@ impl EgglogContext {
     }
 
     /// Sort-validated binary op: checks that operand SPIR-V types are compatible
-    /// with the expected egraph sort. Returns None on cross-sort scalar mismatches
-    /// so the instruction stays as-is rather than crashing the egraph.
+    /// with the expected egraph sort. Coerces TypeClass::Other operands to the
+    /// expected sort via bridge constructors (ExprToFloat, etc.) or typed Syms.
+    /// Returns None on genuine cross-sort mismatches (e.g., BoolExpr in IntExpr slot).
     fn checked_binary_op(
         &mut self,
         op: &str,
@@ -1089,23 +1126,22 @@ impl EgglogContext {
         if ops.len() < 2 {
             return None;
         }
-        // Verify operand types are compatible with the expected sort.
-        // Other (vector/composite) is always accepted — vectors in Expr sort
-        // won't reach scalar constructors because typed_binary_op dispatches
-        // to Vec* variants for vector results.
+        // Reject genuine cross-sort mismatches (e.g., BoolExpr in IntExpr slot).
+        // TypeClass::Other is accepted and coerced via get_or_create_term_as.
         for &id in &ops[..2] {
             let actual = self.type_class_of(id);
             if actual != expected_operand && actual != TypeClass::Other {
                 return None;
             }
         }
-        let lhs = self.get_or_create_term(ops[0]);
-        let rhs = self.get_or_create_term(ops[1]);
+        let lhs = self.get_or_create_term_as(ops[0], expected_operand)?;
+        let rhs = self.get_or_create_term_as(ops[1], expected_operand)?;
         Some(format!("({} {} {})", op, lhs, rhs))
     }
 
     /// Sort-validated unary op: checks that the operand's SPIR-V type is
-    /// compatible with the expected egraph sort.
+    /// compatible with the expected egraph sort. Coerces TypeClass::Other
+    /// operands to the expected sort via bridge constructors or typed Syms.
     fn checked_unary_op(
         &mut self,
         op: &str,
@@ -1117,7 +1153,7 @@ impl EgglogContext {
         if actual != expected_operand && actual != TypeClass::Other {
             return None;
         }
-        let operand = self.get_or_create_term(operand_id);
+        let operand = self.get_or_create_term_as(operand_id, expected_operand)?;
         Some(format!("({} {})", op, operand))
     }
 
