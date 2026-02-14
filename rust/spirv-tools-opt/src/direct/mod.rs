@@ -518,8 +518,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         then_label: Word,
         else_label: Word,
         condition_id: Word,
-        #[allow(dead_code)]
-        effect_var: String, // The egglog variable name for this effect
+        effect_var: String,
     }
     let mut rvsdg_selections: Vec<RvsdgSelection> = Vec::new();
 
@@ -634,12 +633,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         func_idx: usize,
         merge_label: Word,
         case_labels: Vec<Word>,
-        #[allow(dead_code)]
-        effect_var: String,
     }
     let mut rvsdg_switches: Vec<RvsdgSwitch> = Vec::new();
 
-    for (sw_idx, sw) in switch_constructs.iter().enumerate() {
+    for sw in &switch_constructs {
         let func = &module.functions[sw.func_idx];
         let merge_block = func
             .blocks
@@ -651,45 +648,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 continue;
             }
 
-            // Collect return values from all case blocks
-            let mut case_effects: Vec<(Word, String)> = Vec::new();
-            let mut all_valid = true;
-
-            for &case_label in &sw.case_labels {
-                let case_block = func
-                    .blocks
+            // Validate: every case block must have a return value or be unreachable
+            let all_valid = sw.case_labels.iter().all(|&case_label| {
+                func.blocks
                     .iter()
-                    .find(|b| get_block_label(b) == Some(case_label));
-                if let Some(case_b) = case_block {
-                    if let Some(ret_val) = get_return_value_operand(case_b) {
-                        case_effects
-                            .push((case_label, format!("(ReturnValue (Sym \"id{}\"))", ret_val)));
-                    } else if ends_with_unreachable(case_b) {
-                        case_effects.push((case_label, "(Unreachable)".to_string()));
-                    } else {
-                        all_valid = false;
-                        break;
-                    }
-                } else {
-                    all_valid = false;
-                    break;
-                }
-            }
+                    .find(|b| get_block_label(b) == Some(case_label))
+                    .is_some_and(|case_b| {
+                        get_return_value_operand(case_b).is_some() || ends_with_unreachable(case_b)
+                    })
+            });
 
-            if all_valid && case_effects.len() >= 2 {
-                // For switches, we can represent as nested Gamma, but for simplicity
-                // we'll just track that this is a switch merge-return and handle it
-                // similarly to before (the egglog rules will simplify the inner values)
-                let effect_var = format!("eff_sw{}", sw_idx);
-
-                // Build nested EffGamma - this is a simplification
-                // A full RVSDG would use multi-way Gamma
-                // For now, we just track this for the lowering phase
+            if all_valid && sw.case_labels.len() >= 2 {
                 rvsdg_switches.push(RvsdgSwitch {
                     func_idx: sw.func_idx,
                     merge_label: sw.merge_label,
                     case_labels: sw.case_labels.clone(),
-                    effect_var,
                 });
             }
         }
@@ -789,7 +762,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // Also add constant value -> id mappings so synthesized constants can be resolved
     // Key format: "const_N" for 32-bit int, "const64_N" for 64-bit int,
-    //             "fconst_BITS" for floats, "boolconst_N" for bools
+    //             "fconst_TYPE_BITS" for floats, "boolconst_N" for bools
     for inst in &module.types_global_values {
         if let Some(id) = inst.result_id {
             match inst.class.opcode {
@@ -808,7 +781,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 rspirv::dr::Operand::LiteralBit64(v) => *v,
                                 _ => continue,
                             };
-                            let key = format!("fconst_{}", bits);
+                            let ty = inst.result_type.unwrap_or(0);
+                            let key = format!("fconst_{}_{}", ty, bits);
                             id_map.entry(key).or_insert(id);
                         }
                     } else {
@@ -987,7 +961,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     if let Some((final_id, new_insts)) =
                         emit::emit_term(term_tree, corrected_type, &mut emit_ctx)
                     {
-                        let _ = final_id;
                         let num_insts = new_insts.len();
                         if num_insts == 0 {
                             // emit_term resolved to an existing ID — emit CopyObject
@@ -1381,37 +1354,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
-    // Build a map of existing constants: (type, value) -> id
-    // This allows us to detect when an instruction folds to a value that already exists
-    let mut existing_constants: HashMap<(Word, u64), Word> = HashMap::new();
-    for inst in &module.types_global_values {
-        if let (Some(id), Some(ty)) = (inst.result_id, inst.result_type) {
-            match inst.class.opcode {
-                Op::Constant => {
-                    if let Some(val) = inst.operands.first() {
-                        let value = match val {
-                            rspirv::dr::Operand::LiteralBit32(v) => *v as u64,
-                            rspirv::dr::Operand::LiteralBit64(v) => *v,
-                            _ => continue,
-                        };
-                        existing_constants.insert((ty, value), id);
-                    }
-                }
-                Op::ConstantTrue => {
-                    existing_constants.insert((ty, 1), id);
-                }
-                Op::ConstantFalse => {
-                    existing_constants.insert((ty, 0), id);
-                }
-                _ => {}
-            }
-        }
-    }
-
     // Track IDs that were originally in function bodies but now fold to constants
     let mut folded_to_constant: HashSet<Word> = HashSet::new();
-    // Track IDs that should become CopyObject to an existing constant
-    let copy_to_existing: HashMap<Word, Word> = HashMap::new();
 
     // Check which function body instructions fold to constants
     // Note: We always add the folded constant to types_global_values with the original ID.
@@ -1436,9 +1380,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             }
         }
     }
-    // Note: copy_to_existing is no longer used - we always preserve original IDs
-    let _ = copy_to_existing;
-
     // Add folded constants to types_global_values
     // Sort by ID to ensure deterministic output ordering
     // Deduplicate: skip IDs already present (e.g., from synthesized_constants)
@@ -1481,24 +1422,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     if folded_to_constant.contains(&id) {
                         continue;
                     }
-                    // Check if this should become a CopyObject to an existing constant
-                    if let Some(&existing_id) = copy_to_existing.get(&id) {
-                        let result_type = inst.result_type.unwrap_or(0);
-                        *inst = Instruction::new(
-                            Op::CopyObject,
-                            Some(result_type),
-                            Some(id),
-                            vec![rspirv::dr::Operand::IdRef(existing_id)],
-                        );
-                        continue;
-                    }
                     if let Some(opt_inst) = optimized_instructions.get(&id) {
                         *inst = opt_inst.clone();
                     }
                 }
             }
-            // Remove instructions that became NEW constants (they're now in types_global_values)
-            // Keep those that became CopyObject to existing constants
+            // Remove instructions that became constants (they're now in types_global_values)
             block.instructions.retain(|inst| {
                 if let Some(id) = inst.result_id {
                     !folded_to_constant.contains(&id)

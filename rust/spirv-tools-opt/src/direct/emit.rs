@@ -152,6 +152,8 @@ enum EmitPattern {
     GlslUnary(u32, TypeClass, TypeClass),
     /// GLSL binary: ExtInst with 2 operands. (glsl_opcode, result_class, operand_class)
     GlslBinary(u32, TypeClass, TypeClass),
+    /// GLSL binary with heterogeneous operands. (glsl_opcode, result_class, op1_class, op2_class)
+    GlslBinaryMixed(u32, TypeClass, TypeClass, TypeClass),
     /// GLSL ternary: ExtInst with 3 operands. (glsl_opcode, result_class, operand_class)
     GlslTernary(u32, TypeClass, TypeClass),
     /// Select/Gamma/If: cond is Bool, arms match the given TypeClass.
@@ -956,7 +958,7 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
     ),
     (
         "Ldexp",
-        EmitPattern::GlslBinary(53, TypeClass::Float, TypeClass::Float),
+        EmitPattern::GlslBinaryMixed(53, TypeClass::Float, TypeClass::Float, TypeClass::Int),
     ),
     (
         "NMin",
@@ -1165,12 +1167,18 @@ fn emit_app(
     }
 
     // --- Lookup in unified ops table ---
-    for &(name, ref pattern) in OPS_TABLE {
-        if op == name {
-            return emit_pattern(pattern, args, result_type, ctx);
-        }
+    use std::sync::OnceLock;
+    static OPS_MAP: OnceLock<HashMap<&'static str, EmitPattern>> = OnceLock::new();
+    let map = OPS_MAP.get_or_init(|| OPS_TABLE.iter().copied().collect());
+    if let Some(pattern) = map.get(op) {
+        return emit_pattern(pattern, args, result_type, ctx);
     }
 
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "emit_app: unrecognized constructor '{}' — missing from OPS_TABLE",
+        op
+    );
     None
 }
 
@@ -1182,133 +1190,84 @@ fn emit_pattern(
     ctx: &mut EmitCtx,
 ) -> Option<(Word, Vec<Instruction>)> {
     match *pattern {
-        EmitPattern::Unary(opcode, result_class, operand_class) => {
-            if args.is_empty() {
+        EmitPattern::Unary(opcode, result_class, operand_class)
+        | EmitPattern::Binary(opcode, result_class, operand_class)
+        | EmitPattern::Ternary(opcode, result_class, operand_class)
+        | EmitPattern::Quaternary(opcode, result_class, operand_class) => {
+            let arity = match *pattern {
+                EmitPattern::Unary(..) => 1,
+                EmitPattern::Binary(..) => 2,
+                EmitPattern::Ternary(..) => 3,
+                EmitPattern::Quaternary(..) => 4,
+                _ => unreachable!(),
+            };
+            if args.len() < arity {
                 return None;
             }
             let op_result_type = resolve_result_type(result_class, result_type, ctx);
             let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
-            let id = alloc_id(ctx);
-            synth.push(Instruction::new(
-                opcode,
-                Some(op_result_type),
-                Some(id),
-                vec![rspirv::dr::Operand::IdRef(a)],
-            ));
-            Some((id, synth))
-        }
-        EmitPattern::Binary(opcode, result_class, operand_class) => {
-            if args.len() < 2 {
-                return None;
+            let mut operand_ids = Vec::with_capacity(arity);
+            for arg in &args[..arity] {
+                let (arg_id, mut s) = emit_term(arg, operand_type, ctx)?;
+                synth.append(&mut s);
+                operand_ids.push(rspirv::dr::Operand::IdRef(arg_id));
             }
-            let op_result_type = resolve_result_type(result_class, result_type, ctx);
-            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
-            let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (b, mut s) = emit_term(&args[1], operand_type, ctx)?;
-            synth.append(&mut s);
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
                 opcode,
                 Some(op_result_type),
                 Some(id),
-                vec![rspirv::dr::Operand::IdRef(a), rspirv::dr::Operand::IdRef(b)],
+                operand_ids,
             ));
             Some((id, synth))
         }
-        EmitPattern::Ternary(opcode, result_class, operand_class) => {
-            if args.len() < 3 {
-                return None;
-            }
-            let op_result_type = resolve_result_type(result_class, result_type, ctx);
-            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
-            let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (b, mut s) = emit_term(&args[1], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (c, mut s) = emit_term(&args[2], operand_type, ctx)?;
-            synth.append(&mut s);
-            let id = alloc_id(ctx);
-            synth.push(Instruction::new(
-                opcode,
-                Some(op_result_type),
-                Some(id),
-                vec![
-                    rspirv::dr::Operand::IdRef(a),
-                    rspirv::dr::Operand::IdRef(b),
-                    rspirv::dr::Operand::IdRef(c),
-                ],
-            ));
-            Some((id, synth))
-        }
-        EmitPattern::Quaternary(opcode, result_class, operand_class) => {
-            if args.len() < 4 {
-                return None;
-            }
-            let op_result_type = resolve_result_type(result_class, result_type, ctx);
-            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
-            let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (b, mut s) = emit_term(&args[1], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (c, mut s) = emit_term(&args[2], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (d, mut s) = emit_term(&args[3], operand_type, ctx)?;
-            synth.append(&mut s);
-            let id = alloc_id(ctx);
-            synth.push(Instruction::new(
-                opcode,
-                Some(op_result_type),
-                Some(id),
-                vec![
-                    rspirv::dr::Operand::IdRef(a),
-                    rspirv::dr::Operand::IdRef(b),
-                    rspirv::dr::Operand::IdRef(c),
-                    rspirv::dr::Operand::IdRef(d),
-                ],
-            ));
-            Some((id, synth))
-        }
-        EmitPattern::GlslUnary(glsl_opcode, result_class, operand_class) => {
+        EmitPattern::GlslUnary(glsl_opcode, result_class, operand_class)
+        | EmitPattern::GlslBinary(glsl_opcode, result_class, operand_class)
+        | EmitPattern::GlslTernary(glsl_opcode, result_class, operand_class) => {
             let ext_id = ctx.glsl_ext_id?;
-            if args.is_empty() {
+            let arity = match *pattern {
+                EmitPattern::GlslUnary(..) => 1,
+                EmitPattern::GlslBinary(..) => 2,
+                EmitPattern::GlslTernary(..) => 3,
+                _ => unreachable!(),
+            };
+            if args.len() < arity {
                 return None;
             }
             let op_result_type = resolve_result_type(result_class, result_type, ctx);
             let operand_type = resolve_operand_type(operand_class, result_type, ctx);
             let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
+            let mut operands = vec![
+                rspirv::dr::Operand::IdRef(ext_id),
+                rspirv::dr::Operand::LiteralExtInstInteger(glsl_opcode),
+            ];
+            for arg in &args[..arity] {
+                let (arg_id, mut s) = emit_term(arg, operand_type, ctx)?;
+                synth.append(&mut s);
+                operands.push(rspirv::dr::Operand::IdRef(arg_id));
+            }
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
                 Op::ExtInst,
                 Some(op_result_type),
                 Some(id),
-                vec![
-                    rspirv::dr::Operand::IdRef(ext_id),
-                    rspirv::dr::Operand::LiteralExtInstInteger(glsl_opcode),
-                    rspirv::dr::Operand::IdRef(a),
-                ],
+                operands,
             ));
             Some((id, synth))
         }
-        EmitPattern::GlslBinary(glsl_opcode, result_class, operand_class) => {
+        EmitPattern::GlslBinaryMixed(glsl_opcode, result_class, op1_class, op2_class) => {
             let ext_id = ctx.glsl_ext_id?;
             if args.len() < 2 {
                 return None;
             }
             let op_result_type = resolve_result_type(result_class, result_type, ctx);
-            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
+            let op1_type = resolve_operand_type(op1_class, result_type, ctx);
+            let op2_type = resolve_operand_type(op2_class, result_type, ctx);
             let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
+            let (a, mut s) = emit_term(&args[0], op1_type, ctx)?;
             synth.append(&mut s);
-            let (b, mut s) = emit_term(&args[1], operand_type, ctx)?;
+            let (b, mut s) = emit_term(&args[1], op2_type, ctx)?;
             synth.append(&mut s);
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
@@ -1320,35 +1279,6 @@ fn emit_pattern(
                     rspirv::dr::Operand::LiteralExtInstInteger(glsl_opcode),
                     rspirv::dr::Operand::IdRef(a),
                     rspirv::dr::Operand::IdRef(b),
-                ],
-            ));
-            Some((id, synth))
-        }
-        EmitPattern::GlslTernary(glsl_opcode, result_class, operand_class) => {
-            let ext_id = ctx.glsl_ext_id?;
-            if args.len() < 3 {
-                return None;
-            }
-            let op_result_type = resolve_result_type(result_class, result_type, ctx);
-            let operand_type = resolve_operand_type(operand_class, result_type, ctx);
-            let mut synth = Vec::new();
-            let (a, mut s) = emit_term(&args[0], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (b, mut s) = emit_term(&args[1], operand_type, ctx)?;
-            synth.append(&mut s);
-            let (c, mut s) = emit_term(&args[2], operand_type, ctx)?;
-            synth.append(&mut s);
-            let id = alloc_id(ctx);
-            synth.push(Instruction::new(
-                Op::ExtInst,
-                Some(op_result_type),
-                Some(id),
-                vec![
-                    rspirv::dr::Operand::IdRef(ext_id),
-                    rspirv::dr::Operand::LiteralExtInstInteger(glsl_opcode),
-                    rspirv::dr::Operand::IdRef(a),
-                    rspirv::dr::Operand::IdRef(b),
-                    rspirv::dr::Operand::IdRef(c),
                 ],
             ));
             Some((id, synth))
@@ -1598,8 +1528,7 @@ fn emit_float_const(
     let value: f64 = value_str.parse().ok()?;
 
     let type_width = ctx.type_widths.get(&result_type).copied();
-    let width = type_width.unwrap_or(32);
-    let const_key = format!("fconst_{}_{}", width, value.to_bits());
+    let const_key = format!("fconst_{}_{}", result_type, value.to_bits());
     if let Some(&id) = ctx.id_map.get(&const_key) {
         return Some((id, Vec::new()));
     }
