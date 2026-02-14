@@ -278,11 +278,13 @@
       ((union e (FDiv x (FConst (* a b))))))
 
 ; (x * a) / b = x * (a / b)
-(rule ((= e (FDiv (FMul x (FConst a)) (FConst b))))
+(rule ((= e (FDiv (FMul x (FConst a)) (FConst b)))
+       (!= b 0.0))
       ((union e (FMul x (FConst (/ a b))))))
 
 ; (x / a) * b = x * (b / a)
-(rule ((= e (FMul (FDiv x (FConst a)) (FConst b))))
+(rule ((= e (FMul (FDiv x (FConst a)) (FConst b)))
+       (!= a 0.0))
       ((union e (FMul x (FConst (/ b a))))))
 
 ; (x + a) + b = x + (a + b)

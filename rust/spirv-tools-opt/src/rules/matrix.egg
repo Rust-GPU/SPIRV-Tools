@@ -96,12 +96,6 @@
 (rule ((= e (MatInverse (Transpose m))))
       ((union e (Transpose (MatInverse m)))))
 
-; Inverse of scalar*matrix - ONE-DIRECTIONAL
-; (s*M)^-1 = (1/s)*M^-1
-; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
-(rule ((= e (MatInverse (MatTimesScalar m (IntToExpr (Const s))))))
-      ((union e (MatTimesScalar (MatInverse m) (IntToExpr (Const (/ 1 s)))))))
-
 ; =============================================================================
 ; Outer Product Rules
 ; =============================================================================
