@@ -128,15 +128,19 @@ impl EgglogContext {
                 }
             }
 
-            // Detect same-type bitcast for redundant bitcast elimination
+            // Detect same-type bitcast for redundant bitcast elimination.
+            // Only seed for non-scalar types (Expr sort) — scalar same-type
+            // bitcasts are handled directly in instruction_to_term as a no-op.
             if inst.class.opcode == Op::Bitcast {
                 if let Some(result_type) = inst.result_type {
-                    let src_id = inst.operands.iter().find_map(|op| op.id_ref_any());
-                    if let Some(src_id) = src_id {
-                        if let Some(src_type) = self.id_to_type.get(&src_id) {
-                            if *src_type == result_type {
-                                self.additional_facts
-                                    .push(format!("(SameTypeBitcast id{})", result_id));
+                    if self.type_class_of_type(result_type) == TypeClass::Other {
+                        let src_id = inst.operands.iter().find_map(|op| op.id_ref_any());
+                        if let Some(src_id) = src_id {
+                            if let Some(src_type) = self.id_to_type.get(&src_id) {
+                                if *src_type == result_type {
+                                    self.additional_facts
+                                        .push(format!("(SameTypeBitcast id{})", result_id));
+                                }
                             }
                         }
                     }
@@ -186,6 +190,19 @@ impl EgglogContext {
                 TypeClass::Other => "Sym",
             };
             format!("({} \"id{}\")", sym_ctor, id)
+        }
+    }
+
+    /// Wrap an Expr-sort term with ExprToInt/ExprToFloat/ExprToBool based on
+    /// the instruction's SPIR-V result type. This ensures the egglog variable's
+    /// sort matches what `get_or_create_term()` will expect when subsequent
+    /// instructions reference it.
+    fn wrap_expr_result(&self, term: String, inst: &Instruction) -> String {
+        match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
+            Some(TypeClass::Int) => format!("(ExprToInt {})", term),
+            Some(TypeClass::Float) => format!("(ExprToFloat {})", term),
+            Some(TypeClass::Bool) => format!("(ExprToBool {})", term),
+            _ => term,
         }
     }
 
@@ -403,14 +420,8 @@ impl EgglogContext {
                     .collect();
                 if !ops.is_empty() && !indices.is_empty() {
                     let composite = self.get_or_create_expr_term(ops[0]);
-                    // CompositeExtract returns Expr; wrap if SPIR-V result is scalar
                     let extract = format!("(CompositeExtract {} {})", composite, indices[0]);
-                    match inst.result_type.map(|ty| self.type_class_of_type(ty)) {
-                        Some(TypeClass::Int) => format!("(ExprToInt {})", extract),
-                        Some(TypeClass::Float) => format!("(ExprToFloat {})", extract),
-                        Some(TypeClass::Bool) => format!("(ExprToBool {})", extract),
-                        _ => extract,
-                    }
+                    self.wrap_expr_result(extract, inst)
                 } else {
                     return None;
                 }
@@ -463,9 +474,10 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let vec = self.get_or_create_term(ops[0]);
-                    let idx = self.get_or_create_term(ops[1]);
-                    format!("(VectorExtractDynamic {} {})", vec, idx)
+                    let vec = self.get_or_create_expr_term(ops[0]);
+                    let idx = self.get_or_create_expr_term(ops[1]);
+                    let term = format!("(VectorExtractDynamic {} {})", vec, idx);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -477,9 +489,9 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 3 {
-                    let vec = self.get_or_create_term(ops[0]);
-                    let component = self.get_or_create_term(ops[1]);
-                    let idx = self.get_or_create_term(ops[2]);
+                    let vec = self.get_or_create_expr_term(ops[0]);
+                    let component = self.get_or_create_expr_term(ops[1]);
+                    let idx = self.get_or_create_expr_term(ops[2]);
                     format!("(VectorInsertDynamic {} {} {})", vec, component, idx)
                 } else {
                     return None;
@@ -523,7 +535,21 @@ impl EgglogContext {
             Op::SConvert => self.unary_op("SConvert", inst)?,
             Op::UConvert => self.unary_op("UConvert", inst)?,
             Op::FConvert => self.unary_op("FConvert", inst)?,
-            Op::Bitcast => self.unary_op("Bitcast", inst)?,
+            Op::Bitcast => {
+                let operand_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
+                // Same-type bitcast is a no-op — just alias the operand
+                let is_same_type = inst
+                    .result_type
+                    .and_then(|rt| self.id_to_type.get(&operand_id).map(|st| *st == rt))
+                    .unwrap_or(false);
+                if is_same_type {
+                    self.get_or_create_term(operand_id)
+                } else {
+                    let operand = self.get_or_create_expr_term(operand_id);
+                    let term = format!("(Bitcast {})", operand);
+                    self.wrap_expr_result(term, inst)
+                }
+            }
             Op::QuantizeToF16 => self.unary_op("QuantizeToF16", inst)?,
             // FP predicates
             Op::IsNan => self.unary_op("IsNan", inst)?,
@@ -531,7 +557,20 @@ impl EgglogContext {
             // Dot product
             Op::Dot => self.binary_op("Dot", inst)?,
             // Matrix operations
-            Op::MatrixTimesScalar => self.binary_op("MatTimesScalar", inst)?,
+            Op::MatrixTimesScalar => {
+                let ops: Vec<Word> = inst
+                    .operands
+                    .iter()
+                    .filter_map(|op| op.id_ref_any())
+                    .collect();
+                if ops.len() >= 2 {
+                    let mat = self.get_or_create_term(ops[0]);
+                    let scalar = self.get_or_create_expr_term(ops[1]);
+                    format!("(MatTimesScalar {} {})", mat, scalar)
+                } else {
+                    return None;
+                }
+            }
             Op::MatrixTimesVector => self.binary_op("MatTimesVec", inst)?,
             Op::VectorTimesMatrix => self.binary_op("VecTimesMat", inst)?,
             Op::MatrixTimesMatrix => self.binary_op("MatTimesMat", inst)?,
@@ -546,8 +585,8 @@ impl EgglogContext {
                 // Load %type %pointer [memory_access]
                 let ptr_id = inst.operands.iter().find_map(|op| op.id_ref_any())?;
                 let ptr = self.get_or_create_term(ptr_id);
-                // Use InitMem as the memory state - real memory threading would need more work
-                format!("(Load {} (InitMem))", ptr)
+                let term = format!("(Load {} (InitMem))", ptr);
+                self.wrap_expr_result(term, inst)
             }
             Op::Store => {
                 // Store %pointer %object [memory_access]
@@ -591,8 +630,8 @@ impl EgglogContext {
                         _ => return None,
                     }
                 } else if !id_indices.is_empty() {
-                    // Dynamic index - use AccessChainDyn
-                    let idx = self.get_or_create_term(id_indices[0]);
+                    // Dynamic index - use AccessChainDyn (idx is Expr sort)
+                    let idx = self.get_or_create_expr_term(id_indices[0]);
                     format!("(AccessChainDyn {} {})", base, idx)
                 } else {
                     return None;
@@ -631,7 +670,7 @@ impl EgglogContext {
                         _ => return None,
                     }
                 } else if !id_indices.is_empty() {
-                    let idx = self.get_or_create_term(id_indices[0]);
+                    let idx = self.get_or_create_expr_term(id_indices[0]);
                     format!("(AccessChainDyn {} {})", base, idx)
                 } else {
                     return None;
@@ -655,6 +694,7 @@ impl EgglogContext {
                 format!("(Var \"{}\" {})", name, storage_class)
             }
             // Image operations - model for texture hoisting and CSE
+            // All operands coerced to Expr (coords may be scalar for 1D images)
             Op::ImageSampleImplicitLod | Op::ImageSampleExplicitLod => {
                 // ImageSample* %type %sampled_image %coordinate [ImageOperands offset_id...]
                 let ops: Vec<Word> = inst
@@ -663,17 +703,16 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let img = self.get_or_create_term(ops[0]);
-                    let coord = self.get_or_create_term(ops[1]);
-                    // Check for Offset-only or ConstOffset-only image operands
+                    let img = self.get_or_create_expr_term(ops[0]);
+                    let coord = self.get_or_create_expr_term(ops[1]);
                     let mask = inst.operands.iter().find_map(|op| match op {
                         Operand::ImageOperands(m) => Some(*m),
                         _ => None,
                     });
-                    match mask {
+                    let term = match mask {
                         Some(m) if m == rspirv::spirv::ImageOperands::OFFSET => {
                             if ops.len() >= 3 {
-                                let off = self.get_or_create_term(ops[2]);
+                                let off = self.get_or_create_expr_term(ops[2]);
                                 format!("(ImageSampleOffset {} {} {})", img, coord, off)
                             } else {
                                 format!("(ImageSample {} {})", img, coord)
@@ -681,14 +720,15 @@ impl EgglogContext {
                         }
                         Some(m) if m == rspirv::spirv::ImageOperands::CONST_OFFSET => {
                             if ops.len() >= 3 {
-                                let off = self.get_or_create_term(ops[2]);
+                                let off = self.get_or_create_expr_term(ops[2]);
                                 format!("(ImageSampleConstOffset {} {} {})", img, coord, off)
                             } else {
                                 format!("(ImageSample {} {})", img, coord)
                             }
                         }
                         _ => format!("(ImageSample {} {})", img, coord),
-                    }
+                    };
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -701,17 +741,16 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let img = self.get_or_create_term(ops[0]);
-                    let coord = self.get_or_create_term(ops[1]);
-                    // Check for Offset-only or ConstOffset-only image operands
+                    let img = self.get_or_create_expr_term(ops[0]);
+                    let coord = self.get_or_create_expr_term(ops[1]);
                     let mask = inst.operands.iter().find_map(|op| match op {
                         Operand::ImageOperands(m) => Some(*m),
                         _ => None,
                     });
-                    match mask {
+                    let term = match mask {
                         Some(m) if m == rspirv::spirv::ImageOperands::OFFSET => {
                             if ops.len() >= 3 {
-                                let off = self.get_or_create_term(ops[2]);
+                                let off = self.get_or_create_expr_term(ops[2]);
                                 format!("(ImageFetchOffset {} {} {})", img, coord, off)
                             } else {
                                 format!("(ImageFetch {} {})", img, coord)
@@ -719,14 +758,15 @@ impl EgglogContext {
                         }
                         Some(m) if m == rspirv::spirv::ImageOperands::CONST_OFFSET => {
                             if ops.len() >= 3 {
-                                let off = self.get_or_create_term(ops[2]);
+                                let off = self.get_or_create_expr_term(ops[2]);
                                 format!("(ImageFetchConstOffset {} {} {})", img, coord, off)
                             } else {
                                 format!("(ImageFetch {} {})", img, coord)
                             }
                         }
                         _ => format!("(ImageFetch {} {})", img, coord),
-                    }
+                    };
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -739,9 +779,10 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let img = self.get_or_create_term(ops[0]);
-                    let coord = self.get_or_create_term(ops[1]);
-                    format!("(ImageRead {} {})", img, coord)
+                    let img = self.get_or_create_expr_term(ops[0]);
+                    let coord = self.get_or_create_expr_term(ops[1]);
+                    let term = format!("(ImageRead {} {})", img, coord);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -765,7 +806,8 @@ impl EgglogContext {
                     .collect();
                 if !ops.is_empty() {
                     let ptr = self.get_or_create_term(ops[0]);
-                    format!("(AtomicLoad {} (InitMem))", ptr)
+                    let term = format!("(AtomicLoad {} (InitMem))", ptr);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -783,9 +825,9 @@ impl EgglogContext {
                     .collect();
                 if ops.len() >= 2 {
                     let ptr = self.get_or_create_term(ops[0]);
-                    // Value is typically the last ID operand
-                    let val = self.get_or_create_term(*ops.last().unwrap());
-                    format!("(AtomicExchange {} {} (InitMem))", ptr, val)
+                    let val = self.get_or_create_expr_term(*ops.last().unwrap());
+                    let term = format!("(AtomicExchange {} {} (InitMem))", ptr, val);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -799,9 +841,10 @@ impl EgglogContext {
                     .collect();
                 if ops.len() >= 3 {
                     let ptr = self.get_or_create_term(ops[0]);
-                    let val = self.get_or_create_term(ops[ops.len() - 2]);
-                    let cmp = self.get_or_create_term(ops[ops.len() - 1]);
-                    format!("(AtomicCompareExchange {} {} {} (InitMem))", ptr, cmp, val)
+                    let val = self.get_or_create_expr_term(ops[ops.len() - 2]);
+                    let cmp = self.get_or_create_expr_term(ops[ops.len() - 1]);
+                    let term = format!("(AtomicCompareExchange {} {} {} (InitMem))", ptr, cmp, val);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -865,7 +908,7 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if !ops.is_empty() {
-                    let val = self.get_or_create_term(*ops.last().unwrap());
+                    let val = self.get_or_create_expr_term(*ops.last().unwrap());
                     format!("(GroupAllEqual {})", val)
                 } else {
                     return None;
@@ -879,9 +922,10 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let val = self.get_or_create_term(ops[ops.len() - 2]);
-                    let id = self.get_or_create_term(ops[ops.len() - 1]);
-                    format!("(GroupBroadcast {} {})", val, id)
+                    let val = self.get_or_create_expr_term(ops[ops.len() - 2]);
+                    let id = self.get_or_create_expr_term(ops[ops.len() - 1]);
+                    let term = format!("(GroupBroadcast {} {})", val, id);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -893,8 +937,9 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if !ops.is_empty() {
-                    let val = self.get_or_create_term(*ops.last().unwrap());
-                    format!("(GroupBroadcastFirst {})", val)
+                    let val = self.get_or_create_expr_term(*ops.last().unwrap());
+                    let term = format!("(GroupBroadcastFirst {})", val);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -906,9 +951,10 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let val = self.get_or_create_term(ops[ops.len() - 2]);
-                    let id = self.get_or_create_term(ops[ops.len() - 1]);
-                    format!("(GroupShuffle {} {})", val, id)
+                    let val = self.get_or_create_expr_term(ops[ops.len() - 2]);
+                    let id = self.get_or_create_expr_term(ops[ops.len() - 1]);
+                    let term = format!("(GroupShuffle {} {})", val, id);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -920,9 +966,10 @@ impl EgglogContext {
                     .filter_map(|op| op.id_ref_any())
                     .collect();
                 if ops.len() >= 2 {
-                    let val = self.get_or_create_term(ops[ops.len() - 2]);
-                    let mask = self.get_or_create_term(ops[ops.len() - 1]);
-                    format!("(GroupShuffleXor {} {})", val, mask)
+                    let val = self.get_or_create_expr_term(ops[ops.len() - 2]);
+                    let mask = self.get_or_create_expr_term(ops[ops.len() - 1]);
+                    let term = format!("(GroupShuffleXor {} {})", val, mask);
+                    self.wrap_expr_result(term, inst)
                 } else {
                     return None;
                 }
@@ -1305,9 +1352,10 @@ impl EgglogContext {
             .collect();
         if ops.len() >= 2 {
             let ptr = self.get_or_create_term(ops[0]);
-            // Value is the last ID operand
-            let val = self.get_or_create_term(*ops.last().unwrap());
-            Some(format!("({} {} {} (InitMem))", op, ptr, val))
+            // Value is the last ID operand — coerce to Expr sort
+            let val = self.get_or_create_expr_term(*ops.last().unwrap());
+            let term = format!("({} {} {} (InitMem))", op, ptr, val);
+            Some(self.wrap_expr_result(term, inst))
         } else {
             None
         }
