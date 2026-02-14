@@ -1462,11 +1462,7 @@ fn emit_const_int(
         value
     );
 
-    let const_key = if actual_64 {
-        format!("const64_{}", value)
-    } else {
-        format!("const_{}", value)
-    };
+    let const_key = format!("const_{}_{}", result_type, value);
 
     // Return existing constant if available
     if let Some(&id) = ctx.id_map.get(&const_key) {

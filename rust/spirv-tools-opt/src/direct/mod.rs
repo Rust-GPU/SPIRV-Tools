@@ -761,8 +761,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     }
 
     // Also add constant value -> id mappings so synthesized constants can be resolved
-    // Key format: "const_N" for 32-bit int, "const64_N" for 64-bit int,
-    //             "fconst_TYPE_BITS" for floats, "boolconst_N" for bools
+    // Key format: "const_TYPE_N" for ints, "fconst_TYPE_BITS" for floats, "boolconst_N" for bools
     for inst in &module.types_global_values {
         if let Some(id) = inst.result_id {
             match inst.class.opcode {
@@ -782,22 +781,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 _ => continue,
                             };
                             let ty = inst.result_type.unwrap_or(0);
+                            debug_assert!(ty != 0, "float constant %{} has no result type", id);
                             let key = format!("fconst_{}_{}", ty, bits);
                             id_map.entry(key).or_insert(id);
                         }
                     } else {
                         // Integer constant
                         if let Some(val) = inst.operands.first() {
-                            let (value, is_64) = match val {
-                                rspirv::dr::Operand::LiteralBit32(v) => (*v as i64, false),
-                                rspirv::dr::Operand::LiteralBit64(v) => (*v as i64, true),
+                            let value: i64 = match val {
+                                rspirv::dr::Operand::LiteralBit32(v) => *v as i64,
+                                rspirv::dr::Operand::LiteralBit64(v) => *v as i64,
                                 _ => continue,
                             };
-                            let key = if is_64 {
-                                format!("const64_{}", value)
-                            } else {
-                                format!("const_{}", value)
-                            };
+                            let ty = inst.result_type.unwrap_or(0);
+                            debug_assert!(ty != 0, "integer constant %{} has no result type", id);
+                            let key = format!("const_{}_{}", ty, value);
                             id_map.entry(key).or_insert(id);
                         }
                     }
@@ -890,6 +888,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             let result_str = format!("{}", results[0]);
             if let Some(term) = parse_extract_result(&result_str) {
                 let result_type = ctx.id_to_type.get(&id).copied().unwrap_or(0);
+                debug_assert!(result_type != 0, "extraction root %{} has no type", id);
 
                 // Parse the extracted term into a tree (once).
                 // The tree walker handles bridge constructors transparently.
@@ -1079,6 +1078,11 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             // The expression can be hoisted!
             // Mark both branch IDs to become CopyObjects of the hoisted value
             let result_type = ctx.id_to_type.get(&pair.then_id).copied().unwrap_or(0);
+            debug_assert!(
+                result_type != 0,
+                "hoisted value %{} has no type",
+                pair.then_id
+            );
 
             hoisted_values.push(HoistInfo {
                 then_id: pair.then_id,
@@ -1507,6 +1511,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     .and_then(|inst| inst.result_type)
                                     .unwrap_or(0)
                             });
+                        debug_assert!(result_type != 0, "selection phi %{} has no type", phi_id);
 
                         // Add Phi instruction
                         block.instructions.push(Instruction::new(
@@ -1552,6 +1557,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                     })
                                     .unwrap_or(0)
                             });
+                        debug_assert!(result_type != 0, "switch phi has no type");
 
                         // Build phi operands: (value, label) pairs flattened
                         let phi_operands: Vec<rspirv::dr::Operand> = case_values
