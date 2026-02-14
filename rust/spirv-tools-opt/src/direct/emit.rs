@@ -1156,13 +1156,7 @@ fn emit_app(
     // --- Constants ---
     match op {
         "Const" => return emit_const_int(args, false, result_type, ctx),
-        "Const64" => {
-            // The egraph uses (Const N) for all int widths; type_width determines encoding.
-            // Const64 should never appear in extracted terms.
-            #[cfg(debug_assertions)]
-            eprintln!("emit_app: unexpected Const64 constructor — egraph should use Const");
-            return emit_const_int(args, true, result_type, ctx);
-        }
+        "Const64" => return emit_const_int(args, true, result_type, ctx),
         "BoolConst" => return emit_bool_const(args, ctx),
         "FConst" => return emit_float_const(args, result_type, ctx),
         _ => {}

@@ -778,15 +778,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             id_map.entry(key).or_insert(id);
                         }
                     } else {
-                        // Integer constant
+                        // Integer constant — sign-extend 32-bit values to match context.rs
                         if let Some(val) = inst.operands.first() {
+                            let ty = inst.result_type.unwrap_or(0);
+                            debug_assert!(ty != 0, "integer constant %{} has no result type", id);
+                            let width = type_widths.get(&ty).copied().unwrap_or(32);
                             let value: i64 = match val {
-                                rspirv::dr::Operand::LiteralBit32(v) => *v as i64,
+                                rspirv::dr::Operand::LiteralBit32(v) => {
+                                    if width == 32 {
+                                        (*v as i32) as i64
+                                    } else {
+                                        *v as i64
+                                    }
+                                }
                                 rspirv::dr::Operand::LiteralBit64(v) => *v as i64,
                                 _ => continue,
                             };
-                            let ty = inst.result_type.unwrap_or(0);
-                            debug_assert!(ty != 0, "integer constant %{} has no result type", id);
                             let key = format!("const_{}_{}", ty, value);
                             id_map.entry(key).or_insert(id);
                         }
