@@ -636,10 +636,8 @@ const OPS_TABLE: &[(&str, EmitPattern)] = &[
         EmitPattern::Ternary(Op::VectorInsertDynamic, TypeClass::Other, TypeClass::Other),
     ),
     // ===== Memory operations =====
-    (
-        "AccessChainDyn",
-        EmitPattern::Binary(Op::AccessChain, TypeClass::Other, TypeClass::Other),
-    ),
+    // AccessChainDyn is handled specially in emit_app (not via OPS_TABLE)
+    // because the base pointer type differs from the result pointer type.
     // ===== Image query operations =====
     (
         "ImageQuerySize",
@@ -1186,6 +1184,37 @@ fn emit_app(
         "BoolConst" => return emit_bool_const(args, ctx),
         "FConst" => return emit_float_const(args, result_type, ctx),
         _ => {}
+    }
+
+    // --- AccessChain: base pointer type differs from result pointer type ---
+    // When the base is a nested expression (not a Sym), we can't determine
+    // its correct pointer type. Bail out to preserve the original instruction
+    // rather than synthesizing an AccessChain with a wrong intermediate type.
+    if op == "AccessChainDyn" {
+        if args.len() < 2 {
+            return None;
+        }
+        let mut synth = Vec::new();
+        let base_type = resolve_term_type(&args[0], ctx);
+        let (base, mut s) = emit_term(&args[0], base_type.unwrap_or(result_type), ctx)?;
+        if !s.is_empty() && base_type.is_none() {
+            return None;
+        }
+        synth.append(&mut s);
+        let idx_type = resolve_term_type(&args[1], ctx).unwrap_or(result_type);
+        let (idx, mut s) = emit_term(&args[1], idx_type, ctx)?;
+        synth.append(&mut s);
+        let id = alloc_id(ctx);
+        synth.push(Instruction::new(
+            Op::AccessChain,
+            Some(result_type),
+            Some(id),
+            vec![
+                rspirv::dr::Operand::IdRef(base),
+                rspirv::dr::Operand::IdRef(idx),
+            ],
+        ));
+        return Some((id, synth));
     }
 
     // --- Lookup in unified ops table ---
