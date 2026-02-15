@@ -625,20 +625,22 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // For each selection construct, convert to RVSDG EffGamma
     for (sel_idx, sel) in selection_constructs.iter().enumerate() {
         // Skip selections that overlap with loop bodies or continue blocks.
-        // Check ALL blocks involved (header, then, else, merge) — not just the header —
-        // because SPIR-V blocks may not be laid out contiguously.
+        // Check ALL blocks in the construct range [header, merge] — not just the
+        // named targets — because intermediate blocks (e.g. continue targets) may
+        // exist between branch targets and the merge block.
         {
             let label_map = &func_block_labels[sel.func_idx];
-            let in_loop = loop_block_set.contains(&(sel.func_idx, sel.header_block_idx))
-                || continue_block_set.contains(&(sel.func_idx, sel.header_block_idx))
-                || [&sel.then_label, &sel.else_label, &sel.merge_label]
-                    .iter()
-                    .any(|label| {
-                        label_map.get(label).map_or(false, |&idx| {
-                            loop_block_set.contains(&(sel.func_idx, idx))
-                                || continue_block_set.contains(&(sel.func_idx, idx))
-                        })
-                    });
+            let merge_idx = label_map.get(&sel.merge_label).copied();
+            let in_loop = if let Some(merge_idx) = merge_idx {
+                // Check all blocks from header to merge (inclusive)
+                (sel.header_block_idx..=merge_idx).any(|idx| {
+                    loop_block_set.contains(&(sel.func_idx, idx))
+                        || continue_block_set.contains(&(sel.func_idx, idx))
+                })
+            } else {
+                // Can't resolve merge — skip to be safe
+                true
+            };
             if in_loop {
                 continue;
             }
@@ -746,21 +748,19 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut rvsdg_switches: Vec<RvsdgSwitch> = Vec::new();
 
     for sw in &switch_constructs {
-        // Skip switches that overlap with loop bodies or continue blocks
+        // Skip switches that overlap with loop bodies or continue blocks.
+        // Check ALL blocks in the construct range [header, merge].
         {
             let label_map = &func_block_labels[sw.func_idx];
-            let in_loop = loop_block_set.contains(&(sw.func_idx, sw.header_block_idx))
-                || continue_block_set.contains(&(sw.func_idx, sw.header_block_idx))
-                || sw.case_labels.iter().any(|label| {
-                    label_map.get(label).map_or(false, |&idx| {
-                        loop_block_set.contains(&(sw.func_idx, idx))
-                            || continue_block_set.contains(&(sw.func_idx, idx))
-                    })
-                })
-                || label_map.get(&sw.merge_label).map_or(false, |&idx| {
+            let merge_idx = label_map.get(&sw.merge_label).copied();
+            let in_loop = if let Some(merge_idx) = merge_idx {
+                (sw.header_block_idx..=merge_idx).any(|idx| {
                     loop_block_set.contains(&(sw.func_idx, idx))
                         || continue_block_set.contains(&(sw.func_idx, idx))
-                });
+                })
+            } else {
+                true
+            };
             if in_loop {
                 continue;
             }
