@@ -1076,22 +1076,26 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             // emit_term resolved to an existing ID — emit CopyObject
                             // if it's a different ID, or skip if same
                             if final_id != id {
-                                // Only alias when SPIR-V types match (see above)
+                                // Only emit CopyObject when SPIR-V types match.
+                                // The egraph may unify values of different types
+                                // (e.g. Vec4 and Vec2 both as Expr). Emitting a
+                                // CopyObject with mismatched types would cause
+                                // validation errors.
                                 let type_matches = ctx.id_to_type.get(&id)
                                     == ctx.id_to_type.get(&final_id);
                                 if type_matches {
                                     id_aliases.insert(id, final_id);
+                                    used_ids.insert(final_id);
+                                    optimized_instructions.insert(
+                                        id,
+                                        Instruction::new(
+                                            Op::CopyObject,
+                                            Some(corrected_type),
+                                            Some(id),
+                                            vec![rspirv::dr::Operand::IdRef(final_id)],
+                                        ),
+                                    );
                                 }
-                                used_ids.insert(final_id);
-                                optimized_instructions.insert(
-                                    id,
-                                    Instruction::new(
-                                        Op::CopyObject,
-                                        Some(corrected_type),
-                                        Some(id),
-                                        vec![rspirv::dr::Operand::IdRef(final_id)],
-                                    ),
-                                );
                             }
                         } else {
                             for (i, mut inst) in new_insts.into_iter().enumerate() {
