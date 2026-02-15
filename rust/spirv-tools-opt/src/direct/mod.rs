@@ -109,6 +109,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     #[derive(Debug, Clone)]
     struct LoopInfo {
         body_block_indices: Vec<usize>, // Indices of blocks in the loop body
+        continue_block_idx: Option<usize>, // Continue block (may be outside body range)
         func_idx: usize,
     }
     let mut loop_constructs: Vec<LoopInfo> = Vec::new();
@@ -213,13 +214,19 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 // This is more reliable than back-edge detection because it
                 // catches loops with BranchConditional continue blocks.
                 if inst.class.opcode == Op::LoopMerge {
-                    if let Some(rspirv::dr::Operand::IdRef(merge_label)) = inst.operands.first() {
+                    if let (
+                        Some(rspirv::dr::Operand::IdRef(merge_label)),
+                        Some(rspirv::dr::Operand::IdRef(continue_label)),
+                    ) = (inst.operands.first(), inst.operands.get(1))
+                    {
                         let label_map = &func_block_labels[func_idx];
                         if let Some(&merge_idx) = label_map.get(merge_label) {
+                            let continue_idx = label_map.get(continue_label).copied();
                             // Loop body spans from header to just before merge block
                             let body_indices: Vec<usize> = (block_idx..merge_idx).collect();
                             loop_constructs.push(LoopInfo {
                                 body_block_indices: body_indices,
+                                continue_block_idx: continue_idx,
                                 func_idx,
                             });
                         }
@@ -373,14 +380,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 } else {
                     format!("(BSym \"id{}\")", sel.condition_id)
                 };
-                let gamma_ctor = match then_type_class {
-                    TypeClass::Int => "GammaI",
-                    TypeClass::Float => "GammaF",
-                    TypeClass::Bool => "GammaB",
-                    TypeClass::Other => "Gamma",
-                };
-                let gamma_term =
-                    format!("({} {} id{} id{})", gamma_ctor, cond_term, then_id, else_id);
+                let gamma_term = format!(
+                    "({} {} id{} id{})",
+                    then_type_class.typed_ctor("Gamma"),
+                    cond_term,
+                    then_id,
+                    else_id
+                );
                 let gamma_binding = format!("(let gamma_{}_{} {})", then_id, else_id, gamma_term);
                 egraph
                     .parse_and_run_program(None, &gamma_binding)
@@ -446,11 +452,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             .and_then(|ty| type_classes.get(ty))
                             .copied()
                             .unwrap_or(TypeClass::Other);
-                        let (theta_ctor, init_val) = match value_type_class {
-                            TypeClass::Int => ("ThetaI", "(Const 0)".to_string()),
-                            TypeClass::Float => ("ThetaF", "(FConst 0.0)".to_string()),
-                            TypeClass::Bool => ("ThetaB", "(BoolConst 0)".to_string()),
-                            TypeClass::Other => ("Theta", format!("(Sym \"theta_init_{}\")", id)),
+                        let theta_ctor = value_type_class.typed_ctor("Theta");
+                        let init_val = match value_type_class {
+                            TypeClass::Int => "(Const 0)".to_string(),
+                            TypeClass::Float => "(FConst 0.0)".to_string(),
+                            TypeClass::Bool => "(BoolConst 0)".to_string(),
+                            TypeClass::Other => format!("(Sym \"theta_init_{}\")", id),
                         };
                         let theta_term =
                             format!("({} (BoolConst 1) id{} {})", theta_ctor, id, init_val);
@@ -522,6 +529,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     for loop_info in &loop_constructs {
         for &block_idx in &loop_info.body_block_indices {
             loop_block_set.insert((loop_info.func_idx, block_idx));
+        }
+        // Continue block may lie outside the header..merge range
+        if let Some(continue_idx) = loop_info.continue_block_idx {
+            loop_block_set.insert((loop_info.func_idx, continue_idx));
         }
     }
 
@@ -683,6 +694,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // - DCE will remove all pure computations
     // This is correct behavior: functions with no side effects produce no observable output
 
+    // Track IDs that are value operands of Store instructions.
+    // These must keep their original type to match the pointer's pointee type.
+    let mut store_value_ids: HashSet<Word> = HashSet::new();
+    for func in &module.functions {
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                if inst.class.opcode == Op::Store && inst.operands.len() >= 2 {
+                    if let Some(val_id) = inst.operands[1].id_ref_any() {
+                        store_value_ids.insert(val_id);
+                    }
+                }
+            }
+        }
+    }
+
     // Step 5: Mark roots as Live in the e-graph BEFORE saturation
     // For functions with RVSDG effects (EffGamma), liveness propagates from Root(effect)
     // For simple functions without CFG, we mark return value operands as Live directly
@@ -690,17 +716,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     for &root_id in &true_roots {
         if ctx.id_to_term.contains_key(&root_id) {
             // Mark the expression as Live using the typed variant matching its sort
-            let live_ctor = match ctx
+            let live_class = ctx
                 .id_to_type
                 .get(&root_id)
                 .and_then(|ty| type_classes.get(ty))
-            {
-                Some(TypeClass::Int) => "LiveI",
-                Some(TypeClass::Float) => "LiveF",
-                Some(TypeClass::Bool) => "LiveB",
-                _ => "Live",
-            };
-            let live_cmd = format!("({} id{})", live_ctor, root_id);
+                .copied()
+                .unwrap_or(TypeClass::Other);
+            let live_cmd = format!("({} id{})", live_class.typed_ctor("Live"), root_id);
             let _ = egraph.parse_and_run_program(None, &live_cmd);
         }
     }
@@ -710,7 +732,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // - DCE-aware constant folding (dead branches are identified)
     // - Partial DCE (RVSDG Gamma/Theta branches marked dead when condition is constant)
     // - Optimizations that expose new DCE opportunities
-    let run_cmd = "(run-schedule (repeat 20 (run)))";
+    let run_cmd = "(run-schedule (repeat 10 (run)))";
     egraph
         .parse_and_run_program(None, run_cmd)
         .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
@@ -720,13 +742,13 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut live_ids: HashSet<Word> = HashSet::new();
     for &id in ctx.id_to_term.keys() {
         // Check the typed Live variant matching this ID's sort
-        let live_ctor = match ctx.id_to_type.get(&id).and_then(|ty| type_classes.get(ty)) {
-            Some(TypeClass::Int) => "LiveI",
-            Some(TypeClass::Float) => "LiveF",
-            Some(TypeClass::Bool) => "LiveB",
-            _ => "Live",
-        };
-        let check_cmd = format!("(check ({} id{}))", live_ctor, id);
+        let live_class = ctx
+            .id_to_type
+            .get(&id)
+            .and_then(|ty| type_classes.get(ty))
+            .copied()
+            .unwrap_or(TypeClass::Other);
+        let check_cmd = format!("(check ({} id{}))", live_class.typed_ctor("Live"), id);
         if egraph.parse_and_run_program(None, &check_cmd).is_ok() {
             live_ids.insert(id);
         }
@@ -817,44 +839,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut synthesized_for_root: HashMap<Word, Vec<Instruction>> = HashMap::new();
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
-    // Find a suitable integer type for synthesized constants
-    let int32_type = module
-        .types_global_values
-        .iter()
-        .find(|inst| {
-            inst.class.opcode == Op::TypeInt
-                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
-        })
-        .and_then(|inst| inst.result_id);
-    let int64_type = module
-        .types_global_values
-        .iter()
-        .find(|inst| {
-            inst.class.opcode == Op::TypeInt
-                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64))
-        })
-        .and_then(|inst| inst.result_id);
-    let bool_type = module
-        .types_global_values
-        .iter()
-        .find(|inst| inst.class.opcode == Op::TypeBool)
-        .and_then(|inst| inst.result_id);
-    let float32_type = module
-        .types_global_values
-        .iter()
-        .find(|inst| {
-            inst.class.opcode == Op::TypeFloat
-                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
-        })
-        .and_then(|inst| inst.result_id);
-    let float64_type = module
-        .types_global_values
-        .iter()
-        .find(|inst| {
-            inst.class.opcode == Op::TypeFloat
-                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(64))
-        })
-        .and_then(|inst| inst.result_id);
+    // Find suitable types for synthesized constants
+    let int32_type = find_spirv_type(module, Op::TypeInt, Some(32));
+    let int64_type = find_spirv_type(module, Op::TypeInt, Some(64));
+    let bool_type = find_spirv_type(module, Op::TypeBool, None);
+    let float32_type = find_spirv_type(module, Op::TypeFloat, Some(32));
+    let float64_type = find_spirv_type(module, Op::TypeFloat, Some(64));
 
     // Only extract from IDs that are both:
     // 1. True roots (operands of side effects) - these are the outputs we need
@@ -928,7 +918,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         .and_then(|ty| type_classes.get(ty))
                         .copied()
                         .unwrap_or(TypeClass::Other);
-                    let corrected_type =
+                    // Skip type correction for Store value operands: their type
+                    // must match the pointer's pointee type, which the egraph
+                    // doesn't track (Store is a side-effect, not in the egraph).
+                    let corrected_type = if store_value_ids.contains(&id) {
+                        result_type
+                    } else {
                         match term_class {
                             TypeClass::Int => query_type_from_egraph(&mut egraph, "IType", id)
                                 .unwrap_or(result_type),
@@ -936,7 +931,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 .unwrap_or(result_type),
                             TypeClass::Bool => bool_type.unwrap_or(result_type),
                             TypeClass::Other => result_type,
-                        };
+                        }
+                    };
                     if corrected_type != result_type {
                         ctx.id_to_type.insert(id, corrected_type);
                     }
@@ -2097,6 +2093,46 @@ pub(crate) enum TypeClass {
     Int,
     Float,
     Other,
+}
+
+impl TypeClass {
+    /// Return the typed egglog constructor name for a given base.
+    /// E.g. `TypeClass::Int.typed_ctor("Gamma")` → `"GammaI"`.
+    pub(crate) fn typed_ctor(self, base: &str) -> String {
+        match self {
+            TypeClass::Int => format!("{}I", base),
+            TypeClass::Float => format!("{}F", base),
+            TypeClass::Bool => format!("{}B", base),
+            TypeClass::Other => base.to_string(),
+        }
+    }
+}
+
+/// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
+fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
+    let matches_width = |inst: &Instruction| {
+        inst.class.opcode == opcode
+            && match width {
+                Some(w) => inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w)),
+                None => true,
+            }
+    };
+    // For OpTypeInt, prefer signed (signedness=1). SPIRV-Cross on Metal uses
+    // the type's signedness to generate int vs uint casts, so using an unsigned
+    // fallback type causes ConvertFToS to clamp negatives to 0.
+    if opcode == Op::TypeInt {
+        if let Some(inst) = module.types_global_values.iter().find(|inst| {
+            matches_width(inst)
+                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
+        }) {
+            return inst.result_id;
+        }
+    }
+    module
+        .types_global_values
+        .iter()
+        .find(|inst| matches_width(inst))
+        .and_then(|inst| inst.result_id)
 }
 
 /// Collect type classes (Bool/Int/Float/Other) for all types in the module.
