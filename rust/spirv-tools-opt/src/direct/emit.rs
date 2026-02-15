@@ -1201,7 +1201,8 @@ fn emit_app(
             return None;
         }
         synth.append(&mut s);
-        let idx_type = resolve_term_type(&args[1], ctx).unwrap_or(result_type);
+        let idx_type =
+            resolve_term_type(&args[1], ctx).unwrap_or(ctx.int32_type.unwrap_or(result_type));
         let (idx, mut s) = emit_term(&args[1], idx_type, ctx)?;
         synth.append(&mut s);
         let id = alloc_id(ctx);
