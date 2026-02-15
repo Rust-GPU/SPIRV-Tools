@@ -143,10 +143,13 @@
 ; CompositeExtract(Load(ptr, mem), idx) could become Load(AccessChain(ptr, idx), mem)
 ; But we need to be careful about memory ordering.
 
-; Extract from loaded composite - if we can prove it's safe
-; This enables field-level dead store elimination
-(rule ((= e (CompositeExtract (Load ptr mem) idx)))
-      ((union e (Load (AccessChain1 ptr idx) mem))))
+; DISABLED: SROA via AccessChain rewrite. The C++ optimizer handles SROA by
+; splitting variables (ScalarReplacementPass), not by rewriting into
+; Load(AccessChain(...)). AccessChain1/2/3 use literal indices but SPIR-V
+; OpAccessChain requires IdRef constants, plus pointer result types must be
+; computed — neither is supported in the emission layer.
+; (rule ((= e (CompositeExtract (Load ptr mem) idx)))
+;       ((union e (Load (AccessChain1 ptr idx) mem))))
 
 ; =============================================================================
 ; Vector Load/Store Optimization
@@ -160,27 +163,22 @@
 ; Sequential access chains can be combined into a single chain with more indices.
 ; AccessChain1(AccessChain1(base, i1), i2) -> AccessChain2(base, i1, i2)
 
-; Combine AccessChain1 + AccessChain1 -> AccessChain2
-(rule ((= e (AccessChain1 (AccessChain1 base i1) i2)))
-      ((union e (AccessChain2 base i1 i2))))
-
-; Combine AccessChain1 + AccessChain2 -> AccessChain3
-(rule ((= e (AccessChain1 (AccessChain2 base i1 i2) i3)))
-      ((union e (AccessChain3 base i1 i2 i3))))
-
-; Combine AccessChain2 + AccessChain1 -> AccessChain3
-(rule ((= e (AccessChain2 (AccessChain1 base i1) i2 i3)))
-      ((union e (AccessChain3 base i1 i2 i3))))
+; DISABLED: AccessChain combining (same reason as SROA above).
+; (rule ((= e (AccessChain1 (AccessChain1 base i1) i2)))
+;       ((union e (AccessChain2 base i1 i2))))
+; (rule ((= e (AccessChain1 (AccessChain2 base i1 i2) i3)))
+;       ((union e (AccessChain3 base i1 i2 i3))))
+; (rule ((= e (AccessChain2 (AccessChain1 base i1) i2 i3)))
+;       ((union e (AccessChain3 base i1 i2 i3))))
 
 ; =============================================================================
 ; Dynamic Access Chain Optimization
 ; =============================================================================
 ; Dynamic access chains with constant indices can become static chains
 
-; AccessChainDyn(base, IntToExpr(Const i)) -> AccessChain1(base, i)
-; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context in AccessChainDyn
-(rule ((= e (AccessChainDyn base (IntToExpr (Const i)))))
-      ((union e (AccessChain1 base i))))
+; DISABLED: Constant-index folding into AccessChain1 (same reason as SROA above).
+; (rule ((= e (AccessChainDyn base (IntToExpr (Const i)))))
+;       ((union e (AccessChain1 base i))))
 
 ; =============================================================================
 ; Redundant Load Elimination Across Branches

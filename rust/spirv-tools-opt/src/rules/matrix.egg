@@ -1,152 +1,46 @@
 ; =============================================================================
 ; Matrix Operation Rules
 ; =============================================================================
+;
+; Only trivially safe rules are kept here — those that simplify without
+; creating new constructor applications that could interact with other rules
+; to cause exponential e-graph growth. Rules that create new MatTimesMat,
+; MatTimesVec, VecTimesMat, Transpose(...), or MatInverse(...) applications
+; were removed because they form cyclic interactions:
+;   - inverse-of-product + associativity
+;   - transpose-of-product + inverse-of-transpose
+;   - MatTimesVec/VecTimesMat transpose equivalence
+; Since SPIR-V has native matrix operations, these rewrites rarely produce
+; cheaper code anyway.
 
-; Transpose of transpose is identity - ONE-DIRECTIONAL to prevent explosion
+; Transpose of transpose is identity
 (rule ((= e (Transpose (Transpose m))))
       ((union e m)))
 
-; Matrix times identity (represented as 1.0 scalar) - conceptual
-; MatTimesScalar with 1 and 0 - ONE-DIRECTIONAL to prevent explosion
+; Matrix times scalar 1 is identity
 ; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
 (rule ((= e (MatTimesScalar m (IntToExpr (Const 1)))))
       ((union e m)))
 
-; Double inverse is identity - ONE-DIRECTIONAL to prevent explosion
+; Double inverse is identity
 (rule ((= e (MatInverse (MatInverse m))))
       ((union e m)))
 
-; Transpose of outer product - ONE-DIRECTIONAL
-; transpose(outerProduct(a,b)) = outerProduct(b,a)
-(rule ((= e (Transpose (OuterProduct a b))))
-      ((union e (OuterProduct b a))))
+; Determinant of transpose equals determinant of original
+; Note: Determinant(Expr) -> FloatExpr
+(rule ((= e (Determinant (Transpose m))))
+      ((union e (Determinant m))))
 
-; Matrix multiply associativity - ONE-DIRECTIONAL (normalize to right-assoc)
-; (A * B) * C = A * (B * C)
-(rule ((= e (MatTimesMat (MatTimesMat a b) c)))
-      ((union e (MatTimesMat a (MatTimesMat b c)))))
-
-; Matrix-vector associativity with matrix multiply - ONE-DIRECTIONAL
-; (A * B) * v = A * (B * v)
-(rule ((= e (MatTimesVec (MatTimesMat a b) v)))
-      ((union e (MatTimesVec a (MatTimesVec b v)))))
-
-; Vector-matrix associativity - ONE-DIRECTIONAL
-; v * (A * B) = (v * A) * B
-(rule ((= e (VecTimesMat v (MatTimesMat a b))))
-      ((union e (VecTimesMat (VecTimesMat v a) b))))
-
-; Transpose and multiply - ONE-DIRECTIONAL
-; (A*B)^T = B^T * A^T
-(rule ((= e (Transpose (MatTimesMat a b))))
-      ((union e (MatTimesMat (Transpose b) (Transpose a)))))
-
-; =============================================================================
-; Matrix-Scalar Multiplication Rules
-; =============================================================================
-
-; Scalar multiply by 0 gives zero matrix (represented as scalar 0 times matrix)
-; Note: Without a ZeroMatrix constructor, we keep the scalar multiply form
-; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
-(rule ((= e (MatTimesScalar m (IntToExpr (Const 0)))))
-      ((union e (MatTimesScalar m (IntToExpr (Const 0))))))
-
-; Scalar multiply is commutative in the scalar: (M*s1)*s2 = (M*s2)*s1
-; And associative: (M*s1)*s2 = M*(s1*s2)
-; We express this as merging the scalars
+; Scalar multiply associativity (constant folding only, no new matrix nodes)
 ; Note: Const returns IntExpr, wrapped with IntToExpr for Expr context
 (rule ((= e (MatTimesScalar (MatTimesScalar m (IntToExpr (Const a))) (IntToExpr (Const b)))) (mul-safe a b))
       ((union e (MatTimesScalar m (IntToExpr (Const (* a b)))))))
 
 ; =============================================================================
-; Determinant Rules
-; =============================================================================
-
-; Determinant of transpose equals determinant of original - ONE-DIRECTIONAL
-; Note: Determinant(Expr) -> FloatExpr
-(rule ((= e (Determinant (Transpose m))))
-      ((union e (Determinant m))))
-
-; Determinant of product = product of determinants - ONE-DIRECTIONAL
-; det(A*B) = det(A) * det(B)
-; Note: Determinant returns FloatExpr, FMul(FloatExpr, FloatExpr) -> FloatExpr
-(rule ((= e (Determinant (MatTimesMat a b))))
-      ((union e (FMul (Determinant a) (Determinant b)))))
-
-; Determinant of scalar*matrix = scalar^n * det(matrix) for nxn matrix
-; This is complex without knowing n, so we skip it
-
-; Determinant of inverse = 1/determinant of original - ONE-DIRECTIONAL
-; Note: FDiv(FloatExpr, FloatExpr) -> FloatExpr, FConst for float constant
-; Note: Const is IntExpr, use FConst for float 1.0 in FDiv context
-(rule ((= e (Determinant (MatInverse m))))
-      ((union e (FDiv (FConst 1.0) (Determinant m)))))
-
-; =============================================================================
-; Inverse Rules (beyond what's already there)
-; =============================================================================
-
-; Inverse of product - ONE-DIRECTIONAL
-; (A*B)^-1 = B^-1 * A^-1
-(rule ((= e (MatInverse (MatTimesMat a b))))
-      ((union e (MatTimesMat (MatInverse b) (MatInverse a)))))
-
-; Inverse of transpose - ONE-DIRECTIONAL
-; (A^T)^-1 = (A^-1)^T
-(rule ((= e (MatInverse (Transpose m))))
-      ((union e (Transpose (MatInverse m)))))
-
-; =============================================================================
-; Outer Product Rules
-; =============================================================================
-
-; Outer product is anti-commutative with transpose
-; (already have: transpose(outerProduct(a,b)) = outerProduct(b,a))
-
-; Outer product distributes over vector addition (conceptually)
-; outerProduct(a+b, c) = outerProduct(a, c) + outerProduct(b, c)
-; But we don't have matrix addition in the e-graph yet
-
-; Outer product with zero vector produces zero matrix
-; (would need zero vector detection)
-
-; =============================================================================
-; Vector-Matrix Multiplication Rules
-; =============================================================================
-
-; Transpose relationship: v * M = (M^T * v)^T for row vector
-; But SPIR-V treats vectors as column vectors, so:
-; VecTimesMat(v, M) treats v as row vector: result is (M^T * v)
-
-; Matrix-vector with transpose - ONE-DIRECTIONAL
-(rule ((= e (MatTimesVec (Transpose m) v)))
-      ((union e (VecTimesMat v m))))
-(rule ((= e (VecTimesMat v (Transpose m))))
-      ((union e (MatTimesVec m v))))
-
-; =============================================================================
-; Diagonal and Special Matrix Patterns
-; =============================================================================
-
-; If we had identity matrix representation:
-; M * I = M
-; I * M = M
-; M * M^-1 = I
-; M^-1 * M = I
-
-; For now, these would require an Identity constructor
-
-; NOTE: Matrix decomposition rules (MatTimesVec/VecTimesMat into per-column
-; vector ops) were removed because they cause exponential e-graph growth.
-; The decomposed vector ops interact with associativity, distribution, and
-; loop invariant rules, creating runaway expansion. Since SPIR-V has native
-; OpMatrixTimesVector/OpVectorTimesMatrix instructions, decomposition never
-; extracts as cheaper. If constant-matrix folding is needed in the future,
-; implement it as a built-in primitive rather than rewrite rules.
-
-; =============================================================================
 ; Matrix Loop Invariant Rules - ONE-DIRECTIONAL
 ; =============================================================================
+; These are safe because they only wrap existing terms into LoopInvariant,
+; never creating new matrix operation nodes outside the wrapper.
 
 (rule ((= e (MatTimesScalar (LoopInvariant m) (LoopInvariant s)))) ((union e (LoopInvariant (MatTimesScalar m s)))))
 (rule ((= e (MatTimesVec (LoopInvariant m) (LoopInvariant v)))) ((union e (LoopInvariant (MatTimesVec m v)))))
@@ -161,9 +55,10 @@
 ; =============================================================================
 ; Gamma Distribution for Matrix Operations - ONE-DIRECTIONAL
 ; =============================================================================
+; These are safe because they factor out a shared matrix operand from both
+; Gamma arms, which is a strictly shrinking transformation.
 
 ; select(c, M*v1, M*v2) = M * select(c, v1, v2)
-; Note: Gamma condition is BoolExpr (already correct in typed sort system)
 (rule ((= e (Gamma c (MatTimesVec m v1) (MatTimesVec m v2)))) ((union e (MatTimesVec m (Gamma c v1 v2)))))
 
 ; select(c, v1*M, v2*M) = select(c, v1, v2) * M

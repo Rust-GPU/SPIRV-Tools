@@ -78,8 +78,12 @@ const SPIRV_EGGLOG_PROGRAM: &str = concat!(
     "\n",
     include_str!("../rules/spec_constant.egg"),
     "\n",
-    include_str!("../rules/sroa.egg"),
-    "\n",
+    // DISABLED: sroa.egg rules produce AccessChain1/2/3 nodes that cannot be
+    // emitted (SPIR-V OpAccessChain needs IdRef constants + pointer result types).
+    // The C++ optimizer handles SROA via variable splitting (ScalarReplacementPass),
+    // not AccessChain rewrites. Re-enable if/when a variable-splitting pass is added.
+    // include_str!("../rules/sroa.egg"),
+    // "\n",
     include_str!("../rules/advanced_loops.egg"),
     "\n",
     include_str!("../rules/copy_propagation.egg"),
