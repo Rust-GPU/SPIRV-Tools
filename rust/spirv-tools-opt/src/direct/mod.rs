@@ -101,6 +101,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     struct SwitchInfo {
         merge_label: Word,
         case_labels: Vec<Word>, // All case block labels (including default)
+        header_block_idx: usize,
         func_idx: usize,
     }
     let mut switch_constructs: Vec<SwitchInfo> = Vec::new();
@@ -293,6 +294,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     switch_constructs.push(SwitchInfo {
                         merge_label: merge,
                         case_labels: switch_case_labels,
+                        header_block_idx: block_idx,
                         func_idx,
                     });
                 }
@@ -574,9 +576,9 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             loop_block_set.insert((loop_info.func_idx, continue_idx));
         }
     }
-    // Expand: if a selection's header is inside a loop, its branch targets
-    // and merge block are part of the loop too. Iterate to a fixed point
-    // for nested selections.
+    // Expand: if a selection's or switch's header is inside a loop, its branch
+    // targets and merge block are part of the loop too. Iterate to a fixed point
+    // for nested constructs.
     loop {
         let prev_len = loop_block_set.len();
         for sel in &selection_constructs {
@@ -590,6 +592,19 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 }
                 if let Some(&idx) = label_map.get(&sel.merge_label) {
                     loop_block_set.insert((sel.func_idx, idx));
+                }
+            }
+        }
+        for sw in &switch_constructs {
+            if loop_block_set.contains(&(sw.func_idx, sw.header_block_idx)) {
+                let label_map = &func_block_labels[sw.func_idx];
+                for &case_label in &sw.case_labels {
+                    if let Some(&idx) = label_map.get(&case_label) {
+                        loop_block_set.insert((sw.func_idx, idx));
+                    }
+                }
+                if let Some(&idx) = label_map.get(&sw.merge_label) {
+                    loop_block_set.insert((sw.func_idx, idx));
                 }
             }
         }
@@ -730,6 +745,25 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let mut rvsdg_switches: Vec<RvsdgSwitch> = Vec::new();
 
     for sw in &switch_constructs {
+        // Skip switches that overlap with loop bodies or continue blocks
+        {
+            let label_map = &func_block_labels[sw.func_idx];
+            let in_loop = loop_block_set.contains(&(sw.func_idx, sw.header_block_idx))
+                || sw.case_labels.iter().any(|label| {
+                    label_map.get(label).map_or(false, |&idx| {
+                        loop_block_set.contains(&(sw.func_idx, idx))
+                            || continue_block_set.contains(&(sw.func_idx, idx))
+                    })
+                })
+                || label_map.get(&sw.merge_label).map_or(false, |&idx| {
+                    loop_block_set.contains(&(sw.func_idx, idx))
+                        || continue_block_set.contains(&(sw.func_idx, idx))
+                });
+            if in_loop {
+                continue;
+            }
+        }
+
         let func = &module.functions[sw.func_idx];
         let merge_block = func
             .blocks
