@@ -2110,28 +2110,18 @@ impl TypeClass {
 
 /// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
 fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
-    let matches_width = |inst: &Instruction| {
-        inst.class.opcode == opcode
-            && match width {
-                Some(w) => inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w)),
-                None => true,
-            }
-    };
-    // For OpTypeInt, prefer signed (signedness=1). SPIRV-Cross on Metal uses
-    // the type's signedness to generate int vs uint casts, so using an unsigned
-    // fallback type causes ConvertFToS to clamp negatives to 0.
-    if opcode == Op::TypeInt {
-        if let Some(inst) = module.types_global_values.iter().find(|inst| {
-            matches_width(inst)
-                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
-        }) {
-            return inst.result_id;
-        }
-    }
     module
         .types_global_values
         .iter()
-        .find(|inst| matches_width(inst))
+        .find(|inst| {
+            inst.class.opcode == opcode
+                && match width {
+                    Some(w) => {
+                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
+                    }
+                    None => true,
+                }
+        })
         .and_then(|inst| inst.result_id)
 }
 
