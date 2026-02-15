@@ -1408,11 +1408,13 @@
 (rule ((= e (UMod a b)) (= t (IType a))) ((set (IType e) t)))
 (rule ((= t (IType e)) (= e (UMod a b))) ((set (IType a) t) (set (IType b) t)))
 (rule ((= e (Shl a b)) (= t (IType a))) ((set (IType e) t)))
-(rule ((= t (IType e)) (= e (Shl a b))) ((set (IType a) t) (set (IType b) t)))
+; Shift ops: only propagate type to base (a), not shift amount (b).
+; SPIR-V allows shift amount to have a different bit width than the base.
+(rule ((= t (IType e)) (= e (Shl a b))) ((set (IType a) t)))
 (rule ((= e (ShrS a b)) (= t (IType a))) ((set (IType e) t)))
-(rule ((= t (IType e)) (= e (ShrS a b))) ((set (IType a) t) (set (IType b) t)))
+(rule ((= t (IType e)) (= e (ShrS a b))) ((set (IType a) t)))
 (rule ((= e (ShrU a b)) (= t (IType a))) ((set (IType e) t)))
-(rule ((= t (IType e)) (= e (ShrU a b))) ((set (IType a) t) (set (IType b) t)))
+(rule ((= t (IType e)) (= e (ShrU a b))) ((set (IType a) t)))
 (rule ((= e (BitAnd a b)) (= t (IType a))) ((set (IType e) t)))
 (rule ((= t (IType e)) (= e (BitAnd a b))) ((set (IType a) t) (set (IType b) t)))
 (rule ((= e (BitOr a b)) (= t (IType a))) ((set (IType e) t)))

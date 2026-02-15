@@ -535,6 +535,29 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             loop_block_set.insert((loop_info.func_idx, continue_idx));
         }
     }
+    // Expand: if a selection's header is inside a loop, its branch targets
+    // and merge block are part of the loop too. Iterate to a fixed point
+    // for nested selections.
+    loop {
+        let prev_len = loop_block_set.len();
+        for sel in &selection_constructs {
+            if loop_block_set.contains(&(sel.func_idx, sel.header_block_idx)) {
+                let label_map = &func_block_labels[sel.func_idx];
+                if let Some(&idx) = label_map.get(&sel.then_label) {
+                    loop_block_set.insert((sel.func_idx, idx));
+                }
+                if let Some(&idx) = label_map.get(&sel.else_label) {
+                    loop_block_set.insert((sel.func_idx, idx));
+                }
+                if let Some(&idx) = label_map.get(&sel.merge_label) {
+                    loop_block_set.insert((sel.func_idx, idx));
+                }
+            }
+        }
+        if loop_block_set.len() == prev_len {
+            break;
+        }
+    }
 
     // For each selection construct, convert to RVSDG EffGamma
     for (sel_idx, sel) in selection_constructs.iter().enumerate() {
@@ -694,21 +717,6 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // - DCE will remove all pure computations
     // This is correct behavior: functions with no side effects produce no observable output
 
-    // Track IDs that are value operands of Store instructions.
-    // These must keep their original type to match the pointer's pointee type.
-    let mut store_value_ids: HashSet<Word> = HashSet::new();
-    for func in &module.functions {
-        for block in &func.blocks {
-            for inst in &block.instructions {
-                if inst.class.opcode == Op::Store && inst.operands.len() >= 2 {
-                    if let Some(val_id) = inst.operands[1].id_ref_any() {
-                        store_value_ids.insert(val_id);
-                    }
-                }
-            }
-        }
-    }
-
     // Step 5: Mark roots as Live in the e-graph BEFORE saturation
     // For functions with RVSDG effects (EffGamma), liveness propagates from Root(effect)
     // For simple functions without CFG, we mark return value operands as Live directly
@@ -732,7 +740,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // - DCE-aware constant folding (dead branches are identified)
     // - Partial DCE (RVSDG Gamma/Theta branches marked dead when condition is constant)
     // - Optimizations that expose new DCE opportunities
-    let run_cmd = "(run-schedule (repeat 20 (run)))";
+    let run_cmd = "(run-schedule (repeat 10 (run)))";
     egraph
         .parse_and_run_program(None, run_cmd)
         .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
@@ -840,7 +848,10 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
     // Find suitable types for synthesized constants
-    let int32_type = find_spirv_type(module, Op::TypeInt, Some(32));
+    // Prefer signed int32 when available (signedness=1) so that emit-time
+    // fallback types for ConvertFToS/ConvertSToF produce correct sign semantics.
+    let int32_type = find_spirv_type_signed(module, Op::TypeInt, Some(32))
+        .or_else(|| find_spirv_type(module, Op::TypeInt, Some(32)));
     let int64_type = find_spirv_type(module, Op::TypeInt, Some(64));
     let bool_type = find_spirv_type(module, Op::TypeBool, None);
     let float32_type = find_spirv_type(module, Op::TypeFloat, Some(32));
@@ -911,31 +922,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         );
                     }
                 } else if let Some(ref term_tree) = parsed_term {
-                    // Query the concrete SPIR-V type ID from the egraph.
-                    let term_class = ctx
-                        .id_to_type
-                        .get(&id)
-                        .and_then(|ty| type_classes.get(ty))
-                        .copied()
-                        .unwrap_or(TypeClass::Other);
-                    // Skip type correction for Store value operands: their type
-                    // must match the pointer's pointee type, which the egraph
-                    // doesn't track (Store is a side-effect, not in the egraph).
-                    let corrected_type = if store_value_ids.contains(&id) {
-                        result_type
-                    } else {
-                        match term_class {
-                            TypeClass::Int => query_type_from_egraph(&mut egraph, "IType", id)
-                                .unwrap_or(result_type),
-                            TypeClass::Float => query_type_from_egraph(&mut egraph, "FType", id)
-                                .unwrap_or(result_type),
-                            TypeClass::Bool => bool_type.unwrap_or(result_type),
-                            TypeClass::Other => result_type,
-                        }
-                    };
-                    if corrected_type != result_type {
-                        ctx.id_to_type.insert(id, corrected_type);
-                    }
+                    // Use the original result_type from the SPIR-V module.
+                    // Type correction via IType/FType/BType egraph queries was
+                    // removed because bidirectional type propagation rules can
+                    // corrupt types across sort boundaries (e.g. shift amount
+                    // width, Store pointer-pointee mismatches).
+                    let corrected_type = result_type;
 
                     // Unified emission: handles both flat and nested terms
                     let mut emit_ctx = EmitCtx {
@@ -2110,6 +2102,23 @@ impl TypeClass {
 }
 
 /// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
+fn find_spirv_type_signed(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
+    module
+        .types_global_values
+        .iter()
+        .find(|inst| {
+            inst.class.opcode == opcode
+                && match width {
+                    Some(w) => {
+                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
+                    }
+                    None => true,
+                }
+                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
+        })
+        .and_then(|inst| inst.result_id)
+}
+
 fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
     module
         .types_global_values
@@ -2152,15 +2161,6 @@ fn collect_type_classes(module: &Module) -> HashMap<Word, TypeClass> {
 ///
 /// Returns the type ID stored in the IType/FType/BType function for the given id,
 /// or None if the query fails (e.g., no type was propagated to this expression).
-fn query_type_from_egraph(egraph: &mut egglog::EGraph, func: &str, id: Word) -> Option<Word> {
-    let q = format!("(extract ({} id{}))", func, id);
-    egraph
-        .parse_and_run_program(None, &q)
-        .ok()
-        .and_then(|r| r.first().map(|v| format!("{}", v)))
-        .and_then(|s| s.trim().parse::<Word>().ok())
-}
-
 /// Topological sort of binding IDs based on term dependencies.
 /// If term for idA contains a bare reference to idB (meaning B is also in id_to_term),
 /// then B must be bound before A.
