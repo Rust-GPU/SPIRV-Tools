@@ -550,20 +550,22 @@
 
 ; -----------------------------------------------------------------------------
 ; Identity shuffles - ONE-DIRECTIONAL to prevent explosion
+; Guard on VecSize to avoid incorrectly unifying vectors of different sizes.
+; VecShuffle2(Vec4, _, 0, 1) is a truncation to Vec2, NOT an identity.
 ; -----------------------------------------------------------------------------
-(rule ((= e (VecShuffle2 v _ 0 1)))
+(rule ((= e (VecShuffle2 v _ 0 1)) (= 2 (VecSize v)))
       ((union e v)))
-(rule ((= e (VecShuffle3 v _ 0 1 2)))
+(rule ((= e (VecShuffle3 v _ 0 1 2)) (= 3 (VecSize v)))
       ((union e v)))
-(rule ((= e (VecShuffle4 v _ 0 1 2 3)))
+(rule ((= e (VecShuffle4 v _ 0 1 2 3)) (= 4 (VecSize v)))
       ((union e v)))
 
 ; Same operand identity - ONE-DIRECTIONAL
-(rule ((= e (VecShuffle2 v v 0 1)))
+(rule ((= e (VecShuffle2 v v 0 1)) (= 2 (VecSize v)))
       ((union e v)))
-(rule ((= e (VecShuffle3 v v 0 1 2)))
+(rule ((= e (VecShuffle3 v v 0 1 2)) (= 3 (VecSize v)))
       ((union e v)))
-(rule ((= e (VecShuffle4 v v 0 1 2 3)))
+(rule ((= e (VecShuffle4 v v 0 1 2 3)) (= 4 (VecSize v)))
       ((union e v)))
 
 ; -----------------------------------------------------------------------------
