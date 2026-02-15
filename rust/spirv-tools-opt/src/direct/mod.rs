@@ -630,6 +630,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         {
             let label_map = &func_block_labels[sel.func_idx];
             let in_loop = loop_block_set.contains(&(sel.func_idx, sel.header_block_idx))
+                || continue_block_set.contains(&(sel.func_idx, sel.header_block_idx))
                 || [&sel.then_label, &sel.else_label, &sel.merge_label]
                     .iter()
                     .any(|label| {
@@ -749,6 +750,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         {
             let label_map = &func_block_labels[sw.func_idx];
             let in_loop = loop_block_set.contains(&(sw.func_idx, sw.header_block_idx))
+                || continue_block_set.contains(&(sw.func_idx, sw.header_block_idx))
                 || sw.case_labels.iter().any(|label| {
                     label_map.get(label).map_or(false, |&idx| {
                         loop_block_set.contains(&(sw.func_idx, idx))
@@ -1820,6 +1822,86 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     if let Some(ref mut header) = output.header {
         if next_id > header.bound {
             header.bound = next_id;
+        }
+    }
+
+    // Safety check: verify all referenced IDs are defined in the output module.
+    // If any undefined references exist (from orphaned intermediates, stale id_map
+    // entries, etc.), fall back to the unoptimized module to avoid validation errors.
+    {
+        let mut all_defined: HashSet<Word> = HashSet::new();
+        for inst in &output.types_global_values {
+            if let Some(id) = inst.result_id {
+                all_defined.insert(id);
+            }
+        }
+        for func in &output.functions {
+            if let Some(id) = func.def_id() {
+                all_defined.insert(id);
+            }
+            for param in &func.parameters {
+                if let Some(id) = param.result_id {
+                    all_defined.insert(id);
+                }
+            }
+            for block in &func.blocks {
+                if let Some(label) = block.label.as_ref().and_then(|l| l.result_id) {
+                    all_defined.insert(label);
+                }
+                for inst in &block.instructions {
+                    if let Some(id) = inst.result_id {
+                        all_defined.insert(id);
+                    }
+                }
+            }
+        }
+        // Also include debug/annotation/entry_point IDs as defined
+        for inst in &output.annotations {
+            if let Some(id) = inst.result_id {
+                all_defined.insert(id);
+            }
+        }
+        for inst in &output.entry_points {
+            if let Some(id) = inst.result_id {
+                all_defined.insert(id);
+            }
+        }
+        for inst in &output.debug_string_source {
+            if let Some(id) = inst.result_id {
+                all_defined.insert(id);
+            }
+        }
+        for inst in &output.debug_names {
+            if let Some(id) = inst.result_id {
+                all_defined.insert(id);
+            }
+        }
+
+        let mut has_undefined = false;
+        'outer: for func in &output.functions {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    // Check result_type reference (separate from operands)
+                    if let Some(ty) = inst.result_type {
+                        if !all_defined.contains(&ty) {
+                            has_undefined = true;
+                            break 'outer;
+                        }
+                    }
+                    for op in &inst.operands {
+                        if let Some(ref_id) = op.id_ref_any() {
+                            if !all_defined.contains(&ref_id) {
+                                has_undefined = true;
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if has_undefined {
+            // Fall back to original module to avoid SPIR-V validation errors
+            return Ok(module.clone());
         }
     }
 
