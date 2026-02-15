@@ -20,9 +20,9 @@
 (rule ((= e (BitNot (Const a))))
       ((union e (Const (not-i64 a)))))
 (rule ((= e (Shl (Const a) (Const b))))
-      ((union e (Const (<< a b)))))
+      ((union e (Const (u32-shl a b)))))
 (rule ((= e (ShrU (Const a) (Const b))))
-      ((union e (Const (>> a b)))))
+      ((union e (Const (u32-shr a b)))))
 
 ; Signed right shift of constants
 ; Note: egglog's >> is arithmetic shift for i64

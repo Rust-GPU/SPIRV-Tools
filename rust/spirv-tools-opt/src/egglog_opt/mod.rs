@@ -998,6 +998,14 @@ pub fn create_spirv_egraph() -> Result<EGraph, EgglogOptError> {
     );
     add_primitive!(&mut egraph, "u32-div" = |a: i64, b: i64| -?> i64 { u32_div(a, b) });
     add_primitive!(&mut egraph, "u32-mod" = |a: i64, b: i64| -?> i64 { u32_mod(a, b) });
+    add_primitive!(
+        &mut egraph,
+        "u32-shr" = |a: i64, b: i64| -> i64 { u32_shr(a, b) }
+    );
+    add_primitive!(
+        &mut egraph,
+        "u32-shl" = |a: i64, b: i64| -> i64 { u32_shl(a, b) }
+    );
 
     // NaN-aware float comparison primitives (FOrd* returns 0 if NaN, FUnord* returns 1 if NaN)
     add_primitive!(

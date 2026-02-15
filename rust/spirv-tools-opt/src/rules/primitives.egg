@@ -20,21 +20,17 @@
 ; Mask-Aware Optimizations
 ; =============================================================================
 
-; mask & (x + const) = mask & x when const has no bits in mask
-(rule ((= e (BitAnd (Const mask) (Add x (Const c))))
-       (bits-disjoint mask c))
-      ((union e (BitAnd (Const mask) x))))
-(rule ((= e (BitAnd (Add x (Const c)) (Const mask)))
-       (bits-disjoint mask c))
-      ((union e (BitAnd x (Const mask)))))
-
-; mask & (x - const) = mask & x when const has no bits in mask
-(rule ((= e (BitAnd (Const mask) (Sub x (Const c))))
-       (bits-disjoint mask c))
-      ((union e (BitAnd (Const mask) x))))
-(rule ((= e (BitAnd (Sub x (Const c)) (Const mask)))
-       (bits-disjoint mask c))
-      ((union e (BitAnd x (Const mask)))))
+; DISABLED: mask & (x + const) = mask & x — incorrect due to carry propagation.
+; bits-disjoint(mask, c) only checks mask & c == 0, but adding c causes carries
+; that can affect bits in mask. E.g. mask=4, c=2, x=2: (2+2)&4=4 but 2&4=0.
+; (rule ((= e (BitAnd (Const mask) (Add x (Const c)))) (bits-disjoint mask c))
+;       ((union e (BitAnd (Const mask) x))))
+; (rule ((= e (BitAnd (Add x (Const c)) (Const mask))) (bits-disjoint mask c))
+;       ((union e (BitAnd x (Const mask)))))
+; (rule ((= e (BitAnd (Const mask) (Sub x (Const c)))) (bits-disjoint mask c))
+;       ((union e (BitAnd (Const mask) x))))
+; (rule ((= e (BitAnd (Sub x (Const c)) (Const mask))) (bits-disjoint mask c))
+;       ((union e (BitAnd x (Const mask)))))
 
 ; mask & (x | const) = mask & x when const has no bits in mask
 (rule ((= e (BitAnd (Const mask) (BitOr x (Const c))))

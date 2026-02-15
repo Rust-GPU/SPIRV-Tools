@@ -253,6 +253,22 @@ pub fn u32_mod(a: i64, b: i64) -> Option<i64> {
     }
 }
 
+/// Logical (unsigned) right shift: cast to u32, shift, sign-extend back to i64.
+/// egglog's native `>>` is arithmetic (sign-extending), which is wrong for ShrU.
+pub fn u32_shr(a: i64, b: i64) -> i64 {
+    let a = a as u32;
+    let b = (b as u32) & 31; // mask shift amount to 0-31
+    (a >> b) as i32 as i64
+}
+
+/// Logical left shift: cast to u32, shift, sign-extend back to i64.
+/// egglog's native `<<` on i64 can produce results wider than 32 bits.
+pub fn u32_shl(a: i64, b: i64) -> i64 {
+    let a = a as u32;
+    let b = (b as u32) & 31;
+    (a << b) as i32 as i64
+}
+
 // =============================================================================
 // Type conversion primitives (cross-type: F <-> i64)
 // =============================================================================

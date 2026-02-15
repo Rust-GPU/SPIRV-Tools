@@ -10,7 +10,7 @@ pub(super) use bitwise::{
     funord_ge, funord_gt, funord_le, funord_lt, funord_ne, has_exact_recip, int_to_float_signed,
     int_to_float_unsigned, is_float_one64, is_float_zero64, is_pow2, log2_pow2, mask_superset,
     popcount, sdiv32, shl_clears_mask, shr_clears_mask, smod, srem32, u32_div, u32_ge, u32_gt,
-    u32_le, u32_lt, u32_max, u32_min, u32_mod,
+    u32_le, u32_lt, u32_max, u32_min, u32_mod, u32_shl, u32_shr,
 };
 
 #[allow(unused_imports)]
