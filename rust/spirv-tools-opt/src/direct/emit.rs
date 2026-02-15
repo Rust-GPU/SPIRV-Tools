@@ -128,6 +128,7 @@ pub struct EmitCtx<'a> {
     pub type_classes: &'a HashMap<Word, TypeClass>,
     pub glsl_ext_id: Option<Word>,
     pub type_widths: &'a HashMap<Word, u32>,
+    pub id_to_type: &'a HashMap<Word, Word>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,6 +1134,31 @@ fn resolve_atom(s: &str, ctx: &EmitCtx) -> Option<(Word, Vec<Instruction>)> {
     Some((id, Vec::new()))
 }
 
+/// Try to resolve a term to an existing ID and look up its SPIR-V type.
+/// Returns the type ID if the term is a symbol reference with a known type.
+fn resolve_term_type(term: &Term, ctx: &EmitCtx) -> Option<Word> {
+    match term {
+        Term::Atom(s) => {
+            let &id = ctx.id_map.get(s.as_str())?;
+            ctx.id_to_type.get(&id).copied()
+        }
+        Term::App { op, args } => match op.as_str() {
+            "Sym" | "ISym" | "FSym" | "BSym" => {
+                let name = match args.first() {
+                    Some(Term::Atom(n)) => n.as_str(),
+                    _ => return None,
+                };
+                let &id = ctx.id_map.get(name)?;
+                ctx.id_to_type.get(&id).copied()
+            }
+            // Bridge constructors are transparent — recurse into the inner term
+            "IntToExpr" | "FloatToExpr" | "BoolToExpr" | "ExprToInt" | "ExprToFloat"
+            | "ExprToBool" => args.first().and_then(|inner| resolve_term_type(inner, ctx)),
+            _ => None,
+        },
+    }
+}
+
 /// Emit an application node.
 fn emit_app(
     op: &str,
@@ -1317,7 +1343,9 @@ fn emit_pattern(
                 return None;
             }
             let mut synth = Vec::new();
-            let (ptr, mut s) = emit_term(&args[0], result_type, ctx)?;
+            // Pointer operand type differs from result_type (loaded value type).
+            let ptr_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+            let (ptr, mut s) = emit_term(&args[0], ptr_type, ctx)?;
             synth.append(&mut s);
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
@@ -1333,7 +1361,9 @@ fn emit_pattern(
                 return None;
             }
             let mut synth = Vec::new();
-            let (composite, mut s) = emit_term(&args[0], result_type, ctx)?;
+            // Composite operand type differs from result_type (element type).
+            let composite_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+            let (composite, mut s) = emit_term(&args[0], composite_type, ctx)?;
             synth.append(&mut s);
             let index = term_as_u32(&args[1])?;
             let id = alloc_id(ctx);
@@ -1355,7 +1385,9 @@ fn emit_pattern(
             let mut synth = Vec::new();
             let (composite, mut s) = emit_term(&args[0], result_type, ctx)?;
             synth.append(&mut s);
-            let (object, mut s) = emit_term(&args[1], result_type, ctx)?;
+            // Object operand type differs from result_type (composite type).
+            let object_type = resolve_term_type(&args[1], ctx).unwrap_or(result_type);
+            let (object, mut s) = emit_term(&args[1], object_type, ctx)?;
             synth.append(&mut s);
             let index = term_as_u32(&args[2])?;
             let id = alloc_id(ctx);
@@ -1405,11 +1437,15 @@ fn emit_pattern(
                 panic!("invalid image operand mask {:#x} in OPS_TABLE", mask_bits)
             });
             let mut synth = Vec::new();
-            let (image, mut s) = emit_term(&args[0], result_type, ctx)?;
+            // Image, coordinate, and offset operand types differ from result_type.
+            let image_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+            let (image, mut s) = emit_term(&args[0], image_type, ctx)?;
             synth.append(&mut s);
-            let (coord, mut s) = emit_term(&args[1], result_type, ctx)?;
+            let coord_type = resolve_term_type(&args[1], ctx).unwrap_or(result_type);
+            let (coord, mut s) = emit_term(&args[1], coord_type, ctx)?;
             synth.append(&mut s);
-            let (offset, mut s) = emit_term(&args[2], result_type, ctx)?;
+            let offset_type = resolve_term_type(&args[2], ctx).unwrap_or(result_type);
+            let (offset, mut s) = emit_term(&args[2], offset_type, ctx)?;
             synth.append(&mut s);
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
@@ -1576,7 +1612,9 @@ fn emit_composite_construct(
     let mut synth = Vec::new();
     let mut operands = Vec::new();
     for arg in &args[..expected] {
-        let (arg_id, mut s) = emit_term(arg, result_type, ctx)?;
+        // Each component's type differs from result_type (composite type).
+        let component_type = resolve_term_type(arg, ctx).unwrap_or(result_type);
+        let (arg_id, mut s) = emit_term(arg, component_type, ctx)?;
         synth.append(&mut s);
         operands.push(rspirv::dr::Operand::IdRef(arg_id));
     }
@@ -1599,7 +1637,9 @@ fn flatten_expr_list(
     match term {
         Term::App { op, .. } if op == "ENil" => Some((Vec::new(), Vec::new())),
         Term::App { op, args } if op == "ECons" && args.len() >= 2 => {
-            let (head_id, head_synth) = emit_term(&args[0], result_type, ctx)?;
+            // Each element's type differs from result_type (composite type).
+            let head_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+            let (head_id, head_synth) = emit_term(&args[0], head_type, ctx)?;
             let (mut rest_ids, mut rest_synth) = flatten_expr_list(&args[1], result_type, ctx)?;
             let mut ids = vec![head_id];
             ids.append(&mut rest_ids);
@@ -1622,9 +1662,12 @@ fn emit_vector_shuffle(
         return None;
     }
     let mut synth = Vec::new();
-    let (v1, mut s) = emit_term(&args[0], result_type, ctx)?;
+    // Input vector types may differ from result_type (output vector type).
+    let v1_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+    let (v1, mut s) = emit_term(&args[0], v1_type, ctx)?;
     synth.append(&mut s);
-    let (v2, mut s) = emit_term(&args[1], result_type, ctx)?;
+    let v2_type = resolve_term_type(&args[1], ctx).unwrap_or(result_type);
+    let (v2, mut s) = emit_term(&args[1], v2_type, ctx)?;
     synth.append(&mut s);
     let mut operands = vec![
         rspirv::dr::Operand::IdRef(v1),
@@ -1789,6 +1832,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            id_to_type: &HashMap::new(),
         };
         let term = parse_sexpr("(Sym \"id5\")").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1813,6 +1857,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            id_to_type: &HashMap::new(),
         };
         let term = parse_sexpr("(Const 42)").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1839,6 +1884,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            id_to_type: &HashMap::new(),
         };
         let term = parse_sexpr("(Add (Const 3) (Const 5))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1869,6 +1915,7 @@ mod tests {
             type_classes: &type_classes,
             glsl_ext_id: None,
             type_widths: &type_widths,
+            id_to_type: &HashMap::new(),
         };
         let term = parse_sexpr("(IntToExpr (Sym \"id5\"))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1883,6 +1930,8 @@ mod tests {
         type_classes: &'a HashMap<Word, TypeClass>,
         type_widths: &'a HashMap<Word, u32>,
     ) -> EmitCtx<'a> {
+        static EMPTY_ID_TO_TYPE: std::sync::OnceLock<HashMap<Word, Word>> =
+            std::sync::OnceLock::new();
         EmitCtx {
             id_map,
             next_id,
@@ -1894,6 +1943,7 @@ mod tests {
             type_classes,
             glsl_ext_id: None,
             type_widths,
+            id_to_type: EMPTY_ID_TO_TYPE.get_or_init(HashMap::new),
         }
     }
 

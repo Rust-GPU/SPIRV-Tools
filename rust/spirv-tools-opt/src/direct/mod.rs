@@ -949,6 +949,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         type_classes: &type_classes,
                         glsl_ext_id: ctx.glsl_ext_id(),
                         type_widths: &type_widths,
+                        id_to_type: &ctx.id_to_type,
                     };
                     if let Some((final_id, new_insts)) =
                         emit::emit_term(term_tree, corrected_type, &mut emit_ctx)
