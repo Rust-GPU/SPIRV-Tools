@@ -33,11 +33,11 @@
       ((union e x)))
 
 ; De Morgan's laws - ONE-DIRECTIONAL to prevent explosion
-; We push BitNot INSIDE, not pull OUTSIDE (which would expand forever)
-(rule ((= e (BitNot (BitAnd x y))))
-      ((union e (BitOr (BitNot x) (BitNot y)))))
-(rule ((= e (BitNot (BitOr x y))))
-      ((union e (BitAnd (BitNot x) (BitNot y)))))
+; We pull BitNot OUTSIDE (simplifying 3 nodes → 1), not push INSIDE (which expands 1 → 3)
+(rule ((= e (BitOr (BitNot x) (BitNot y))))
+      ((union e (BitNot (BitAnd x y)))))
+(rule ((= e (BitAnd (BitNot x) (BitNot y))))
+      ((union e (BitNot (BitOr x y)))))
 
 ; Complement rules
 (rule ((= e (BitAnd x (BitNot x))))

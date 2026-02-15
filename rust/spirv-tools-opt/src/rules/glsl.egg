@@ -302,12 +302,13 @@
 ; Fma(a, b, c) = a*b + c (definition, for expansion if needed)
 ; But prefer Fma when available (single rounding, faster)
 
-; Recognize Fma patterns - ONE-DIRECTIONAL (prefer Fma over expanded form)
-; We don't expand Fma to FAdd(FMul...) since that's worse for performance
-(rule ((= e (FAdd (FMul a b) c)))
-      ((union e (Fma a b c))))
-(rule ((= e (FAdd c (FMul a b))))
-      ((union e (Fma a b c))))
+; DISABLED: Fma recognition — fires on every FAdd(FMul(...), ...) pattern,
+; creating new Fma nodes that cause exponential growth in matrix-heavy shaders.
+; Fma simplification rules below still work if Fma is already in the graph.
+; (rule ((= e (FAdd (FMul a b) c)))
+;       ((union e (Fma a b c))))
+; (rule ((= e (FAdd c (FMul a b))))
+;       ((union e (Fma a b c))))
 
 ; Fma with zero - ONE-DIRECTIONAL (simplify, don't expand)
 (rule ((= e (Fma a b (FConst c))) (= c 0.0))

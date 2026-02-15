@@ -142,22 +142,21 @@
 ; select(c, true, c) = c | true = true when c is boolean
 ; But this is the same as select(c, 1, c) = c ? 1 : c which is just 1 when c is true, c when false
 
-; Gamma distributes over operations (hoisting) - ONE-DIRECTIONAL
-; Push operations INTO Gamma, not out (pulling out creates Op(Gamma, Gamma) which explodes)
-; These rules combine two Gammas with same condition into a single Gamma
-; Integer operations use GammaI
-(rule ((= e (Add (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (Add a x) (Add b y)))))
-(rule ((= e (Sub (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (Sub a x) (Sub b y)))))
-(rule ((= e (Mul (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (Mul a x) (Mul b y)))))
-(rule ((= e (BitAnd (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (BitAnd a x) (BitAnd b y)))))
-(rule ((= e (BitOr (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (BitOr a x) (BitOr b y)))))
-(rule ((= e (BitXor (GammaI c a b) (GammaI c x y))))
-      ((union e (GammaI c (BitXor a x) (BitXor b y)))))
+; DISABLED: Gamma distribution INTO — creates new Op nodes inside both arms,
+; forming cycles with the hoisting rules below (which pull common factors OUT).
+; The hoisting rules (lines 166+) are the simplifying direction and are kept.
+; (rule ((= e (Add (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (Add a x) (Add b y)))))
+; (rule ((= e (Sub (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (Sub a x) (Sub b y)))))
+; (rule ((= e (Mul (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (Mul a x) (Mul b y)))))
+; (rule ((= e (BitAnd (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (BitAnd a x) (BitAnd b y)))))
+; (rule ((= e (BitOr (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (BitOr a x) (BitOr b y)))))
+; (rule ((= e (BitXor (GammaI c a b) (GammaI c x y))))
+;       ((union e (GammaI c (BitXor a x) (BitXor b y)))))
 
 ; Hoist common operations out of Gamma - ONE-DIRECTIONAL
 ; (c ? (x + a) : (x + b)) => x + (c ? a : b)
@@ -409,13 +408,14 @@
 ; =============================================================================
 ; Floating-Point Gamma Distribution - ONE-DIRECTIONAL
 ; =============================================================================
-; Distribution INTO GammaF (combining two conditional float values)
-(rule ((= e (FAdd (GammaF c a b) (GammaF c x y))))
-      ((union e (GammaF c (FAdd a x) (FAdd b y)))))
-(rule ((= e (FSub (GammaF c a b) (GammaF c x y))))
-      ((union e (GammaF c (FSub a x) (FSub b y)))))
-(rule ((= e (FMul (GammaF c a b) (GammaF c x y))))
-      ((union e (GammaF c (FMul a x) (FMul b y)))))
+; DISABLED: Distribution INTO GammaF — creates new FOp nodes inside both arms,
+; forming cycles with the hoisting rules below.
+; (rule ((= e (FAdd (GammaF c a b) (GammaF c x y))))
+;       ((union e (GammaF c (FAdd a x) (FAdd b y)))))
+; (rule ((= e (FSub (GammaF c a b) (GammaF c x y))))
+;       ((union e (GammaF c (FSub a x) (FSub b y)))))
+; (rule ((= e (FMul (GammaF c a b) (GammaF c x y))))
+;       ((union e (GammaF c (FMul a x) (FMul b y)))))
 
 ; Hoisting common factors OUT of GammaF - ONE-DIRECTIONAL
 (rule ((= e (GammaF c (FAdd x a) (FAdd x b))))

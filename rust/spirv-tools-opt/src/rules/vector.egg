@@ -394,9 +394,10 @@
 ; Vector Operations Distributivity
 ; =============================================================================
 
-; VecTimesScalar distributes over VecAdd - ONE-DIRECTIONAL (distribute, don't factor)
-(rule ((= e (VecTimesScalar (VecAdd a b) s)))
-      ((union e (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))))
+; DISABLED: VecTimesScalar distribution over VecAdd — creates 2 new VecTimesScalar
+; nodes per rule firing, causing exponential growth in matrix-heavy shaders.
+; (rule ((= e (VecTimesScalar (VecAdd a b) s)))
+;       ((union e (VecAdd (VecTimesScalar a s) (VecTimesScalar b s)))))
 
 ; VecTimesScalar with scalar multiplication - ONE-DIRECTIONAL (combine scalars)
 ; Note: s1 and s2 are Expr (from VecTimesScalar args), but Mul takes IntExpr.
@@ -430,12 +431,12 @@
 ; Dot Product Additional Properties
 ; =============================================================================
 
-; Dot product distributes over VecAdd - ONE-DIRECTIONAL (expand Dot)
-; Note: Dot returns FloatExpr, so use FAdd (FloatExpr + FloatExpr -> FloatExpr)
-(rule ((= e (Dot (VecAdd a b) c)))
-      ((union e (FAdd (Dot a c) (Dot b c)))))
-(rule ((= e (Dot a (VecAdd b c))))
-      ((union e (FAdd (Dot a b) (Dot a c)))))
+; DISABLED: Dot distribution over VecAdd — creates 2 new Dot nodes per rule,
+; causing exponential growth. Matrix multiply = many Dot(VecAdd(...), ...) patterns.
+; (rule ((= e (Dot (VecAdd a b) c)))
+;       ((union e (FAdd (Dot a c) (Dot b c)))))
+; (rule ((= e (Dot a (VecAdd b c))))
+;       ((union e (FAdd (Dot a b) (Dot a c)))))
 
 ; Dot product distributes over scalar multiplication - ONE-DIRECTIONAL
 ; Note: Dot returns FloatExpr, s is Expr (from VecTimesScalar), use FMul with ExprToFloat

@@ -32,10 +32,10 @@
       ((union e (Neg x))))
 (rule ((= e (Mul (Const -1) x)))
       ((union e (Neg x))))
-; Neg distribution - ONE-DIRECTIONAL: push Neg INSIDE Add/Sub, not OUTSIDE
-; This avoids Add(Neg x, Neg y) → Neg(Add(x, y)) → Add(Neg x, Neg y) cycles
-(rule ((= e (Neg (Add x y))))
-      ((union e (Add (Neg x) (Neg y)))))
+; Neg factoring - ONE-DIRECTIONAL: pull Neg OUTSIDE Add (simplifying 2 Negs → 1)
+; The reverse (pushing Neg inside) creates 2 new Neg nodes causing explosion.
+(rule ((= e (Add (Neg x) (Neg y))))
+      ((union e (Neg (Add x y)))))
 (rule ((= e (Neg (Sub x y))))
       ((union e (Sub y x))))
 (rule ((= e (Add x (Neg x))))
