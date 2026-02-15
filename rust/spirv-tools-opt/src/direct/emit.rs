@@ -122,6 +122,9 @@ pub struct EmitCtx<'a> {
     pub next_id: &'a mut Word,
     pub int32_type: Option<Word>,
     pub int64_type: Option<Word>,
+    /// Signed int32 type (OpTypeInt 32 1) for signed operations like ConvertSToF.
+    /// Separate from int32_type which may be unsigned depending on module order.
+    pub signed_int32_type: Option<Word>,
     pub float32_type: Option<Word>,
     pub float64_type: Option<Word>,
     pub bool_type: Option<Word>,
@@ -1107,6 +1110,39 @@ fn resolve_operand_type(class: TypeClass, result_type: Word, ctx: &EmitCtx) -> W
     }
 }
 
+/// For cross-class operations, try to infer the operand type from Sym atoms.
+///
+/// When one operand is a Sym (existing ID) and another is a new expression,
+/// the Sym's actual type (from id_to_type) should be used for both operands
+/// to avoid signed/unsigned or width mismatches.
+fn infer_operand_type_from_args(
+    args: &[Term],
+    arity: usize,
+    operand_class: TypeClass,
+    fallback: Word,
+    ctx: &EmitCtx,
+) -> Word {
+    for arg in &args[..arity.min(args.len())] {
+        if let Term::Atom(a) = arg {
+            if let Some(stripped) = a.strip_prefix("id") {
+                if let Ok(id) = stripped.parse::<Word>() {
+                    if let Some(&ty) = ctx.id_to_type.get(&id) {
+                        let tc = ctx
+                            .type_classes
+                            .get(&ty)
+                            .copied()
+                            .unwrap_or(TypeClass::Other);
+                        if tc == operand_class {
+                            return ty;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fallback
+}
+
 // ---------------------------------------------------------------------------
 // Core emission
 // ---------------------------------------------------------------------------
@@ -1260,6 +1296,35 @@ fn emit_pattern(
             }
             let op_result_type = resolve_result_type(result_class, result_type, ctx);
             let operand_type = resolve_operand_type(operand_class, result_type, ctx);
+            // For cross-class operations where the operand class differs from
+            // result class, the operand_type is a fallback (e.g. int32_type).
+            // Refine it to avoid signed/unsigned mismatches:
+            // 1. Signed int ops (ConvertSToF, SLessThan, etc.) → signed int type
+            // 2. Other cross-class ops → infer from Sym operand's actual type
+            let operand_type = if operand_class == TypeClass::Int
+                && result_class != operand_class
+            {
+                match opcode {
+                    Op::ConvertSToF
+                    | Op::ConvertFToS
+                    | Op::SLessThan
+                    | Op::SLessThanEqual
+                    | Op::SGreaterThan
+                    | Op::SGreaterThanEqual
+                    | Op::SDiv
+                    | Op::SRem
+                    | Op::SMod
+                    | Op::SConvert => ctx.signed_int32_type.unwrap_or(operand_type),
+                    _ => infer_operand_type_from_args(
+                        args, arity, operand_class, operand_type, ctx,
+                    ),
+                }
+            } else if result_class != operand_class {
+                // Non-int cross-class: infer from Sym args for consistency
+                infer_operand_type_from_args(args, arity, operand_class, operand_type, ctx)
+            } else {
+                operand_type
+            };
             let mut synth = Vec::new();
             let mut operand_ids = Vec::with_capacity(arity);
             for arg in &args[..arity] {
@@ -1886,6 +1951,7 @@ mod tests {
             next_id: &mut next_id,
             int32_type: Some(10),
             int64_type: None,
+            signed_int32_type: None,
             float32_type: Some(11),
             float64_type: None,
             bool_type: Some(12),
@@ -1912,6 +1978,7 @@ mod tests {
             next_id: &mut next_id,
             int32_type: Some(10),
             int64_type: None,
+            signed_int32_type: None,
             float32_type: Some(11),
             float64_type: None,
             bool_type: Some(12),
@@ -1940,6 +2007,7 @@ mod tests {
             next_id: &mut next_id,
             int32_type: Some(10),
             int64_type: None,
+            signed_int32_type: None,
             float32_type: Some(11),
             float64_type: None,
             bool_type: Some(12),
@@ -1972,6 +2040,7 @@ mod tests {
             next_id: &mut next_id,
             int32_type: Some(10),
             int64_type: None,
+            signed_int32_type: None,
             float32_type: Some(11),
             float64_type: None,
             bool_type: Some(12),
@@ -2001,6 +2070,7 @@ mod tests {
             next_id,
             int32_type: Some(10),
             int64_type: None,
+            signed_int32_type: None,
             float32_type: Some(11),
             float64_type: None,
             bool_type: Some(12),

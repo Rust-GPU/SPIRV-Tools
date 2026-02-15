@@ -954,6 +954,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let bool_type = find_spirv_type(module, Op::TypeBool, None);
     let float32_type = find_spirv_type(module, Op::TypeFloat, Some(32));
     let float64_type = find_spirv_type(module, Op::TypeFloat, Some(64));
+    // Signed int types for operations like ConvertSToF where signedness matters
+    let signed_int32_type = find_signed_int_type(module, 32);
 
     // Build composite → element type mapping for CompositeConstruct emission
     let mut composite_element_types: HashMap<Word, Word> = HashMap::new();
@@ -1056,6 +1058,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         next_id: &mut next_id,
                         int32_type,
                         int64_type,
+                        signed_int32_type,
                         float32_type,
                         float64_type,
                         bool_type,
@@ -2261,29 +2264,33 @@ impl TypeClass {
 
 /// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
 fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
-    let matches_width = |inst: &Instruction| {
-        inst.class.opcode == opcode
-            && match width {
-                Some(w) => inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w)),
-                None => true,
-            }
-    };
-    // For OpTypeInt, prefer signed (signedness=1). The int32_type/int64_type
-    // fallback is used in resolve_operand_type for cross-class operations like
-    // ConvertSToF. If the fallback is unsigned, cross-compilers (SPIRV-Cross)
-    // may generate unsigned conversion code, turning negative values to zero.
-    if opcode == Op::TypeInt {
-        if let Some(inst) = module.types_global_values.iter().find(|inst| {
-            matches_width(inst)
-                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
-        }) {
-            return inst.result_id;
-        }
-    }
     module
         .types_global_values
         .iter()
-        .find(|inst| matches_width(inst))
+        .find(|inst| {
+            inst.class.opcode == opcode
+                && match width {
+                    Some(w) => {
+                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
+                    }
+                    None => true,
+                }
+        })
+        .and_then(|inst| inst.result_id)
+}
+
+/// Find the signed variant of an integer type (signedness=1).
+/// Used for signed operations like ConvertSToF where cross-compilers
+/// may generate unsigned conversion code if the type is unsigned.
+fn find_signed_int_type(module: &Module, width: u32) -> Option<Word> {
+    module
+        .types_global_values
+        .iter()
+        .find(|inst| {
+            inst.class.opcode == Op::TypeInt
+                && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(width))
+                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
+        })
         .and_then(|inst| inst.result_id)
 }
 
