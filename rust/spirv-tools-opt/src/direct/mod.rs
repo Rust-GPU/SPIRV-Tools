@@ -220,16 +220,43 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                     ) = (inst.operands.first(), inst.operands.get(1))
                     {
                         let label_map = &func_block_labels[func_idx];
-                        if let Some(&merge_idx) = label_map.get(merge_label) {
-                            let continue_idx = label_map.get(continue_label).copied();
-                            // Loop body spans from header to just before merge block
-                            let body_indices: Vec<usize> = (block_idx..merge_idx).collect();
-                            loop_constructs.push(LoopInfo {
-                                body_block_indices: body_indices,
-                                continue_block_idx: continue_idx,
-                                func_idx,
-                            });
+                        let continue_idx = label_map.get(continue_label).copied();
+                        // Collect loop body via CFG traversal from header, stopping
+                        // at the merge block. This handles non-contiguous block layouts
+                        // that a simple (header..merge) index range would miss.
+                        let mut body_indices: Vec<usize> = Vec::new();
+                        let mut visited: HashSet<usize> = HashSet::new();
+                        let mut worklist: Vec<usize> = vec![block_idx];
+                        let merge_idx = label_map.get(merge_label).copied();
+                        while let Some(idx) = worklist.pop() {
+                            if !visited.insert(idx) {
+                                continue;
+                            }
+                            // Don't include the merge block itself
+                            if Some(idx) == merge_idx {
+                                continue;
+                            }
+                            body_indices.push(idx);
+                            // Follow all branch targets from this block
+                            if let Some(blk) = func.blocks.get(idx) {
+                                for bi in &blk.instructions {
+                                    for op in &bi.operands {
+                                        if let Some(target_label) = op.id_ref_any() {
+                                            if let Some(&target_idx) =
+                                                label_map.get(&target_label)
+                                            {
+                                                worklist.push(target_idx);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
+                        loop_constructs.push(LoopInfo {
+                            body_block_indices: body_indices,
+                            continue_block_idx: continue_idx,
+                            func_idx,
+                        });
                     }
                 }
             }
@@ -467,12 +494,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
                         theta_bound_ids.insert(id);
 
-                        // Union original ID with Theta - after saturation, the egraph will
-                        // have propagated LoopInvariant through the expression if applicable
-                        let union_cmd = format!("(union id{} theta_{})", id, id);
-                        egraph
-                            .parse_and_run_program(None, &union_cmd)
-                            .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;
+                        // NOTE: We intentionally do NOT union id{N} with theta_{N}.
+                        // Doing so puts FConst(0.0)/Const(0)/BoolConst(0) init values
+                        // into the same e-class as the actual computation, which can
+                        // cause the extractor to pick the zero constant instead of
+                        // the real value. The Theta term exists in the egraph so
+                        // LoopInvariant rules can still detect and mark invariants.
                     }
                 }
             }
@@ -1868,6 +1895,14 @@ fn remove_dead_instructions(module: &mut Module, true_roots: &HashSet<Word>) -> 
                     Op::Constant | Op::ConstantTrue | Op::ConstantFalse
                 ) {
                     used_ids.insert(id);
+                }
+            }
+            // Also mark operand references from types_global_values as used.
+            // OpConstantComposite and other globals may reference function-body
+            // IDs that were aliased/rewritten by the optimizer.
+            for op in &inst.operands {
+                if let Some(ref_id) = op.id_ref_any() {
+                    used_ids.insert(ref_id);
                 }
             }
         }
