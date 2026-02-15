@@ -732,7 +732,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // - DCE-aware constant folding (dead branches are identified)
     // - Partial DCE (RVSDG Gamma/Theta branches marked dead when condition is constant)
     // - Optimizations that expose new DCE opportunities
-    let run_cmd = "(run-schedule (repeat 10 (run)))";
+    let run_cmd = "(run-schedule (repeat 20 (run)))";
     egraph
         .parse_and_run_program(None, run_cmd)
         .map_err(|e| EgglogOptError::ExecutionError(e.to_string()))?;

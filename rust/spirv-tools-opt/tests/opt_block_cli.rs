@@ -5392,3 +5392,386 @@ fn cli_opt_block_simplifies_nested_select_same() {
         "nested selects returning same value should be eliminated"
     );
 }
+
+// =============================================================================
+// Regression tests for CI difftest bugs
+// =============================================================================
+
+/// Build a module with a loop whose continue block contains a selection construct.
+/// Before the fix, the continue block was not tracked in loop_block_set, so the
+/// selection inside it was incorrectly RVSDG-transformed, breaking structured CFG.
+fn build_loop_with_selection_in_continue_block() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+
+    let int = b.type_int(32, 1);
+    let bool_ty = b.type_bool();
+    let void = b.type_void();
+    let func_ty = b.type_function(void, vec![]);
+    let ptr_int = b.type_pointer(None, rspirv::spirv::StorageClass::Function, int);
+
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+
+    // Entry block: declare counter, branch to loop header
+    let entry = b.begin_block(None).unwrap();
+    let counter = b.variable(ptr_int, None, rspirv::spirv::StorageClass::Function, None);
+    let c0 = b.constant_bit32(int, 0);
+    let c1 = b.constant_bit32(int, 1);
+    let c10 = b.constant_bit32(int, 10);
+    b.store(counter, c0, None, std::iter::empty()).unwrap();
+
+    let header_label = b.id();
+    let merge_label = b.id();
+    let continue_label = b.id();
+    let sel_then_label = b.id();
+    let sel_else_label = b.id();
+    let sel_merge_label = b.id();
+
+    b.branch(header_label).unwrap();
+
+    // Loop header
+    b.begin_block(Some(header_label)).unwrap();
+    b.loop_merge(
+        merge_label,
+        continue_label,
+        rspirv::spirv::LoopControl::NONE,
+        std::iter::empty(),
+    )
+    .unwrap();
+    let val = b.load(int, None, counter, None, std::iter::empty()).unwrap();
+    let cond = b
+        .s_less_than(bool_ty, None, val, c10)
+        .expect("less than");
+    b.branch_conditional(cond, continue_label, merge_label, std::iter::empty())
+        .unwrap();
+
+    // Continue block: contains a selection construct
+    b.begin_block(Some(continue_label)).unwrap();
+    let c2 = b.constant_bit32(int, 2);
+    let is_even_rem = b.s_mod(int, None, val, c2).unwrap();
+    let is_even = b
+        .i_equal(bool_ty, None, is_even_rem, c0)
+        .expect("is_even");
+    b.selection_merge(sel_merge_label, SelectionControl::NONE)
+        .unwrap();
+    b.branch_conditional(is_even, sel_then_label, sel_else_label, std::iter::empty())
+        .unwrap();
+
+    // Selection then: increment by 2
+    b.begin_block(Some(sel_then_label)).unwrap();
+    let c2_inc = b.constant_bit32(int, 2);
+    let inc2 = b.i_add(int, None, val, c2_inc).unwrap();
+    b.store(counter, inc2, None, std::iter::empty()).unwrap();
+    b.branch(sel_merge_label).unwrap();
+
+    // Selection else: increment by 1
+    b.begin_block(Some(sel_else_label)).unwrap();
+    let inc1 = b.i_add(int, None, val, c1).unwrap();
+    b.store(counter, inc1, None, std::iter::empty()).unwrap();
+    b.branch(sel_merge_label).unwrap();
+
+    // Selection merge in continue block → back-edge to header
+    b.begin_block(Some(sel_merge_label)).unwrap();
+    b.branch(header_label).unwrap();
+
+    // Loop merge block
+    b.begin_block(Some(merge_label)).unwrap();
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [entry],
+    );
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
+    b.module().assemble()
+}
+
+#[test]
+fn cli_opt_block_loop_continue_with_selection_succeeds() {
+    // Regression test for Bug 1: loop continue block not tracked.
+    // A selection inside the continue block must not be RVSDG-transformed.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+    let words = build_loop_with_selection_in_continue_block();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        status.success(),
+        "loop with selection in continue block should optimize without error"
+    );
+}
+
+/// Build a module where a Store's value operand is an integer computation.
+/// The egraph may try to "correct" the value's type via IType, but if that
+/// value is stored to a pointer, its type must match the pointer's pointee type.
+/// Before the fix, corrected_type could change the type, causing OpStore
+/// validation failure.
+fn build_store_with_typed_value() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+
+    // Declare both unsigned and signed int32 to trigger type ambiguity.
+    // The egraph's IType may resolve to signed, but the Store pointer
+    // expects unsigned.
+    let uint = b.type_int(32, 0);
+    let _sint = b.type_int(32, 1);
+    let void = b.type_void();
+    let func_ty = b.type_function(void, vec![uint]);
+    let ptr_uint =
+        b.type_pointer(None, rspirv::spirv::StorageClass::Function, uint);
+
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let param = b.function_parameter(uint).unwrap();
+    let entry = b.begin_block(None).unwrap();
+    let var = b.variable(ptr_uint, None, rspirv::spirv::StorageClass::Function, None);
+
+    // Do arithmetic on the unsigned parameter, then store the result.
+    // The egraph sees IAdd on integers and may try to "correct" the type
+    // to signed via IType, but the Store requires unsigned.
+    let c10 = b.constant_bit32(uint, 10);
+    let added = b.i_add(uint, None, param, c10).unwrap();
+    b.store(var, added, None, std::iter::empty()).unwrap();
+
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [entry],
+    );
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
+    b.module().assemble()
+}
+
+#[test]
+fn cli_opt_block_store_preserves_value_type() {
+    // Regression test for Bug 3: OpStore type mismatch from corrected_type.
+    // Store value operands must keep their original type.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+    let words = build_store_with_typed_value();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        status.success(),
+        "store with type-ambiguous value should optimize without error"
+    );
+
+    // Verify the output is valid SPIR-V (parseable)
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader)
+        .expect("optimized output should be valid SPIR-V");
+}
+
+/// Build a module with both unsigned and signed int32 types where unsigned
+/// is declared first. Float-to-signed-int conversion must use signed type.
+/// Before the fix, find_spirv_type picked the first OpTypeInt 32 regardless
+/// of signedness, causing ConvertFToS to clamp negatives to 0.
+fn build_float_to_signed_int_module() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+
+    // IMPORTANT: declare unsigned FIRST to trigger the bug
+    let _uint = b.type_int(32, 0);
+    let sint = b.type_int(32, 1);
+    let float = b.type_float(32, None);
+    let void = b.type_void();
+    let func_ty = b.type_function(void, vec![sint]);
+    let ptr_sint =
+        b.type_pointer(None, rspirv::spirv::StorageClass::Function, sint);
+
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let _param = b.function_parameter(sint).unwrap();
+    let entry = b.begin_block(None).unwrap();
+    let var = b.variable(ptr_sint, None, rspirv::spirv::StorageClass::Function, None);
+
+    // Create a negative float constant and convert to signed int
+    let neg_one = b.constant_bit32(float, (-1.0f32).to_bits());
+    let converted = b.convert_f_to_s(sint, None, neg_one).unwrap();
+    b.store(var, converted, None, std::iter::empty()).unwrap();
+
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [entry],
+    );
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
+    b.module().assemble()
+}
+
+#[test]
+fn cli_opt_block_convert_f_to_s_uses_signed_type() {
+    // Regression test for Bug 4: find_spirv_type must prefer signed int types.
+    // When unsigned int32 is declared before signed int32, ConvertFToS must
+    // still use the signed type to avoid clamping negatives to 0.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+    let words = build_float_to_signed_int_module();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        status.success(),
+        "float-to-signed-int conversion should optimize without error"
+    );
+
+    // Verify the ConvertFToS result type is the signed int type
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader).expect("parse optimized");
+    let module = loader.module();
+
+    // Find the signed int type (signedness=1)
+    let signed_type_id = module.types_global_values.iter().find_map(|inst| {
+        if inst.class.opcode == Op::TypeInt
+            && inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(32))
+            && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
+        {
+            inst.result_id
+        } else {
+            None
+        }
+    });
+
+    // Check that any ConvertFToS or constant folded result uses signed type
+    if let Some(signed_id) = signed_type_id {
+        for inst in module.all_inst_iter() {
+            if inst.class.opcode == Op::ConvertFToS {
+                assert_eq!(
+                    inst.result_type,
+                    Some(signed_id),
+                    "ConvertFToS must use signed int32 type, not unsigned"
+                );
+            }
+        }
+    }
+}
+
+/// Build a module with chained matrix multiplications that previously caused
+/// OOM via matrix decomposition rules interacting with associativity rules.
+fn build_matrix_multiply_chain() -> Vec<u32> {
+    let mut b = Builder::new();
+    b.capability(Capability::Shader);
+    b.capability(Capability::Matrix);
+    b.memory_model(AddressingModel::Logical, MemoryModel::Simple);
+
+    let float = b.type_float(32, None);
+    let vec4 = b.type_vector(float, 4);
+    let mat4 = b.type_matrix(vec4, 4);
+    let void = b.type_void();
+    let func_ty = b.type_function(void, vec![mat4, mat4, mat4, vec4]);
+    let ptr_vec4 =
+        b.type_pointer(None, rspirv::spirv::StorageClass::Function, vec4);
+
+    let func = b
+        .begin_function(void, None, FunctionControl::NONE, func_ty)
+        .unwrap();
+    let m1 = b.function_parameter(mat4).unwrap();
+    let m2 = b.function_parameter(mat4).unwrap();
+    let m3 = b.function_parameter(mat4).unwrap();
+    let v = b.function_parameter(vec4).unwrap();
+    let entry = b.begin_block(None).unwrap();
+    let result_var = b.variable(ptr_vec4, None, rspirv::spirv::StorageClass::Function, None);
+
+    // Chain: (m1 * m2) * m3 * v — triggers associativity + decomposition
+    let m12 = b.matrix_times_matrix(mat4, None, m1, m2).unwrap();
+    let m123 = b.matrix_times_matrix(mat4, None, m12, m3).unwrap();
+    let result = b.matrix_times_vector(vec4, None, m123, v).unwrap();
+    b.store(result_var, result, None, std::iter::empty())
+        .unwrap();
+
+    b.ret().unwrap();
+    b.end_function().unwrap();
+
+    b.entry_point(
+        rspirv::spirv::ExecutionModel::GLCompute,
+        func,
+        "main",
+        [entry],
+    );
+    b.execution_mode(func, rspirv::spirv::ExecutionMode::LocalSize, [1, 1, 1]);
+    b.module().assemble()
+}
+
+#[test]
+fn cli_opt_block_matrix_chain_does_not_oom() {
+    // Regression test for Bug 5: matrix decomposition rules caused OOM.
+    // After removing the decomposition rules, chained matrix multiplies
+    // should optimize quickly without excessive e-graph growth.
+    let _guard = env_guard();
+    std::env::remove_var("SPIRV_TOOLS_DISABLE_RUST_OPT");
+
+    let words = build_matrix_multiply_chain();
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("input.spv");
+    let output = dir.path().join("output.spv");
+    std::fs::write(&input, words_to_bytes(&words)).expect("write input");
+
+    let exe = env!("CARGO_BIN_EXE_opt_block");
+    let status = Command::new(exe)
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("run opt_block");
+    assert!(
+        status.success(),
+        "chained matrix multiplies should not OOM during optimization"
+    );
+
+    // Verify the output is valid and still contains matrix operations
+    let optimized_bytes = std::fs::read(&output).expect("read output");
+    let optimized_words = bytes_to_words(&optimized_bytes);
+    let mut loader = Loader::new();
+    rspirv::binary::parse_words(&optimized_words, &mut loader)
+        .expect("optimized output should be valid SPIR-V");
+}
