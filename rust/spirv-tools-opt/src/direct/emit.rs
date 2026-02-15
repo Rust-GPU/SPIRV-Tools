@@ -1267,6 +1267,24 @@ fn emit_pattern(
                 synth.append(&mut s);
                 operand_ids.push(rspirv::dr::Operand::IdRef(arg_id));
             }
+            // Validate operand type widths match the result type.
+            // The egraph may unify values of different SPIR-V widths (e.g. i32
+            // and i64 are both IntExpr). When extraction picks a mismatched-width
+            // operand, the emitted instruction would be invalid. Bail out so the
+            // extraction loop keeps the original instruction.
+            let result_width = ctx.type_widths.get(&op_result_type);
+            if result_width.is_some() && result_class == operand_class {
+                for op_id in &operand_ids {
+                    if let rspirv::dr::Operand::IdRef(id) = op_id {
+                        if let Some(arg_type) = ctx.id_to_type.get(id) {
+                            let arg_width = ctx.type_widths.get(arg_type);
+                            if arg_width.is_some() && arg_width != result_width {
+                                return None;
+                            }
+                        }
+                    }
+                }
+            }
             let id = alloc_id(ctx);
             synth.push(Instruction::new(
                 opcode,
