@@ -570,21 +570,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
     // For each selection construct, convert to RVSDG EffGamma
     for (sel_idx, sel) in selection_constructs.iter().enumerate() {
-        // Skip selection constructs inside loop bodies to avoid breaking continue block reachability
-        if loop_block_set.contains(&(sel.func_idx, sel.header_block_idx)) {
-            continue;
-        }
-        // Skip selections whose branch targets or merge block overlap with loop continue blocks
+        // Skip selections that overlap with loop bodies or continue blocks.
+        // Check ALL blocks involved (header, then, else, merge) — not just the header —
+        // because SPIR-V blocks may not be laid out contiguously.
         {
             let label_map = &func_block_labels[sel.func_idx];
-            let touches_continue = [&sel.then_label, &sel.else_label, &sel.merge_label]
-                .iter()
-                .any(|label| {
-                    label_map
-                        .get(label)
-                        .map_or(false, |&idx| continue_block_set.contains(&(sel.func_idx, idx)))
-                });
-            if touches_continue {
+            let in_loop = loop_block_set.contains(&(sel.func_idx, sel.header_block_idx))
+                || [&sel.then_label, &sel.else_label, &sel.merge_label]
+                    .iter()
+                    .any(|label| {
+                        label_map.get(label).map_or(false, |&idx| {
+                            loop_block_set.contains(&(sel.func_idx, idx))
+                                || continue_block_set.contains(&(sel.func_idx, idx))
+                        })
+                    });
+            if in_loop {
                 continue;
             }
         }
@@ -644,10 +644,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
 
             // Create the EffGamma term
             let effect_var = format!("eff_sel{}", sel_idx);
-            // Use BSym for condition (conditions are always boolean).
-            // We use a synthetic name "cond{N}" to preserve the conditional structure
-            // so constant folding doesn't eliminate the gamma during saturation.
-            let cond_sym = format!("(BSym \"cond{}\")", cond_id);
+            // Use the actual condition variable from the egraph so that
+            // Gamma simplification rules can properly track arm correspondence.
+            // A synthetic "cond{N}" would be disconnected from the actual value,
+            // allowing incorrect e-class merges and arm swaps.
+            let cond_sym = if ctx.id_to_term.contains_key(&cond_id) {
+                format!("id{}", cond_id)
+            } else {
+                format!("(BSym \"id{}\")", cond_id)
+            };
 
             let eff_gamma = format!(
                 "(let {} (EffGamma {} {} {}))",
@@ -1772,6 +1777,29 @@ fn resolve_aliases(module: &mut Module, id_aliases: &HashMap<Word, Word>) {
         final_aliases.insert(from, target);
     }
 
+    // Resolve aliases in types_global_values (constants, composite constants, etc.)
+    for inst in &mut module.types_global_values {
+        for op in &mut inst.operands {
+            if let Some(ref_id) = op.id_ref_any() {
+                if let Some(&target) = final_aliases.get(&ref_id) {
+                    *op = rspirv::dr::Operand::IdRef(target);
+                }
+            }
+        }
+    }
+
+    // Resolve aliases in annotations (decorations referencing value IDs)
+    for inst in &mut module.annotations {
+        for op in &mut inst.operands {
+            if let Some(ref_id) = op.id_ref_any() {
+                if let Some(&target) = final_aliases.get(&ref_id) {
+                    *op = rspirv::dr::Operand::IdRef(target);
+                }
+            }
+        }
+    }
+
+    // Resolve aliases in function body instructions
     for func in &mut module.functions {
         for block in &mut func.blocks {
             for inst in &mut block.instructions {

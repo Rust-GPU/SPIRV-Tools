@@ -1259,9 +1259,11 @@ fn build_selection_return_merge_module() -> (Vec<u32>, u32, u32, u32, u32, u32) 
     let merge_label = b.id();
     let then_label = b.id();
     let else_label = b.id();
-    let cond = b.constant_true(bool_ty);
 
     b.begin_block(None).unwrap();
+    // Use a non-constant condition (comparison of parameters) so constant
+    // folding doesn't eliminate the branch — we want to test merge-return.
+    let cond = b.s_less_than(bool_ty, None, x, y).unwrap();
     b.selection_merge(merge_label, SelectionControl::NONE)
         .expect("selection merge");
     b.branch_conditional(cond, then_label, else_label, std::iter::empty())
