@@ -1325,6 +1325,9 @@ fn emit_pattern(
             } else {
                 operand_type
             };
+            // Save next_id before recursive emission so we can rollback
+            // id_map on width validation failure (see below).
+            let saved_next_id = *ctx.next_id;
             let mut synth = Vec::new();
             let mut operand_ids = Vec::with_capacity(arity);
             for arg in &args[..arity] {
@@ -1337,6 +1340,11 @@ fn emit_pattern(
             // and i64 are both IntExpr). When extraction picks a mismatched-width
             // operand, the emitted instruction would be invalid. Bail out so the
             // extraction loop keeps the original instruction.
+            //
+            // On failure, rollback id_map entries created by the recursive
+            // emit_term calls above. Without this, constant dedup keys
+            // (e.g. "const_<type>_42") would point to IDs that were allocated
+            // but never defined, causing "undefined id" errors downstream.
             let result_width = ctx.type_widths.get(&op_result_type);
             if result_width.is_some() && result_class == operand_class {
                 for op_id in &operand_ids {
@@ -1344,6 +1352,11 @@ fn emit_pattern(
                         if let Some(arg_type) = ctx.id_to_type.get(id) {
                             let arg_width = ctx.type_widths.get(arg_type);
                             if arg_width.is_some() && arg_width != result_width {
+                                // Rollback: remove all id_map entries whose
+                                // values are IDs allocated during this attempt.
+                                let rollback = saved_next_id;
+                                *ctx.next_id = rollback;
+                                ctx.id_map.retain(|_, v| *v < rollback);
                                 return None;
                             }
                         }
