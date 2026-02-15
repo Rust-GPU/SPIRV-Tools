@@ -1024,27 +1024,27 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 // Check if the result is just a reference to another ID
                 if let Some(alias_id) = parse_sym_alias_from_term(parsed_term.as_ref(), &id_map) {
                     if alias_id != id {
-                        // Only alias when both IDs have the same SPIR-V type.
-                        // The egraph may unify values across SPIR-V types (e.g. two
-                        // constants with the same bit pattern but different type IDs).
-                        // Aliasing across types would cause OpStore type mismatches
-                        // when resolve_aliases replaces operand references.
+                        // Only alias and emit CopyObject when both IDs have the
+                        // same SPIR-V type. The egraph may unify values across
+                        // SPIR-V types (e.g. two constants with the same bit
+                        // pattern but different type IDs, or Vec4/Vec2 both as
+                        // Expr). CopyObject requires operand type == result type.
                         let type_matches = ctx.id_to_type.get(&id)
                             == ctx.id_to_type.get(&alias_id);
                         if type_matches {
                             id_aliases.insert(id, alias_id);
+                            used_ids.insert(alias_id);
+                            // Emit CopyObject to maintain SSA form
+                            optimized_instructions.insert(
+                                id,
+                                Instruction::new(
+                                    Op::CopyObject,
+                                    Some(result_type),
+                                    Some(id),
+                                    vec![rspirv::dr::Operand::IdRef(alias_id)],
+                                ),
+                            );
                         }
-                        used_ids.insert(alias_id);
-                        // Emit CopyObject to maintain SSA form
-                        optimized_instructions.insert(
-                            id,
-                            Instruction::new(
-                                Op::CopyObject,
-                                Some(result_type),
-                                Some(id),
-                                vec![rspirv::dr::Operand::IdRef(alias_id)],
-                            ),
-                        );
                     }
                 } else if let Some(ref term_tree) = parsed_term {
                     // Use the original result_type from the SPIR-V module.
