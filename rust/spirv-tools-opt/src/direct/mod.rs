@@ -632,11 +632,15 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             let label_map = &func_block_labels[sel.func_idx];
             let merge_idx = label_map.get(&sel.merge_label).copied();
             let in_loop = if let Some(merge_idx) = merge_idx {
-                // Check all blocks from header to merge (inclusive)
-                (sel.header_block_idx..=merge_idx).any(|idx| {
-                    loop_block_set.contains(&(sel.func_idx, idx))
-                        || continue_block_set.contains(&(sel.func_idx, idx))
-                })
+                // Check all blocks from header to merge (inclusive).
+                if merge_idx < sel.header_block_idx {
+                    true // Non-standard block ordering — skip to be safe
+                } else {
+                    (sel.header_block_idx..=merge_idx).any(|idx| {
+                        loop_block_set.contains(&(sel.func_idx, idx))
+                            || continue_block_set.contains(&(sel.func_idx, idx))
+                    })
+                }
             } else {
                 // Can't resolve merge — skip to be safe
                 true
@@ -754,10 +758,14 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             let label_map = &func_block_labels[sw.func_idx];
             let merge_idx = label_map.get(&sw.merge_label).copied();
             let in_loop = if let Some(merge_idx) = merge_idx {
-                (sw.header_block_idx..=merge_idx).any(|idx| {
-                    loop_block_set.contains(&(sw.func_idx, idx))
-                        || continue_block_set.contains(&(sw.func_idx, idx))
-                })
+                if merge_idx < sw.header_block_idx {
+                    true // Non-standard block ordering — skip to be safe
+                } else {
+                    (sw.header_block_idx..=merge_idx).any(|idx| {
+                        loop_block_set.contains(&(sw.func_idx, idx))
+                            || continue_block_set.contains(&(sw.func_idx, idx))
+                    })
+                }
             } else {
                 true
             };

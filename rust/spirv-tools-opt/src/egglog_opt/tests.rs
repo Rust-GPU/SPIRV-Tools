@@ -6557,7 +6557,9 @@ fn test_boolconst_logical_tautology() {
 
 #[test]
 fn test_boolconst_float_comparison_reflexive() {
-    // FOrdEq(x, x) should produce BoolConst(1)
+    // FOrdEq(x, x) must NOT fold to BoolConst(1) because x could be NaN.
+    // IEEE 754: NaN is not ordered with itself, so FOrdEq(NaN, NaN) = false.
+    // Only FOrdLt(x,x) and FOrdGt(x,x) are always false (correct for NaN too).
     let mut egraph = create_spirv_egraph().unwrap();
 
     egraph
@@ -6566,7 +6568,9 @@ fn test_boolconst_float_comparison_reflexive() {
             r#"
         (let x (FSym "f"))
         (let root (FOrdEq x x))
-        (let expected (BoolConst 1))
+        (let wrong (BoolConst 1))
+        (let lt_root (FOrdLt x x))
+        (let false_val (BoolConst 0))
     "#,
         )
         .unwrap();
@@ -6574,8 +6578,19 @@ fn test_boolconst_float_comparison_reflexive() {
         .parse_and_run_program(None, "(run-schedule (repeat 10 (run)))")
         .unwrap();
 
-    let check = egraph.parse_and_run_program(None, "(check (= root expected))");
-    assert!(check.is_ok(), "FOrdEq(x, x) should fold to BoolConst(1)");
+    // FOrdEq(x,x) must NOT be folded (NaN correctness)
+    let check = egraph.parse_and_run_program(None, "(check (= root wrong))");
+    assert!(
+        check.is_err(),
+        "FOrdEq(x, x) must NOT fold to BoolConst(1) — wrong for NaN"
+    );
+
+    // FOrdLt(x,x) IS correctly folded to BoolConst(0)
+    let check2 = egraph.parse_and_run_program(None, "(check (= lt_root false_val))");
+    assert!(
+        check2.is_ok(),
+        "FOrdLt(x, x) should fold to BoolConst(0)"
+    );
 }
 
 #[test]

@@ -459,16 +459,24 @@
 ; =============================================================================
 
 ; Floating-point reflexive comparisons
+; DISABLED: Ordered float reflexive comparisons — wrong for NaN.
+; IEEE 754: NaN is NOT ordered with itself, so FOrdLe(NaN,NaN) = false,
+; FOrdEq(NaN,NaN) = false, etc. Only unordered comparisons return true for NaN.
+; The correct rules would be:
+;   FOrdEq(x,x) = LogNot(IsNan(x))
+;   FOrdLt(x,x) = BoolConst(0) (correct: nothing is strictly less than itself)
+;   FOrdGt(x,x) = BoolConst(0) (correct: same)
+; FOrdLt/FOrdGt reflexive rules ARE correct (strict inequality is always false).
 (rule ((= e (FOrdLt a a)))
       ((union e (BoolConst 0))))
 (rule ((= e (FOrdGt a a)))
       ((union e (BoolConst 0))))
-(rule ((= e (FOrdLe a a)))
-      ((union e (BoolConst 1))))
-(rule ((= e (FOrdGe a a)))
-      ((union e (BoolConst 1))))
-(rule ((= e (FOrdEq a a)))
-      ((union e (BoolConst 1))))
+; (rule ((= e (FOrdLe a a)))
+;       ((union e (BoolConst 1))))
+; (rule ((= e (FOrdGe a a)))
+;       ((union e (BoolConst 1))))
+; (rule ((= e (FOrdEq a a)))
+;       ((union e (BoolConst 1))))
 (rule ((= e (FOrdNe a a)))
       ((union e (BoolConst 0))))
 
