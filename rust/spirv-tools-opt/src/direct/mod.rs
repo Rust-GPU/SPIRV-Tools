@@ -237,15 +237,27 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 continue;
                             }
                             body_indices.push(idx);
-                            // Follow all branch targets from this block
+                            // Follow control-flow edges (branch targets) from this block.
+                            // Only terminators (Branch/BranchConditional/Switch) and
+                            // merge instructions (LoopMerge/SelectionMerge) reference
+                            // block labels as operands.
                             if let Some(blk) = func.blocks.get(idx) {
                                 for bi in &blk.instructions {
-                                    for op in &bi.operands {
-                                        if let Some(target_label) = op.id_ref_any() {
-                                            if let Some(&target_idx) =
-                                                label_map.get(&target_label)
-                                            {
-                                                worklist.push(target_idx);
+                                    if matches!(
+                                        bi.class.opcode,
+                                        Op::Branch
+                                            | Op::BranchConditional
+                                            | Op::Switch
+                                            | Op::LoopMerge
+                                            | Op::SelectionMerge
+                                    ) {
+                                        for op in &bi.operands {
+                                            if let Some(target_label) = op.id_ref_any() {
+                                                if let Some(&target_idx) =
+                                                    label_map.get(&target_label)
+                                                {
+                                                    worklist.push(target_idx);
+                                                }
                                             }
                                         }
                                     }
@@ -974,8 +986,16 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                 // Check if the result is just a reference to another ID
                 if let Some(alias_id) = parse_sym_alias_from_term(parsed_term.as_ref(), &id_map) {
                     if alias_id != id {
-                        // This instruction becomes an alias to another value
-                        id_aliases.insert(id, alias_id);
+                        // Only alias when both IDs have the same SPIR-V type.
+                        // The egraph may unify values across SPIR-V types (e.g. two
+                        // constants with the same bit pattern but different type IDs).
+                        // Aliasing across types would cause OpStore type mismatches
+                        // when resolve_aliases replaces operand references.
+                        let type_matches = ctx.id_to_type.get(&id)
+                            == ctx.id_to_type.get(&alias_id);
+                        if type_matches {
+                            id_aliases.insert(id, alias_id);
+                        }
                         used_ids.insert(alias_id);
                         // Emit CopyObject to maintain SSA form
                         optimized_instructions.insert(
@@ -1019,7 +1039,12 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                             // emit_term resolved to an existing ID — emit CopyObject
                             // if it's a different ID, or skip if same
                             if final_id != id {
-                                id_aliases.insert(id, final_id);
+                                // Only alias when SPIR-V types match (see above)
+                                let type_matches = ctx.id_to_type.get(&id)
+                                    == ctx.id_to_type.get(&final_id);
+                                if type_matches {
+                                    id_aliases.insert(id, final_id);
+                                }
                                 used_ids.insert(final_id);
                                 optimized_instructions.insert(
                                     id,
