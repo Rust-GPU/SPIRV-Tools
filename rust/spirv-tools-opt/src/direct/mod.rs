@@ -2261,18 +2261,29 @@ impl TypeClass {
 
 /// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
 fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
+    let matches_width = |inst: &Instruction| {
+        inst.class.opcode == opcode
+            && match width {
+                Some(w) => inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w)),
+                None => true,
+            }
+    };
+    // For OpTypeInt, prefer signed (signedness=1). The int32_type/int64_type
+    // fallback is used in resolve_operand_type for cross-class operations like
+    // ConvertSToF. If the fallback is unsigned, cross-compilers (SPIRV-Cross)
+    // may generate unsigned conversion code, turning negative values to zero.
+    if opcode == Op::TypeInt {
+        if let Some(inst) = module.types_global_values.iter().find(|inst| {
+            matches_width(inst)
+                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
+        }) {
+            return inst.result_id;
+        }
+    }
     module
         .types_global_values
         .iter()
-        .find(|inst| {
-            inst.class.opcode == opcode
-                && match width {
-                    Some(w) => {
-                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
-                    }
-                    None => true,
-                }
-        })
+        .find(|inst| matches_width(inst))
         .and_then(|inst| inst.result_id)
 }
 
