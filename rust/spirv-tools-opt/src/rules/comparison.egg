@@ -83,15 +83,17 @@
 ; Comparison of Negated Values
 ; =============================================================================
 
-; (-a) < (-b) is equivalent to b < a (for signed) - ONE-DIRECTIONAL
-(rule ((= e (SLt (Neg a) (Neg b))))
-      ((union e (SLt b a))))
-(rule ((= e (SLe (Neg a) (Neg b))))
-      ((union e (SLe b a))))
-(rule ((= e (SGt (Neg a) (Neg b))))
-      ((union e (SGt b a))))
-(rule ((= e (SGe (Neg a) (Neg b))))
-      ((union e (SGe b a))))
+; DISABLED: (-a) < (-b) → b < a — incorrect when Neg overflows.
+; Neg(INT32_MIN) = INT32_MIN in 32-bit two's complement, so the
+; comparison direction does not actually reverse for boundary values.
+; (rule ((= e (SLt (Neg a) (Neg b))))
+;       ((union e (SLt b a))))
+; (rule ((= e (SLe (Neg a) (Neg b))))
+;       ((union e (SLe b a))))
+; (rule ((= e (SGt (Neg a) (Neg b))))
+;       ((union e (SGt b a))))
+; (rule ((= e (SGe (Neg a) (Neg b))))
+;       ((union e (SGe b a))))
 
 ; =============================================================================
 ; Comparison with Constants
@@ -248,15 +250,16 @@
 (rule ((= e (Ne (Sub a c) (Sub b c))))
       ((union e (Ne a b))))
 
-; (a + c) < (b + c) is a < b (no overflow assumed) - ONE-DIRECTIONAL
-(rule ((= e (SLt (Add a c) (Add b c))))
-      ((union e (SLt a b))))
-(rule ((= e (SLe (Add a c) (Add b c))))
-      ((union e (SLe a b))))
-(rule ((= e (SGt (Add a c) (Add b c))))
-      ((union e (SGt a b))))
-(rule ((= e (SGe (Add a c) (Add b c))))
-      ((union e (SGe a b))))
+; DISABLED: (a + c) < (b + c) → a < b — incorrect when Add overflows.
+; SPIR-V integers are 32-bit modular; overflow changes comparison results.
+; (rule ((= e (SLt (Add a c) (Add b c))))
+;       ((union e (SLt a b))))
+; (rule ((= e (SLe (Add a c) (Add b c))))
+;       ((union e (SLe a b))))
+; (rule ((= e (SGt (Add a c) (Add b c))))
+;       ((union e (SGt a b))))
+; (rule ((= e (SGe (Add a c) (Add b c))))
+;       ((union e (SGe a b))))
 
 ; =============================================================================
 ; Loop Invariant Comparisons

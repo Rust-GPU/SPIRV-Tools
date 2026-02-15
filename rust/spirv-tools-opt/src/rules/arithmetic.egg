@@ -137,28 +137,27 @@
 (rule ((= e (UDiv x (Const 16))))
       ((union e (ShrU x (Const 4)))))
 
-; Division cancellation - ONE-DIRECTIONAL to prevent explosion
-; Without this fix, x → SDiv(Mul(x, a), a) for every x and a
-(rule ((= e (SDiv (Mul x a) a)))
-      ((union e x)))
-(rule ((= e (SDiv (Mul a x) a)))
-      ((union e x)))
-(rule ((= e (UDiv (Mul x a) a)))
-      ((union e x)))
-(rule ((= e (UDiv (Mul a x) a)))
-      ((union e x)))
+; DISABLED: Division cancellation — incorrect when Mul wraps (32-bit overflow).
+; SDiv(Mul(x, a), a) ≠ x if x*a overflows.  SPIR-V integers are modular.
+; (rule ((= e (SDiv (Mul x a) a)))
+;       ((union e x)))
+; (rule ((= e (SDiv (Mul a x) a)))
+;       ((union e x)))
+; (rule ((= e (UDiv (Mul x a) a)))
+;       ((union e x)))
+; (rule ((= e (UDiv (Mul a x) a)))
+;       ((union e x)))
 
-; Mul/Div cancellation: (y / x) * x = y (C++ MergeMulDivArithmetic)
-; Note: For integers this is only exact when y is divisible by x
-; But it's still a valid simplification in the e-graph
-(rule ((= e (Mul (SDiv y x) x)))
-      ((union e y)))
-(rule ((= e (Mul x (SDiv y x))))
-      ((union e y)))
-(rule ((= e (Mul (UDiv y x) x)))
-      ((union e y)))
-(rule ((= e (Mul x (UDiv y x))))
-      ((union e y)))
+; DISABLED: Mul/Div cancellation — (y / x) * x ≠ y for integer division.
+; Integer division truncates: (7 / 2) * 2 = 6 ≠ 7.
+; (rule ((= e (Mul (SDiv y x) x)))
+;       ((union e y)))
+; (rule ((= e (Mul x (SDiv y x))))
+;       ((union e y)))
+; (rule ((= e (Mul (UDiv y x) x)))
+;       ((union e y)))
+; (rule ((= e (Mul x (UDiv y x))))
+;       ((union e y)))
 
 ; Division identity - ONE-DIRECTIONAL to prevent explosion
 (rule ((= e (SDiv x (Const 1))))
@@ -345,15 +344,16 @@
 (rule ((= e (SMod x x)))
       ((union e (Const 0))))
 
-; (x * y) % y = 0
-(rule ((= e (SRem (Mul x y) y)))
-      ((union e (Const 0))))
-(rule ((= e (UMod (Mul x y) y)))
-      ((union e (Const 0))))
-(rule ((= e (SRem (Mul y x) y)))
-      ((union e (Const 0))))
-(rule ((= e (UMod (Mul y x) y)))
-      ((union e (Const 0))))
+; DISABLED: (x * y) % y = 0 — incorrect when Mul wraps (32-bit overflow).
+; With modular arithmetic, (x*y mod 2^32) mod y ≠ 0 in general.
+; (rule ((= e (SRem (Mul x y) y)))
+;       ((union e (Const 0))))
+; (rule ((= e (UMod (Mul x y) y)))
+;       ((union e (Const 0))))
+; (rule ((= e (SRem (Mul y x) y)))
+;       ((union e (Const 0))))
+; (rule ((= e (UMod (Mul y x) y)))
+;       ((union e (Const 0))))
 
 ; Note: Min/Max integer operations are in logical.egg
 
@@ -508,11 +508,12 @@
 (rule ((= e (UDiv (UDiv x (Const a)) (Const b))) (mul-safe a b))
       ((union e (UDiv x (Const (* a b))))))
 
-; (x * a) / a = x (for non-zero a)
-(rule ((= e (SDiv (Mul x (Const a)) (Const a))) (!= a 0))
-      ((union e x)))
-(rule ((= e (UDiv (Mul x (Const a)) (Const a))) (!= a 0))
-      ((union e x)))
+; DISABLED: (x * a) / a = x — incorrect when Mul wraps (32-bit overflow).
+; Same issue as the disabled Div-of-Mul cancellation rules above.
+; (rule ((= e (SDiv (Mul x (Const a)) (Const a))) (!= a 0))
+;       ((union e x)))
+; (rule ((= e (UDiv (Mul x (Const a)) (Const a))) (!= a 0))
+;       ((union e x)))
 
 ; (x / a) * a = x (approximate for integers, exact if x is divisible by a)
 ; We keep this for the e-graph to explore

@@ -1580,7 +1580,8 @@ fn test_clamp_gt_hi_is_false() {
 fn test_div_mul_cancel() {
     let mut egraph = create_spirv_egraph().unwrap();
 
-    // (y / x) * x should simplify to y
+    // (y / x) * x must NOT simplify to y — integer division truncates.
+    // E.g. (7 / 2) * 2 = 6 ≠ 7.
     egraph
         .parse_and_run_program(
             None,
@@ -1595,10 +1596,10 @@ fn test_div_mul_cancel() {
         .parse_and_run_program(None, "(extract root)")
         .unwrap();
     let result = format!("{}", results[0]);
-    // Should simplify to just y
+    // The Mul/SDiv structure must be preserved (rule is disabled)
     assert!(
-        result.contains("ISym") && result.contains("y") && !result.contains("SDiv"),
-        "(y / x) * x should simplify to y, got: {}",
+        result.contains("SDiv") || result.contains("Mul"),
+        "(y / x) * x must NOT simplify to y for integer division, got: {}",
         result
     );
 }
@@ -1607,7 +1608,7 @@ fn test_div_mul_cancel() {
 fn test_mul_div_cancel_unsigned() {
     let mut egraph = create_spirv_egraph().unwrap();
 
-    // x * (y / x) should simplify to y
+    // x * (y / x) must NOT simplify to y — integer division truncates.
     egraph
         .parse_and_run_program(
             None,
@@ -1622,10 +1623,10 @@ fn test_mul_div_cancel_unsigned() {
         .parse_and_run_program(None, "(extract root)")
         .unwrap();
     let result = format!("{}", results[0]);
-    // Should simplify to just y
+    // The Mul/UDiv structure must be preserved (rule is disabled)
     assert!(
-        result.contains("ISym") && result.contains("y") && !result.contains("UDiv"),
-        "x * (y / x) should simplify to y, got: {}",
+        result.contains("UDiv") || result.contains("Mul"),
+        "x * (y / x) must NOT simplify to y for integer division, got: {}",
         result
     );
 }
