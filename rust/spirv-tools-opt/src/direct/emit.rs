@@ -129,6 +129,8 @@ pub struct EmitCtx<'a> {
     pub glsl_ext_id: Option<Word>,
     pub type_widths: &'a HashMap<Word, u32>,
     pub id_to_type: &'a HashMap<Word, Word>,
+    /// Maps composite type IDs (OpTypeVector, OpTypeMatrix, OpTypeArray) to their element type ID.
+    pub composite_element_types: &'a HashMap<Word, Word>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,9 +1643,14 @@ fn emit_composite_construct(
     }
     let mut synth = Vec::new();
     let mut operands = Vec::new();
+    // For CompositeConstruct, the element type is derived from the composite type.
+    let element_type = ctx
+        .composite_element_types
+        .get(&result_type)
+        .copied()
+        .unwrap_or(result_type);
     for arg in &args[..expected] {
-        // Each component's type differs from result_type (composite type).
-        let component_type = resolve_term_type(arg, ctx).unwrap_or(result_type);
+        let component_type = resolve_term_type(arg, ctx).unwrap_or(element_type);
         let (arg_id, mut s) = emit_term(arg, component_type, ctx)?;
         synth.append(&mut s);
         operands.push(rspirv::dr::Operand::IdRef(arg_id));
@@ -1667,8 +1674,13 @@ fn flatten_expr_list(
     match term {
         Term::App { op, .. } if op == "ENil" => Some((Vec::new(), Vec::new())),
         Term::App { op, args } if op == "ECons" && args.len() >= 2 => {
-            // Each element's type differs from result_type (composite type).
-            let head_type = resolve_term_type(&args[0], ctx).unwrap_or(result_type);
+            // Element type from the composite type for correct component emission.
+            let element_type = ctx
+                .composite_element_types
+                .get(&result_type)
+                .copied()
+                .unwrap_or(result_type);
+            let head_type = resolve_term_type(&args[0], ctx).unwrap_or(element_type);
             let (head_id, head_synth) = emit_term(&args[0], head_type, ctx)?;
             let (mut rest_ids, mut rest_synth) = flatten_expr_list(&args[1], result_type, ctx)?;
             let mut ids = vec![head_id];
@@ -1863,6 +1875,7 @@ mod tests {
             glsl_ext_id: None,
             type_widths: &type_widths,
             id_to_type: &HashMap::new(),
+            composite_element_types: &HashMap::new(),
         };
         let term = parse_sexpr("(Sym \"id5\")").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1888,6 +1901,7 @@ mod tests {
             glsl_ext_id: None,
             type_widths: &type_widths,
             id_to_type: &HashMap::new(),
+            composite_element_types: &HashMap::new(),
         };
         let term = parse_sexpr("(Const 42)").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1915,6 +1929,7 @@ mod tests {
             glsl_ext_id: None,
             type_widths: &type_widths,
             id_to_type: &HashMap::new(),
+            composite_element_types: &HashMap::new(),
         };
         let term = parse_sexpr("(Add (Const 3) (Const 5))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1946,6 +1961,7 @@ mod tests {
             glsl_ext_id: None,
             type_widths: &type_widths,
             id_to_type: &HashMap::new(),
+            composite_element_types: &HashMap::new(),
         };
         let term = parse_sexpr("(IntToExpr (Sym \"id5\"))").unwrap();
         let (result_id, synth) = emit_term(&term, 10, &mut ctx).unwrap();
@@ -1974,6 +1990,11 @@ mod tests {
             glsl_ext_id: None,
             type_widths,
             id_to_type: EMPTY_ID_TO_TYPE.get_or_init(HashMap::new),
+            composite_element_types: {
+                static EMPTY_COMP: std::sync::OnceLock<HashMap<Word, Word>> =
+                    std::sync::OnceLock::new();
+                EMPTY_COMP.get_or_init(HashMap::new)
+            },
         }
     }
 

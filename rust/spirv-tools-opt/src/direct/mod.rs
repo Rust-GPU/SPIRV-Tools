@@ -559,11 +559,34 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         }
     }
 
+    // Build a set of (func_idx, block_idx) pairs that are loop continue blocks.
+    // Selections whose branch targets overlap these must also be skipped.
+    let mut continue_block_set: HashSet<(usize, usize)> = HashSet::new();
+    for loop_info in &loop_constructs {
+        if let Some(continue_idx) = loop_info.continue_block_idx {
+            continue_block_set.insert((loop_info.func_idx, continue_idx));
+        }
+    }
+
     // For each selection construct, convert to RVSDG EffGamma
     for (sel_idx, sel) in selection_constructs.iter().enumerate() {
         // Skip selection constructs inside loop bodies to avoid breaking continue block reachability
         if loop_block_set.contains(&(sel.func_idx, sel.header_block_idx)) {
             continue;
+        }
+        // Skip selections whose branch targets or merge block overlap with loop continue blocks
+        {
+            let label_map = &func_block_labels[sel.func_idx];
+            let touches_continue = [&sel.then_label, &sel.else_label, &sel.merge_label]
+                .iter()
+                .any(|label| {
+                    label_map
+                        .get(label)
+                        .map_or(false, |&idx| continue_block_set.contains(&(sel.func_idx, idx)))
+                });
+            if touches_continue {
+                continue;
+            }
         }
         let func = &module.functions[sel.func_idx];
 
@@ -854,6 +877,21 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     let float32_type = find_spirv_type(module, Op::TypeFloat, Some(32));
     let float64_type = find_spirv_type(module, Op::TypeFloat, Some(64));
 
+    // Build composite → element type mapping for CompositeConstruct emission
+    let mut composite_element_types: HashMap<Word, Word> = HashMap::new();
+    for inst in &module.types_global_values {
+        match inst.class.opcode {
+            Op::TypeVector | Op::TypeMatrix | Op::TypeArray | Op::TypeRuntimeArray => {
+                if let (Some(composite_id), Some(rspirv::dr::Operand::IdRef(element_id))) =
+                    (inst.result_id, inst.operands.first())
+                {
+                    composite_element_types.insert(composite_id, *element_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
     // Only extract from IDs that are both:
     // 1. True roots (operands of side effects) - these are the outputs we need
     // 2. Live (reachable via liveness propagation in the e-graph)
@@ -939,6 +977,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         glsl_ext_id: ctx.glsl_ext_id(),
                         type_widths: &type_widths,
                         id_to_type: &ctx.id_to_type,
+                        composite_element_types: &composite_element_types,
                     };
                     if let Some((final_id, new_insts)) =
                         emit::emit_term(term_tree, corrected_type, &mut emit_ctx)
