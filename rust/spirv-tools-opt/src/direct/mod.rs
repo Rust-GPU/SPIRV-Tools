@@ -848,10 +848,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
     // Get next available ID for synthesized constants
     let mut next_id = all_ssa_ids.iter().copied().max().unwrap_or(0) + 1;
     // Find suitable types for synthesized constants
-    // Prefer signed int32 when available (signedness=1) so that emit-time
-    // fallback types for ConvertFToS/ConvertSToF produce correct sign semantics.
-    let int32_type = find_spirv_type_signed(module, Op::TypeInt, Some(32))
-        .or_else(|| find_spirv_type(module, Op::TypeInt, Some(32)));
+    let int32_type = find_spirv_type(module, Op::TypeInt, Some(32));
     let int64_type = find_spirv_type(module, Op::TypeInt, Some(64));
     let bool_type = find_spirv_type(module, Op::TypeBool, None);
     let float32_type = find_spirv_type(module, Op::TypeFloat, Some(32));
@@ -2102,23 +2099,6 @@ impl TypeClass {
 }
 
 /// Find a SPIR-V type declaration's result ID by opcode and optional bit-width.
-fn find_spirv_type_signed(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
-    module
-        .types_global_values
-        .iter()
-        .find(|inst| {
-            inst.class.opcode == opcode
-                && match width {
-                    Some(w) => {
-                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
-                    }
-                    None => true,
-                }
-                && inst.operands.get(1) == Some(&rspirv::dr::Operand::LiteralBit32(1))
-        })
-        .and_then(|inst| inst.result_id)
-}
-
 fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Word> {
     module
         .types_global_values
