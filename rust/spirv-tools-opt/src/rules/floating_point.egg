@@ -290,14 +290,19 @@
       ((union e (FDiv x (FConst (* a b))))))
 
 ; (x * a) / b = x * (a / b)
-(rule ((= e (FDiv (FMul x (FConst a)) (FConst b)))
-       (!= b 0.0))
-      ((union e (FMul x (FConst (/ a b))))))
+; DISABLED: FDiv→FMul cross-interaction creates feedback loop with FMul chain merging.
+; New FMul nodes from these rules feed back into FMul(FMul(x,c1),c2) chain merge,
+; which creates more FMul nodes that re-enter FDiv cross rules. 252K matches at iter 7
+; on mouse-shader with exponential growth. Pure FMul and FDiv chains are kept.
+; (rule ((= e (FDiv (FMul x (FConst a)) (FConst b)))
+;        (!= b 0.0))
+;       ((union e (FMul x (FConst (/ a b))))))
 
 ; (x / a) * b = x * (b / a)
-(rule ((= e (FMul (FDiv x (FConst a)) (FConst b)))
-       (!= a 0.0))
-      ((union e (FMul x (FConst (/ b a))))))
+; DISABLED: Same feedback loop as above. 73K matches at iter 7 on mouse-shader.
+; (rule ((= e (FMul (FDiv x (FConst a)) (FConst b)))
+;        (!= a 0.0))
+;       ((union e (FMul x (FConst (/ b a))))))
 
 ; (x + a) + b = x + (a + b)
 (rule ((= e (FAdd (FAdd x (FConst a)) (FConst b))))

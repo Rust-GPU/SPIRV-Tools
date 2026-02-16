@@ -700,10 +700,13 @@
 (rule ((= e (GammaI c x (Mul x y))))
       ((union e (Mul x (GammaI c (Const 1) y)))))
 ; Float ops use GammaF and FConst
-(rule ((= e (GammaF c (FMul x y) x)))
-      ((union e (FMul x (GammaF c y (FConst 1.0))))))
-(rule ((= e (GammaF c x (FMul x y))))
-      ((union e (FMul x (GammaF c (FConst 1.0) y)))))
+; DISABLED: Creates 599 new FMul nodes that feed into FMul constant chain merging,
+; amplifying the exponential growth. This is a special case of the GammaF FMul
+; hoisting that was already disabled above (lines 428-429).
+; (rule ((= e (GammaF c (FMul x y) x)))
+;       ((union e (FMul x (GammaF c y (FConst 1.0))))))
+; (rule ((= e (GammaF c x (FMul x y))))
+;       ((union e (FMul x (GammaF c (FConst 1.0) y)))))
 
 ; Nested Gamma flattening (when inner condition relates to outer)
 ; select(c, select(c, a, b), d) = select(c, a, d) - already have
