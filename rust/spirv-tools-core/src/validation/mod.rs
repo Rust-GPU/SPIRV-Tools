@@ -1740,7 +1740,7 @@ fn is_block_operand(opcode: rspirv::spirv::Op, index: usize) -> bool {
     match opcode {
         rspirv::spirv::Op::Branch => index == 0,
         rspirv::spirv::Op::BranchConditional => index == 1 || index == 2,
-        rspirv::spirv::Op::Switch => index == 1 || (index > 1 && index % 2 == 0),
+        rspirv::spirv::Op::Switch => index % 2 == 1,
         rspirv::spirv::Op::LoopMerge => index <= 1,
         rspirv::spirv::Op::SelectionMerge => index == 0,
         rspirv::spirv::Op::Phi => index % 2 == 1,

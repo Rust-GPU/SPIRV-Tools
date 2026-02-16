@@ -647,11 +647,12 @@ impl ValidationRule for BranchTargetRule {
                                 .iter()
                                 .enumerate()
                                 .filter_map(|(idx, op)| {
-                                    // Skip selector (idx 0), include default (idx 1) and case targets (even indices)
+                                    // Skip selector (idx 0); default target is at idx 1,
+                                    // case targets at odd indices >= 3 (literal/target pairs)
                                     if idx == 0 {
                                         return None;
                                     }
-                                    if idx == 1 || idx % 2 == 0 {
+                                    if idx % 2 == 1 {
                                         if let Operand::IdRef(raw) = op {
                                             return Some(to_id(*raw));
                                         }

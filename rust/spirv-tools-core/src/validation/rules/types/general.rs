@@ -183,7 +183,7 @@ fn is_block_operand(opcode: Op, index: usize) -> bool {
     match opcode {
         Op::Branch => index == 0,
         Op::BranchConditional => index == 1 || index == 2,
-        Op::Switch => index == 1 || (index > 1 && index % 2 == 0),
+        Op::Switch => index % 2 == 1,
         Op::LoopMerge => index <= 1,
         Op::SelectionMerge => index == 0,
         Op::Phi => index % 2 == 1,

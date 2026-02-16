@@ -69,12 +69,19 @@ fn get_branch_targets(terminator: &Instruction) -> Vec<Id> {
         }
         Op::Switch => {
             // Operands: selector, default target, then pairs of (literal, target)
+            // In rspirv's representation:
+            //   [0] = IdRef(selector)
+            //   [1] = IdRef(default_target)
+            //   [2] = LiteralBit32(case_val_0), [3] = IdRef(case_target_0)
+            //   [4] = LiteralBit32(case_val_1), [5] = IdRef(case_target_1)
+            //   ...
+            // So targets are at all ODD indices (1, 3, 5, 7, ...)
             for (index, op) in terminator.operands.iter().enumerate() {
                 if index == 0 {
                     continue; // skip selector
                 }
-                // Default target is at index 1, then case targets are at even indices (2, 4, 6, ...)
-                if index == 1 || index % 2 == 0 {
+                // Default target is at index 1, case targets at odd indices >= 3
+                if index % 2 == 1 {
                     if let Operand::IdRef(target) = op {
                         if let Some(id) = to_id(*target) {
                             if !targets.contains(&id) {
