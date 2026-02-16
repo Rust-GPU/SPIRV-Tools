@@ -5443,10 +5443,10 @@ fn build_loop_with_selection_in_continue_block() -> Vec<u32> {
         std::iter::empty(),
     )
     .unwrap();
-    let val = b.load(int, None, counter, None, std::iter::empty()).unwrap();
-    let cond = b
-        .s_less_than(bool_ty, None, val, c10)
-        .expect("less than");
+    let val = b
+        .load(int, None, counter, None, std::iter::empty())
+        .unwrap();
+    let cond = b.s_less_than(bool_ty, None, val, c10).expect("less than");
     b.branch_conditional(cond, continue_label, merge_label, std::iter::empty())
         .unwrap();
 
@@ -5454,9 +5454,7 @@ fn build_loop_with_selection_in_continue_block() -> Vec<u32> {
     b.begin_block(Some(continue_label)).unwrap();
     let c2 = b.constant_bit32(int, 2);
     let is_even_rem = b.s_mod(int, None, val, c2).unwrap();
-    let is_even = b
-        .i_equal(bool_ty, None, is_even_rem, c0)
-        .expect("is_even");
+    let is_even = b.i_equal(bool_ty, None, is_even_rem, c0).expect("is_even");
     b.selection_merge(sel_merge_label, SelectionControl::NONE)
         .unwrap();
     b.branch_conditional(is_even, sel_then_label, sel_else_label, std::iter::empty())
@@ -5536,8 +5534,7 @@ fn build_store_with_typed_value() -> Vec<u32> {
     let _sint = b.type_int(32, 1);
     let void = b.type_void();
     let func_ty = b.type_function(void, vec![uint]);
-    let ptr_uint =
-        b.type_pointer(None, rspirv::spirv::StorageClass::Function, uint);
+    let ptr_uint = b.type_pointer(None, rspirv::spirv::StorageClass::Function, uint);
 
     let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
@@ -5610,8 +5607,7 @@ fn build_float_to_signed_int_module() -> Vec<u32> {
     let float = b.type_float(32, None);
     let void = b.type_void();
     let func_ty = b.type_function(void, vec![sint]);
-    let ptr_sint =
-        b.type_pointer(None, rspirv::spirv::StorageClass::Function, sint);
+    let ptr_sint = b.type_pointer(None, rspirv::spirv::StorageClass::Function, sint);
 
     let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)
@@ -5684,8 +5680,7 @@ fn build_matrix_multiply_chain() -> Vec<u32> {
     let mat4 = b.type_matrix(vec4, 4);
     let void = b.type_void();
     let func_ty = b.type_function(void, vec![mat4, mat4, mat4, vec4]);
-    let ptr_vec4 =
-        b.type_pointer(None, rspirv::spirv::StorageClass::Function, vec4);
+    let ptr_vec4 = b.type_pointer(None, rspirv::spirv::StorageClass::Function, vec4);
 
     let func = b
         .begin_function(void, None, FunctionControl::NONE, func_ty)

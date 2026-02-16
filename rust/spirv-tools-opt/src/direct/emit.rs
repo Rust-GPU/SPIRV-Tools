@@ -1301,9 +1301,7 @@ fn emit_pattern(
             // Refine it to avoid signed/unsigned mismatches:
             // 1. Signed int ops (ConvertSToF, SLessThan, etc.) → signed int type
             // 2. Other cross-class ops → infer from Sym operand's actual type
-            let operand_type = if operand_class == TypeClass::Int
-                && result_class != operand_class
-            {
+            let operand_type = if operand_class == TypeClass::Int && result_class != operand_class {
                 match opcode {
                     Op::ConvertSToF
                     | Op::ConvertFToS
@@ -1315,9 +1313,9 @@ fn emit_pattern(
                     | Op::SRem
                     | Op::SMod
                     | Op::SConvert => ctx.signed_int32_type.unwrap_or(operand_type),
-                    _ => infer_operand_type_from_args(
-                        args, arity, operand_class, operand_type, ctx,
-                    ),
+                    _ => {
+                        infer_operand_type_from_args(args, arity, operand_class, operand_type, ctx)
+                    }
                 }
             } else if result_class != operand_class {
                 // Non-int cross-class: infer from Sym args for consistency

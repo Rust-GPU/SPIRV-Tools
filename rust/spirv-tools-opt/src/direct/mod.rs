@@ -1037,8 +1037,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                         // SPIR-V types (e.g. two constants with the same bit
                         // pattern but different type IDs, or Vec4/Vec2 both as
                         // Expr). CopyObject requires operand type == result type.
-                        let type_matches = ctx.id_to_type.get(&id)
-                            == ctx.id_to_type.get(&alias_id);
+                        let type_matches = ctx.id_to_type.get(&id) == ctx.id_to_type.get(&alias_id);
                         if type_matches {
                             id_aliases.insert(id, alias_id);
                             used_ids.insert(alias_id);
@@ -1091,8 +1090,8 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
                                 // (e.g. Vec4 and Vec2 both as Expr). Emitting a
                                 // CopyObject with mismatched types would cause
                                 // validation errors.
-                                let type_matches = ctx.id_to_type.get(&id)
-                                    == ctx.id_to_type.get(&final_id);
+                                let type_matches =
+                                    ctx.id_to_type.get(&id) == ctx.id_to_type.get(&final_id);
                                 if type_matches {
                                     id_aliases.insert(id, final_id);
                                     used_ids.insert(final_id);
@@ -2357,9 +2356,7 @@ fn find_spirv_type(module: &Module, opcode: Op, width: Option<u32>) -> Option<Wo
         .find(|inst| {
             inst.class.opcode == opcode
                 && match width {
-                    Some(w) => {
-                        inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w))
-                    }
+                    Some(w) => inst.operands.first() == Some(&rspirv::dr::Operand::LiteralBit32(w)),
                     None => true,
                 }
         })

@@ -209,6 +209,11 @@
 ; We only want to FACTOR (collect terms), not DISTRIBUTE (expand terms).
 
 ; (x * a) + (x * b) => x * (a + b)  - factoring out common term
+; NOTE: These are safe because there is no general integer Mul associativity
+; rule (only constant-folding variants). Without associativity creating new
+; Mul groupings, the feedback loop that causes FP factoring explosion cannot
+; form. If a general (Mul (Mul a b) c) -> (Mul a (Mul b c)) rule is ever
+; added, these must be disabled too (see floating_point.egg factoring).
 (rule ((= e (Add (Mul x a) (Mul x b))))
       ((union e (Mul x (Add a b)))))
 (rule ((= e (Add (Mul a x) (Mul b x))))

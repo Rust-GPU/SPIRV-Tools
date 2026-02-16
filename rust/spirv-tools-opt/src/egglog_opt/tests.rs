@@ -6587,10 +6587,7 @@ fn test_boolconst_float_comparison_reflexive() {
 
     // FOrdLt(x,x) IS correctly folded to BoolConst(0)
     let check2 = egraph.parse_and_run_program(None, "(check (= lt_root false_val))");
-    assert!(
-        check2.is_ok(),
-        "FOrdLt(x, x) should fold to BoolConst(0)"
-    );
+    assert!(check2.is_ok(), "FOrdLt(x, x) should fold to BoolConst(0)");
 }
 
 #[test]

@@ -201,18 +201,30 @@
 ;   2. Any FAdd(x, Y) matches FAdd(FAdd(x, 0), Y) and cascades endlessly
 ;
 ; Safe variant: Only apply when 'b' is an FAdd/FMul (not an FConst that could be 0 or 1).
+; NOTE: FAdd associativity is safe with current workloads (only 11 matches at iter 3
+; on sky-shader), but could exhibit Catalan blowup if a shader has deep FAdd chains
+; with shared sub-expressions. Monitor if new shaders cause FAdd explosion.
 (rule ((= e (FAdd (FAdd a b) c)) (= b (FAdd _ _)))
       ((union e (FAdd a (FAdd b c)))))
-(rule ((= e (FMul (FMul a b) c)) (= b (FMul _ _)))
-      ((union e (FMul a (FMul b c)))))
+; DISABLED: FMul associativity causes exponential blowup on its own.
+; With ~1,264 FMul nodes sharing e-classes (common in sky/lighting shaders),
+; re-parenthesization creates 305K+ matches and 455K FMul tuples in one
+; iteration via Catalan-number growth across shared sub-expressions.
+; Constant chain merging (FMul(FMul(x, const_a), const_b) → FMul(x, const_a*b))
+; is handled by dedicated rules below and does NOT need this.
+; (rule ((= e (FMul (FMul a b) c)) (= b (FMul _ _)))
+;       ((union e (FMul a (FMul b c)))))
 
 ; Factoring: a*c + b*c = (a+b)*c
-; One-directional to prevent expansion that causes e-graph explosion.
-; We recognize expanded patterns and factor them, but don't distribute.
-(rule ((= e (FAdd (FMul a c) (FMul b c))))
-      ((union e (FMul (FAdd a b) c))))
-(rule ((= e (FAdd (FMul c a) (FMul c b))))
-      ((union e (FMul c (FAdd a b)))))
+; DISABLED: Creates a feedback loop with FMul associativity above.
+; Factoring creates new FMul+FAdd nodes, associativity re-parenthesizes the
+; new FMul nodes, exposing more factoring opportunities → exponential blowup.
+; In the sky-shader, this explodes from 2,875 to 916,652 tuples in one iteration
+; (305K associativity matches + 304K factoring matches).
+; (rule ((= e (FAdd (FMul a c) (FMul b c))))
+;       ((union e (FMul (FAdd a b) c))))
+; (rule ((= e (FAdd (FMul c a) (FMul c b))))
+;       ((union e (FMul c (FAdd a b)))))
 
 ; x + x = 2*x - ONE-DIRECTIONAL to prevent explosion
 ; (FMul x 2 -> FAdd x x would expand forever)
