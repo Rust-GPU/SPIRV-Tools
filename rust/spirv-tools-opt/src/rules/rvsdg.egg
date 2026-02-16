@@ -418,10 +418,15 @@
 ;       ((union e (GammaF c (FMul a x) (FMul b y)))))
 
 ; Hoisting common factors OUT of GammaF - ONE-DIRECTIONAL
-(rule ((= e (GammaF c (FAdd x a) (FAdd x b))))
-      ((union e (FAdd x (GammaF c a b)))))
-(rule ((= e (GammaF c (FMul x a) (FMul x b))))
-      ((union e (FMul x (GammaF c a b)))))
+; DISABLED: GammaF hoisting for FAdd/FMul/FDiv causes egraph explosion on mouse-shader.
+; New FMul/FDiv/GammaF nodes feed back into floating-point rules (reciprocals, negation
+; distribution, select absorption) and other GammaF distribution rules, creating a
+; multi-way amplification loop. FMul: 73K matches, FDiv: 1.37M matches at iter 6.
+; FAdd not flagged yet but has identical feedback structure via FAdd associativity.
+; (rule ((= e (GammaF c (FAdd x a) (FAdd x b))))
+;       ((union e (FAdd x (GammaF c a b)))))
+; (rule ((= e (GammaF c (FMul x a) (FMul x b))))
+;       ((union e (FMul x (GammaF c a b)))))
 
 ; =============================================================================
 ; Theta (Loop) Optimization Rules - ONE-DIRECTIONAL
@@ -762,21 +767,26 @@
 
 ; Division operations: select(c, a / x, b / x) = select(c, a, b) / x - ONE-DIRECTIONAL
 ; Integer division uses GammaI
+; NOTE: Integer GammaI hoisting rules are kept because integer arithmetic lacks the
+; associativity and reciprocal rules that amplify the float explosion. Monitor if
+; integer-heavy shaders cause similar issues (see floating_point.egg factoring notes).
 (rule ((= e (GammaI c (SDiv a x) (SDiv b x))))
       ((union e (SDiv (GammaI c a b) x))))
 (rule ((= e (GammaI c (UDiv a x) (UDiv b x))))
       ((union e (UDiv (GammaI c a b) x))))
 ; Float division uses GammaF
-(rule ((= e (GammaF c (FDiv a x) (FDiv b x))))
-      ((union e (FDiv (GammaF c a b) x))))
+; DISABLED: See FMul/FAdd hoisting comment above. 1,167 matches at iter 6 on mouse-shader.
+; (rule ((= e (GammaF c (FDiv a x) (FDiv b x))))
+;       ((union e (FDiv (GammaF c a b) x))))
 
 ; Division with common dividend: select(c, x / a, x / b) = x / select(c, a, b) - ONE-DIRECTIONAL
 (rule ((= e (GammaI c (SDiv x a) (SDiv x b))))
       ((union e (SDiv x (GammaI c a b)))))
 (rule ((= e (GammaI c (UDiv x a) (UDiv x b))))
       ((union e (UDiv x (GammaI c a b)))))
-(rule ((= e (GammaF c (FDiv x a) (FDiv x b))))
-      ((union e (FDiv x (GammaF c a b)))))
+; DISABLED: See FMul/FAdd hoisting comment above. 1,370,111 matches at iter 6 on mouse-shader.
+; (rule ((= e (GammaF c (FDiv x a) (FDiv x b))))
+;       ((union e (FDiv x (GammaF c a b)))))
 
 ; Remainder/modulo operations - ONE-DIRECTIONAL
 ; Integer remainder/modulo uses GammaI
