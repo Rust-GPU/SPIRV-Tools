@@ -1179,23 +1179,16 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
             None => continue,
         };
 
-        // If the gamma has simplified to just the expression (not a Gamma/Select variant),
-        // it means both branches computed the same thing and it can be hoisted
-        let is_gamma_or_select = match parse_sexpr(&gamma_term) {
-            Some(Term::App { ref op, .. }) => matches!(
-                op.as_str(),
-                "Gamma"
-                    | "GammaI"
-                    | "GammaF"
-                    | "GammaB"
-                    | "Select"
-                    | "SelectI"
-                    | "SelectF"
-                    | "SelectB"
-            ),
-            _ => false,
+        // If the gamma has simplified to just the expression (no Gamma/Select anywhere),
+        // it means both branches computed the same thing and it can be hoisted.
+        // We must check recursively because egraph rules can push Gamma inside
+        // common operations (e.g. GammaI(c, x*2, x*3) → Mul(x, GammaI(c, 2, 3))),
+        // which moves the selection below the outermost constructor.
+        let contains_gamma_or_select = match parse_sexpr(&gamma_term) {
+            Some(ref term) => term_contains_gamma_or_select(term),
+            None => false,
         };
-        if !is_gamma_or_select {
+        if !contains_gamma_or_select {
             // The expression can be hoisted!
             // Mark both branch IDs to become CopyObjects of the hoisted value
             let result_type = ctx.id_to_type.get(&pair.then_id).copied().unwrap_or(0);
@@ -2526,6 +2519,31 @@ enum ParsedEffect {
     Unreachable,
 }
 
+/// Check whether a parsed term contains a Gamma or Select node anywhere in the tree.
+/// Used to determine if a branch-value pair still depends on the branch condition
+/// (Gamma may have been pushed inside a common operation by egraph rules).
+fn term_contains_gamma_or_select(term: &Term) -> bool {
+    match term {
+        Term::Atom(_) => false,
+        Term::App { op, args } => {
+            if matches!(
+                op.as_str(),
+                "Gamma"
+                    | "GammaI"
+                    | "GammaF"
+                    | "GammaB"
+                    | "Select"
+                    | "SelectI"
+                    | "SelectF"
+                    | "SelectB"
+            ) {
+                return true;
+            }
+            args.iter().any(term_contains_gamma_or_select)
+        }
+    }
+}
+
 /// Parse an extracted Effect term from egglog using the Term tree.
 fn parse_effect_result(s: &str) -> Option<ParsedEffect> {
     let term = parse_sexpr(s.trim())?;
@@ -3018,5 +3036,32 @@ mod tests {
     #[test]
     fn parse_effect_bare_atom_returns_none() {
         assert!(parse_effect_result("id5").is_none());
+    }
+
+    #[test]
+    fn term_contains_gamma_detects_nested_gamma() {
+        // Outermost Gamma → true
+        let t = parse_sexpr("(GammaI cond a b)").unwrap();
+        assert!(term_contains_gamma_or_select(&t));
+
+        // Gamma nested inside Mul → true (was the bug: outermost-only check missed this)
+        let t = parse_sexpr("(Mul val (GammaI cond 2 3))").unwrap();
+        assert!(term_contains_gamma_or_select(&t));
+
+        // Gamma nested inside Add → true
+        let t = parse_sexpr("(Add val (GammaI cond 100 200))").unwrap();
+        assert!(term_contains_gamma_or_select(&t));
+
+        // No Gamma anywhere → false (safe to hoist)
+        let t = parse_sexpr("(Mul val 3)").unwrap();
+        assert!(!term_contains_gamma_or_select(&t));
+
+        // Bare atom → false
+        let t = parse_sexpr("id5").unwrap();
+        assert!(!term_contains_gamma_or_select(&t));
+
+        // SelectI variant → true
+        let t = parse_sexpr("(Add x (SelectI cond a b))").unwrap();
+        assert!(term_contains_gamma_or_select(&t));
     }
 }
