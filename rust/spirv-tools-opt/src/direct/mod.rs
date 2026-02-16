@@ -1186,7 +1186,7 @@ pub fn optimize_module_direct(module: &Module) -> Result<Module, EgglogOptError>
         // which moves the selection below the outermost constructor.
         let contains_gamma_or_select = match parse_sexpr(&gamma_term) {
             Some(ref term) => term_contains_gamma_or_select(term),
-            None => false,
+            None => true, // Parsing failed — assume condition-dependent, don't hoist
         };
         if !contains_gamma_or_select {
             // The expression can be hoisted!
@@ -2536,6 +2536,10 @@ fn term_contains_gamma_or_select(term: &Term) -> bool {
                     | "SelectI"
                     | "SelectF"
                     | "SelectB"
+                    | "If"
+                    | "IfI"
+                    | "IfF"
+                    | "IfB"
             ) {
                 return true;
             }
