@@ -17,6 +17,6 @@ collapsible_if = "allow"
 manual_is_multiple_of = "allow"
 derivable_impls = "allow"
 
-[patch.crates-io]
+[workspace.dependencies]
 rspirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update" }
-spirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update", package = "spirv" }
+spirv = { git = "https://github.com/gfx-rs/rspirv", branch = "sdk-update" }

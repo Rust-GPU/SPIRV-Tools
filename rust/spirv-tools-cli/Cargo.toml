@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-rspirv = { version = "0.12.0", default-features = false }
+rspirv.workspace = true
 spirv-tools-core = { path = "../spirv-tools-core" }
 spirv-tools-ffi = { path = "../spirv-tools-ffi" }
 thiserror = "1.0"
