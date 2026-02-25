@@ -1756,7 +1756,8 @@ fn spec_conditional_capability_requires_extension() {
 }
 
 #[test]
-fn function_variants_capability_requires_spec_conditional() {
+fn function_variants_implicitly_declares_spec_conditional() {
+    // FunctionVariantsINTEL implicitly declares SpecConditionalINTEL per the spec.
     let text = [
         "OpCapability Kernel",
         "OpCapability Linkage",
@@ -1765,17 +1766,9 @@ fn function_variants_capability_requires_spec_conditional() {
         "OpMemoryModel Logical OpenCL",
     ]
     .join("\n");
-    let error = text
-        .as_str()
+    text.as_str()
         .validate(TargetEnv::Universal1_6)
-        .expect_err("FunctionVariantsINTEL requires SpecConditionalINTEL capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::SpecConditionalINTEL,
-            capability: rspirv::spirv::Capability::FunctionVariantsINTEL
-        }
-    );
+        .expect("FunctionVariantsINTEL implicitly declares SpecConditionalINTEL");
 }
 
 #[test]
@@ -3102,8 +3095,9 @@ fn device_group_capability_rejected_outside_vulkan_even_with_extension() {
 }
 
 #[test]
-fn variable_pointers_requires_storage_buffer_capability() {
-    let text = [
+fn variable_pointers_implicitly_declares_storage_buffer_capability() {
+    // VariablePointers implicitly declares VariablePointersStorageBuffer per the spec.
+    let without_dep = [
         "OpCapability Shader",
         "OpCapability VariablePointers",
         "OpExtension \"SPV_KHR_variable_pointers\"",
@@ -3116,18 +3110,12 @@ fn variable_pointers_requires_storage_buffer_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_dep
         .as_str()
         .validate(TargetEnv::Universal1_6)
-        .expect_err("VariablePointers requires VariablePointersStorageBuffer");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::VariablePointersStorageBuffer,
-            capability: rspirv::spirv::Capability::VariablePointers,
-        }
-    );
-    let with_dependency = [
+        .expect("VariablePointers implicitly declares VariablePointersStorageBuffer");
+
+    let with_dep = [
         "OpCapability Shader",
         "OpCapability VariablePointersStorageBuffer",
         "OpCapability VariablePointers",
@@ -3141,14 +3129,15 @@ fn variable_pointers_requires_storage_buffer_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    with_dependency
+    with_dep
         .as_str()
         .validate(TargetEnv::Universal1_6)
-        .expect("dependency declared should satisfy requirement");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn shader_capability_does_not_require_matrix_soft_dependency() {
+fn shader_implicitly_declares_matrix() {
+    // Shader implicitly declares Matrix per the spec's capability table.
     let text = [
         "OpCapability Shader",
         "OpMemoryModel Logical GLSL450",
@@ -3162,12 +3151,13 @@ fn shader_capability_does_not_require_matrix_soft_dependency() {
     .join("\n");
     text.as_str()
         .validate(TargetEnv::Universal1_6)
-        .expect("Shader should not require Matrix due to soft dependency");
+        .expect("Shader implicitly declares Matrix");
 }
 
 #[test]
-fn image_buffer_requires_sampled_buffer_capability() {
-    let text = [
+fn image_buffer_implicitly_declares_sampled_buffer() {
+    // ImageBuffer implicitly declares SampledBuffer per the spec.
+    let without_dep = [
         "OpCapability Shader",
         "OpCapability ImageBuffer",
         "OpMemoryModel Logical GLSL450",
@@ -3179,18 +3169,12 @@ fn image_buffer_requires_sampled_buffer_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_dep
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect_err("ImageBuffer requires SampledBuffer capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::SampledBuffer,
-            capability: rspirv::spirv::Capability::ImageBuffer
-        }
-    );
-    let with_dependency = [
+        .expect("ImageBuffer implicitly declares SampledBuffer");
+
+    let with_dep = [
         "OpCapability Shader",
         "OpCapability SampledBuffer",
         "OpCapability ImageBuffer",
@@ -3203,15 +3187,16 @@ fn image_buffer_requires_sampled_buffer_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    with_dependency
+    with_dep
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect("dependency declared should satisfy requirement");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn sampled_cube_array_requires_shader_capability() {
-    let text = [
+fn sampled_cube_array_implicitly_declares_shader() {
+    // SampledCubeArray implicitly declares Shader per the spec.
+    let without_shader = [
         "OpCapability SampledCubeArray",
         "OpMemoryModel Logical GLSL450",
         "%void = OpTypeVoid",
@@ -3222,17 +3207,11 @@ fn sampled_cube_array_requires_shader_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_shader
         .as_str()
         .validate(TargetEnv::Universal1_2)
-        .expect_err("SampledCubeArray requires Shader capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::Shader,
-            capability: rspirv::spirv::Capability::SampledCubeArray
-        }
-    );
+        .expect("SampledCubeArray implicitly declares Shader");
+
     let with_shader = [
         "OpCapability Shader",
         "OpCapability SampledCubeArray",
@@ -3248,12 +3227,13 @@ fn sampled_cube_array_requires_shader_capability() {
     with_shader
         .as_str()
         .validate(TargetEnv::Universal1_2)
-        .expect("Shader capability declared should satisfy dependency");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn image_ms_array_requires_shader_capability() {
-    let text = [
+fn image_ms_array_implicitly_declares_shader() {
+    // ImageMSArray implicitly declares Shader per the spec.
+    let without_shader = [
         "OpCapability ImageMSArray",
         "OpMemoryModel Logical GLSL450",
         "%void = OpTypeVoid",
@@ -3264,17 +3244,11 @@ fn image_ms_array_requires_shader_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_shader
         .as_str()
         .validate(TargetEnv::Universal1_2)
-        .expect_err("ImageMSArray requires Shader capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::Shader,
-            capability: rspirv::spirv::Capability::ImageMSArray
-        }
-    );
+        .expect("ImageMSArray implicitly declares Shader");
+
     let with_shader = [
         "OpCapability Shader",
         "OpCapability ImageMSArray",
@@ -3290,12 +3264,13 @@ fn image_ms_array_requires_shader_capability() {
     with_shader
         .as_str()
         .validate(TargetEnv::Universal1_2)
-        .expect("Shader capability declared should satisfy dependency");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn ray_tracing_requires_shader_capability() {
-    let text = [
+fn ray_tracing_implicitly_declares_shader() {
+    // RayTracingKHR implicitly declares Shader per the spec.
+    let without_shader = [
         "OpCapability RayTracingKHR",
         "OpExtension \"SPV_KHR_ray_tracing\"",
         "OpMemoryModel Logical GLSL450",
@@ -3307,17 +3282,11 @@ fn ray_tracing_requires_shader_capability() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_shader
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect_err("RayTracingKHR requires Shader capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::Shader,
-            capability: rspirv::spirv::Capability::RayTracingKHR
-        }
-    );
+        .expect("RayTracingKHR implicitly declares Shader");
+
     let with_shader = [
         "OpCapability Shader",
         "OpCapability RayTracingKHR",
@@ -3334,12 +3303,14 @@ fn ray_tracing_requires_shader_capability() {
     with_shader
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect("Shader capability declared should satisfy dependency");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn group_non_uniform_arithmetic_requires_group_non_uniform() {
-    let text = [
+fn group_non_uniform_arithmetic_implicitly_declares_group_non_uniform() {
+    // GroupNonUniformArithmetic implicitly declares GroupNonUniform per the spec.
+    // Both with and without explicit GroupNonUniform should succeed.
+    let without_base = [
         "OpCapability Shader",
         "OpCapability GroupNonUniformArithmetic",
         "OpMemoryModel Logical GLSL450",
@@ -3351,17 +3322,11 @@ fn group_non_uniform_arithmetic_requires_group_non_uniform() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_base
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect_err("GroupNonUniformArithmetic requires GroupNonUniform");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::GroupNonUniform,
-            capability: rspirv::spirv::Capability::GroupNonUniformArithmetic
-        }
-    );
+        .expect("GroupNonUniformArithmetic implicitly declares GroupNonUniform");
+
     let with_base = [
         "OpCapability Shader",
         "OpCapability GroupNonUniform",
@@ -3378,12 +3343,13 @@ fn group_non_uniform_arithmetic_requires_group_non_uniform() {
     with_base
         .as_str()
         .validate(TargetEnv::Vulkan1_2)
-        .expect("base capability declared should satisfy dependency");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
-fn device_enqueue_requires_kernel() {
-    let text = [
+fn device_enqueue_implicitly_declares_kernel() {
+    // DeviceEnqueue implicitly declares Kernel per the spec.
+    let without_kernel = [
         "OpCapability DeviceEnqueue",
         "OpCapability Addresses",
         "OpMemoryModel Physical32 OpenCL",
@@ -3395,17 +3361,11 @@ fn device_enqueue_requires_kernel() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
+    without_kernel
         .as_str()
         .validate(TargetEnv::OpenCl2_0)
-        .expect_err("DeviceEnqueue requires Kernel capability");
-    assert_eq!(
-        error,
-        ValidationError::MissingRequiredCapability {
-            required_capability: rspirv::spirv::Capability::Kernel,
-            capability: rspirv::spirv::Capability::DeviceEnqueue
-        }
-    );
+        .expect("DeviceEnqueue implicitly declares Kernel");
+
     let with_kernel = [
         "OpCapability Kernel",
         "OpCapability Addresses",
@@ -3422,7 +3382,7 @@ fn device_enqueue_requires_kernel() {
     with_kernel
         .as_str()
         .validate(TargetEnv::OpenCl2_0)
-        .expect("kernel capability enables device enqueue");
+        .expect("explicit + implicit declaration both allowed");
 }
 
 #[test]
@@ -3533,7 +3493,8 @@ fn opencl_2_0_allows_image_read_write_with_image_basic() {
 }
 
 #[test]
-fn opencl_image_read_write_requires_image_basic() {
+fn opencl_image_read_write_implicitly_declares_image_basic() {
+    // ImageReadWrite implicitly declares ImageBasic per the spec.
     let text = [
         "OpCapability Kernel",
         "OpCapability Addresses",
@@ -3547,18 +3508,7 @@ fn opencl_image_read_write_requires_image_basic() {
         "OpFunctionEnd",
     ]
     .join("\n");
-    let error = text
-        .as_str()
+    text.as_str()
         .validate(TargetEnv::OpenCl2_0)
-        .expect_err("ImageReadWrite requires ImageBasic");
-    match error {
-        ValidationError::MissingRequiredCapability {
-            required_capability,
-            capability,
-        } => {
-            assert_eq!(required_capability, rspirv::spirv::Capability::ImageBasic);
-            assert_eq!(capability, rspirv::spirv::Capability::ImageReadWrite);
-        }
-        other => panic!("expected MissingRequiredCapability, got {other:?}"),
-    }
+        .expect("ImageReadWrite implicitly declares ImageBasic");
 }

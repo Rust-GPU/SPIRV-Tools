@@ -92,8 +92,7 @@ use helpers::{
     collect_result_opcodes, collect_result_types, is_memory_object_declaration,
 };
 use rules::capabilities::{
-    capability_operand, capability_satisfied, required_extension_for_capability,
-    validate_capabilities,
+    capability_operand, capability_satisfied, required_extension, validate_capabilities,
 };
 use rules::extensions::{
     extension_operand, extension_satisfied, has_extension, validate_extension_allowlist,
@@ -911,7 +910,7 @@ fn validate_instruction_requirements(
                 // Also check if any of the instruction's required capabilities have enabling extensions
                 let has_extension_from_cap = !inst.class.capabilities.is_empty()
                     && inst.class.capabilities.iter().any(|&cap| {
-                        if let Some(ext) = required_extension_for_capability(cap) {
+                        if let Some(ext) = required_extension(cap) {
                             extension_satisfied(ext, extensions, target_version)
                         } else {
                             false

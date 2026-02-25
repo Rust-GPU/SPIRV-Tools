@@ -535,18 +535,14 @@ pub fn collect_result_types(module: &Module) -> Result<HashMap<ResultId, TypeId>
     Ok(result)
 }
 
-/// Collects all declared capabilities.
+/// Collects all declared capabilities, including implicitly declared ones.
+///
+/// Per the SPIR-V spec, declaring a capability implicitly declares its
+/// dependencies (transitively). This function returns the effective set.
 pub fn collect_declared_capabilities(module: &Module) -> HashSet<Capability> {
-    module
-        .capabilities
-        .iter()
-        .filter_map(|inst| {
-            inst.operands.first().and_then(|op| match op {
-                Operand::Capability(cap) => Some(*cap),
-                _ => None,
-            })
-        })
-        .collect()
+    use super::rules::capabilities::{collect_explicit_capabilities, expand_implicit_capabilities};
+
+    expand_implicit_capabilities(&collect_explicit_capabilities(module))
 }
 
 // ============================================================================
