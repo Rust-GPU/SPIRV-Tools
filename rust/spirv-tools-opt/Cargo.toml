@@ -11,7 +11,7 @@ egglog = { git = "https://github.com/egraphs-good/egglog.git" }
 spirv-tools-core = { path = "../spirv-tools-core" }
 arbitrary = { version = "1.3", features = ["derive"] }
 thiserror = "1.0"
-rspirv = "0.12"
+rspirv.workspace = true
 clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]

@@ -14,7 +14,7 @@ crate-type = ["staticlib", "rlib"]
 cxx = "1"
 spirv-tools-core = { path = "../spirv-tools-core" }
 spirv-tools-opt = { path = "../spirv-tools-opt" }
-rspirv = "0.12"
+rspirv.workspace = true
 thiserror = "1"
 arbitrary = { version = "1.3", features = ["derive"] }
 fastrand = "2.1"
