@@ -5,7 +5,7 @@ vars = {
 
   'abseil_revision': 'b2193acb18f8f59ba9a0dee589eea858703f3015',
 
-  'effcee_revision': '514b52ec61609744d7e587d93a7ef9b60407ab45',
+  'effcee_revision': '910ed15722d5d05c9d71ecf36c1a22243cb79b02',
 
   'googletest_revision': '5f9ad7d401161ee2249f31e857edb920a1185234',
 
